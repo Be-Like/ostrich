@@ -73,7 +73,7 @@ Conventions:
 
 ### Task 2 - make test smoke-test harness
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 1
 - **User stories covered**: none (foundational scaffolding)
 
@@ -106,11 +106,11 @@ Conventions:
 
 #### Acceptance criteria
 
-- [ ] `make test` compiles and runs `tests/smoke_test.c`.
-- [ ] The test asserts the entry point's exit code and greeting.
-- [ ] `make test` exits 0 when behavior is correct and non-zero on
+- [x] `make test` compiles and runs `tests/smoke_test.c`.
+- [x] The test asserts the entry point's exit code and greeting.
+- [x] `make test` exits 0 when behavior is correct and non-zero on
       a deliberately broken assertion.
-- [ ] The test build is warning-clean with `-Wall -Wextra`.
+- [x] The test build is warning-clean with `-Wall -Wextra`.
 
 ### Task 3 - Project README.md
 
