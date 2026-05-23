@@ -129,9 +129,17 @@ $(BUILD)/ui_test.o: $(TESTS)/ui_test.c | $(BUILD)
 $(BUILD)/ui_arena.o: $(SRC)/arena.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
+$(BUILD)/ui_lexicon.o: $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/ui_framestats.o: $(SRC)/framestats.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
 $(BUILD)/ui_test: $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
+                  $(BUILD)/ui_lexicon.o $(BUILD)/ui_framestats.o \
                   $(BUILD)/libui.a $(BUILD)/libglfw.a
 	$(CXX) -o $@ $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
+	    $(BUILD)/ui_lexicon.o $(BUILD)/ui_framestats.o \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
 test: all $(BUILD)/arena_test $(BUILD)/lexicon_test \

@@ -2,6 +2,8 @@
 
 #include "ui.h"
 #include "arena.h"
+#include "framestats.h"
+#include "lexicon.h"
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -286,6 +288,46 @@ bool ui_frame(Ui *ui) {
 
     ImGui::DockSpaceOverViewport(0, nullptr,
                                  ImGuiDockNodeFlags_PassthruCentralNode);
+
+    /* ── resting view: wordmark + identity ──────────────────────────── */
+    {
+        const ImGuiIO &io      = ImGui::GetIO();
+        const float    avail_w = io.DisplaySize.x;
+        const float    avail_h = io.DisplaySize.y;
+
+        const char  *wordmark = lex(LEX_WORDMARK);
+        const char  *identity = lex(LEX_IDENTITY);
+        const ImVec2 wm_sz    = ImGui::CalcTextSize(wordmark);
+        const ImVec2 id_sz    = ImGui::CalcTextSize(identity);
+        const float  gap      = ImGui::GetTextLineHeightWithSpacing();
+        const float  block_h  = wm_sz.y + gap + id_sz.y;
+
+        const float off_y    = center_offset(avail_h, block_h);
+        const float wm_off_x = center_offset(avail_w, wm_sz.x);
+        const float id_off_x = center_offset(avail_w, id_sz.x);
+
+        ImGui::SetNextWindowPos({0.0f, 0.0f});
+        ImGui::SetNextWindowSize({avail_w, avail_h});
+        ImGui::SetNextWindowBgAlpha(0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0f, 0.0f});
+        ImGui::Begin("##resting_view", nullptr,
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs |
+                         ImGuiWindowFlags_NoNav |
+                         ImGuiWindowFlags_NoBringToFrontOnFocus |
+                         ImGuiWindowFlags_NoSavedSettings);
+        ImGui::PopStyleVar();
+
+        ImGui::SetCursorPos({wm_off_x, off_y});
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN);
+        ImGui::TextUnformatted(wordmark);
+        ImGui::PopStyleColor();
+
+        ImGui::SetCursorPos({id_off_x, off_y + wm_sz.y + gap});
+        ImGui::TextUnformatted(identity);
+
+        ImGui::End();
+    }
 
     ImGui::Render();
 

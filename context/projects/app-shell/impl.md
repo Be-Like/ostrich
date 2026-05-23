@@ -359,7 +359,7 @@ HiDPI font scaling from Task 4. No new structure, panels, or flow
 
 ### Task 7 - Resting view: wordmark + identity
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 6, Task 2, Task 3
 - **User stories covered**: US-16 (centered ASCII wordmark +
   identity line), US-17 (the single bright element), US-25 (stays
@@ -387,13 +387,13 @@ wordmark is the brightest element.
 
 #### Acceptance criteria
 
-- [ ] The ASCII wordmark and `OSTRICH // infiltration console`
+- [x] The ASCII wordmark and `OSTRICH // infiltration console`
       line render centered in the empty docking host.
-- [ ] Both strings come from `lexicon` lookups (no inline
+- [x] Both strings come from `lexicon` lookups (no inline
       literals in `src/ui/`).
-- [ ] The view stays centered (via `center_offset`) across
+- [x] The view stays centered (via `center_offset`) across
       window resizes.
-- [ ] The wordmark is the single brightest element; the paint is
+- [x] The wordmark is the single brightest element; the paint is
       static (no animation); `make`/`make test` stay green.
 
 ### Task 8 - Diagnostics footer

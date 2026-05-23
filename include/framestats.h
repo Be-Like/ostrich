@@ -1,6 +1,10 @@
 #ifndef FRAMESTATS_H
 #define FRAMESTATS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     double accum;  /* exponentially smoothed frame time, seconds */
     int    seeded; /* 0 until the first update seeds accum */
@@ -9,5 +13,9 @@ typedef struct {
 void  frame_stats_init(FrameStats *fs);
 int   frame_stats_update(FrameStats *fs, double dt_seconds);
 float center_offset(float avail, float content);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FRAMESTATS_H */
