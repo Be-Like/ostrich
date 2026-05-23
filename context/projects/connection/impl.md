@@ -247,7 +247,7 @@ dedicated Make target and excluded from `make test`.
 
 ### Task 5 - connstate library
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 3, Task 4
 - **User stories covered**: US-47 (the meaningful weight of the
   `make test` gate), US-52 (visible, recoverable session state — the
@@ -278,16 +278,16 @@ ARD "Testing".
 
 #### Acceptance criteria
 
-- [ ] `include/connstate.h` matches the ARD; the module is pure (no
+- [x] `include/connstate.h` matches the ARD; the module is pure (no
       I/O, threads, or libssh2 linkage).
-- [ ] `tests/connstate_test.c` covers every transition (incl. the
+- [x] `tests/connstate_test.c` covers every transition (incl. the
       host-key pause + trust/decline), the `backoff_delay` curve, the
       severed cap, the `SshStatus → LexKey` mapping, and config
       validation.
-- [ ] Backoff is deterministic to test (the jitter seam is
+- [x] Backoff is deterministic to test (the jitter seam is
       controllable) and `connstate_should_sever` fires at the budget
       per ARD "Reconnect policy".
-- [ ] `make test` builds and runs `connstate_test`; all pass; the
+- [x] `make test` builds and runs `connstate_test`; all pass; the
       shipping app is unchanged.
 
 ### Task 6 - store library

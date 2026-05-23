@@ -88,10 +88,14 @@ SSH_SRC  := ssh.c
 SSH_OBJS := $(patsubst %.c,$(BUILD)/ssh/%.o,$(SSH_SRC))
 SSH_CFLAGS := -I$(LIBSSH2_DIR)/include $(LOCAL_CFLAGS) $(OPENSSL_CFLAGS)
 
+# connstate (pure lifecycle core)
+CONNSTATE_SRC  := connstate.c
+CONNSTATE_OBJS := $(patsubst %.c,$(BUILD)/connstate/%.o,$(CONNSTATE_SRC))
+
 .PHONY: all clean test ssh_version_smoke ssh_smoke
 
 all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
-     $(BUILD)/liblibssh2.a $(BUILD)/libssh.a
+     $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a
 
 # ── GLFW ──────────────────────────────────────────────────────────────
 $(BUILD)/glfw/%.o: $(GLFW_DIR)/src/%.c | $(BUILD)/glfw
@@ -156,6 +160,13 @@ $(BUILD)/ssh/%.o: $(SRC)/ssh/%.c | $(BUILD)/ssh
 $(BUILD)/libssh.a: $(SSH_OBJS)
 	ar rcs $@ $^
 
+# ── connstate library (pure lifecycle core) ───────────────────────────
+$(BUILD)/connstate/%.o: $(SRC)/connstate/%.c | $(BUILD)/connstate
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/libconnstate.a: $(CONNSTATE_OBJS)
+	ar rcs $@ $^
+
 # ── Dev smokes (not part of make test) ───────────────────────────────
 ssh_version_smoke: $(BUILD)/ssh_version_smoke
 	./$(BUILD)/ssh_version_smoke
@@ -174,6 +185,11 @@ $(BUILD)/ssh_smoke: tools/ssh_smoke.c $(BUILD)/libssh.a $(BUILD)/liblibssh2.a \
 	    $(BUILD)/libssh.a $(BUILD)/liblibssh2.a $(OPENSSL_LIBS)
 
 # ── Tests ─────────────────────────────────────────────────────────────
+$(BUILD)/connstate_test: $(TESTS)/connstate_test.c $(BUILD)/libconnstate.a \
+                         $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/connstate_test.c \
+	    $(SRC)/lexicon.c $(BUILD)/libconnstate.a -lm
+
 $(BUILD)/spsc_ring_test: $(TESTS)/spsc_ring_test.c $(SRC)/spsc_ring.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
 
@@ -205,8 +221,9 @@ $(BUILD)/ui_test: $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
 	    $(BUILD)/ui_lexicon.o $(BUILD)/ui_framestats.o \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
-test: all $(BUILD)/spsc_ring_test $(BUILD)/arena_test \
+test: all $(BUILD)/connstate_test $(BUILD)/spsc_ring_test $(BUILD)/arena_test \
       $(BUILD)/lexicon_test $(BUILD)/framestats_test $(BUILD)/ui_test
+	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
 	./$(BUILD)/arena_test
 	./$(BUILD)/lexicon_test
@@ -234,6 +251,9 @@ $(BUILD)/libssh2: | $(BUILD)
 
 $(BUILD)/ssh: | $(BUILD)
 	mkdir -p $(BUILD)/ssh
+
+$(BUILD)/connstate: | $(BUILD)
+	mkdir -p $(BUILD)/connstate
 
 clean:
 	rm -rf $(BUILD)
