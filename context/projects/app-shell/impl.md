@@ -439,7 +439,7 @@ tool output (workflow: the footer is ostrich's diagnostics).
 
 ### Task 9 - Scanline/vignette overlay
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 6
 - **User stories covered**: US-15 (a faint, static scanline and
   vignette overlay behind the chrome).
@@ -461,10 +461,10 @@ whimsy is zero-cost). No animation, audio, or bitmap/SVG assets.
 
 #### Acceptance criteria
 
-- [ ] A faint, static scanline and vignette render behind the
+- [x] A faint, static scanline and vignette render behind the
       chrome (wordmark and footer stay on top and legible).
-- [ ] The overlay has no motion/animation and adds no
+- [x] The overlay has no motion/animation and adds no
       perceptible cost to the frame loop.
-- [ ] The overlay is drawn with ImGui draw-list layering only
+- [x] The overlay is drawn with ImGui draw-list layering only
       (no GL shader pass, no external assets).
-- [ ] `make`/`make test` stay green.
+- [x] `make`/`make test` stay green.

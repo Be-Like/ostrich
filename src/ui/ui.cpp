@@ -169,6 +169,29 @@ static void *read_file_arena(Arena *a, const char *path, long *out_size,
     return buf;
 }
 
+static void draw_overlay(void) {
+    ImDrawList   *dl = ImGui::GetBackgroundDrawList();
+    const ImGuiIO &io = ImGui::GetIO();
+    const float   w = io.DisplaySize.x;
+    const float   h = io.DisplaySize.y;
+
+    /* scanlines: faint dark stripe on every other row */
+    const ImU32 scan = IM_COL32(0, 0, 0, 8);
+    for (float y = 0.0f; y < h; y += 2.0f)
+        dl->AddRectFilled({0.0f, y}, {w, y + 1.0f}, scan);
+
+    /* vignette: four gradient fills fading inward from each edge */
+    const ImU32 edge  = IM_COL32(0, 0, 0, 110);
+    const ImU32 clear = IM_COL32(0, 0, 0, 0);
+    const float vw    = w * 0.42f;
+    const float vh    = h * 0.42f;
+
+    dl->AddRectFilledMultiColor({0.0f, 0.0f}, {vw, h}, edge, clear, clear, edge);    /* left  */
+    dl->AddRectFilledMultiColor({w - vw, 0.0f}, {w, h}, clear, edge, edge, clear);   /* right */
+    dl->AddRectFilledMultiColor({0.0f, 0.0f}, {w, vh}, edge, edge, clear, clear);    /* top   */
+    dl->AddRectFilledMultiColor({0.0f, h - vh}, {w, h}, clear, clear, edge, edge);   /* bottom */
+}
+
 static void teardown(GLFWwindow *window) {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
@@ -294,6 +317,8 @@ bool ui_frame(Ui *ui) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+
+    draw_overlay();
 
     ImGui::DockSpaceOverViewport(0, nullptr,
                                  ImGuiDockNodeFlags_PassthruCentralNode);
