@@ -398,7 +398,7 @@ wordmark is the brightest element.
 
 ### Task 8 - Diagnostics footer
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 6, Task 2, Task 3
 - **User stories covered**: US-18 (slim footer
   `ostrich // 60 FPS // ONLINE`), US-19 (live frame-rate
@@ -428,13 +428,13 @@ tool output (workflow: the footer is ostrich's diagnostics).
 
 #### Acceptance criteria
 
-- [ ] A slim footer renders `ostrich // NN FPS // ONLINE` with
+- [x] A slim footer renders `ostrich // NN FPS // ONLINE` with
       all words sourced from `lexicon`.
-- [ ] The `NN` reading updates live each frame from `framestats`
+- [x] The `NN` reading updates live each frame from `framestats`
       and reflects the measured rate.
-- [ ] The footer is styled distinctly as ostrich's own
+- [x] The footer is styled distinctly as ostrich's own
       diagnostics (not styled like future tool output).
-- [ ] The per-frame footer string uses a stack buffer (no heap
+- [x] The per-frame footer string uses a stack buffer (no heap
       allocation); `make`/`make test` stay green.
 
 ### Task 9 - Scanline/vignette overlay

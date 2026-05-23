@@ -119,6 +119,8 @@ static void apply_theme(void) {
 
 struct Ui {
     GLFWwindow *window;
+    FrameStats  fs;
+    double      last_time;
 };
 
 static bool has_display(void) {
@@ -266,12 +268,19 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
         teardown(window);
         return UI_ERR_OOM;
     }
+    frame_stats_init(&ui->fs);
+    ui->last_time = glfwGetTime();
     ui->window = window;
     *out = ui;
     return UI_OK;
 }
 
 bool ui_frame(Ui *ui) {
+    double now = glfwGetTime();
+    double dt  = now - ui->last_time;
+    ui->last_time = now;
+    int fps = frame_stats_update(&ui->fs, dt);
+
     glfwPollEvents();
 
     if (glfwWindowShouldClose(ui->window))
@@ -325,6 +334,42 @@ bool ui_frame(Ui *ui) {
 
         ImGui::SetCursorPos({id_off_x, off_y + wm_sz.y + gap});
         ImGui::TextUnformatted(identity);
+
+        ImGui::End();
+    }
+
+    /* ── diagnostics footer ──────────────────────────────────────────── */
+    {
+        const ImGuiIO &io      = ImGui::GetIO();
+        const float    avail_w = io.DisplaySize.x;
+        const float    avail_h = io.DisplaySize.y;
+        const float    pad     = ImGui::GetStyle().FramePadding.y;
+        const float    foot_h  = ImGui::GetTextLineHeight() + pad * 2.0f;
+
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%s // %d FPS // %s",
+                 lex(LEX_FOOTER_NAME), fps, lex(LEX_FOOTER_ONLINE));
+
+        ImGui::SetNextWindowPos({0.0f, avail_h - foot_h});
+        ImGui::SetNextWindowSize({avail_w, foot_h});
+        ImGui::SetNextWindowBgAlpha(1.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, C_BG);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2{pad * 2.0f, pad});
+        ImGui::Begin("##footer", nullptr,
+                     ImGuiWindowFlags_NoDecoration |
+                         ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_NoInputs |
+                         ImGuiWindowFlags_NoNav |
+                         ImGuiWindowFlags_NoBringToFrontOnFocus |
+                         ImGuiWindowFlags_NoSavedSettings);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(buf);
+        ImGui::PopStyleColor();
 
         ImGui::End();
     }
