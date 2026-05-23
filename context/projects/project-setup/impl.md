@@ -114,7 +114,7 @@ Conventions:
 
 ### Task 3 - Project README.md
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 1, Task 2
 - **User stories covered**: none (foundational scaffolding)
 
@@ -138,7 +138,7 @@ duplicating them, and flag that the GUI (Dear ImGui + GLFW) and SSH
 
 #### Acceptance criteria
 
-- [ ] README describes ostrich and links to `context/design.md`.
-- [ ] README lists prerequisites and the submodule-init steps.
-- [ ] README documents `make`, running the binary, and `make test`.
-- [ ] README describes the repository layout.
+- [x] README describes ostrich and links to `context/design.md`.
+- [x] README lists prerequisites and the submodule-init steps.
+- [x] README documents `make`, running the binary, and `make test`.
+- [x] README describes the repository layout.
