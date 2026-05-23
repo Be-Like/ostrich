@@ -121,13 +121,13 @@ houses it (ARD "Theme and lexicon governance"). Adds
 
 #### Acceptance criteria
 
-- [ ] `include/lexicon.h` defines the `LexKey` enum (with
+- [x] `include/lexicon.h` defines the `LexKey` enum (with
       `LEX__COUNT`) and `lex()` as in the ARD.
-- [ ] Every key in `0..LEX__COUNT` resolves to non-empty copy;
+- [x] Every key in `0..LEX__COUNT` resolves to non-empty copy;
       the voice key returns the `>` signature.
-- [ ] An out-of-range key returns a stable non-`NULL`
+- [x] An out-of-range key returns a stable non-`NULL`
       placeholder (no crash).
-- [ ] `tests/lexicon_test.c` asserts the above; `make test`
+- [x] `tests/lexicon_test.c` asserts the above; `make test`
       runs it and it passes.
 
 ### Task 3 - Framestats module
