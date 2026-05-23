@@ -690,7 +690,7 @@ link requires a manual re-breach (one Enter with MRU pre-select).
 
 ### Task 15 - Update / close / switch
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 9, Task 11
 - **User stories covered**: US-35, US-36, US-37, US-38, US-39.
 
@@ -718,10 +718,10 @@ map to the `update` / `close` / `select_host` intents (ARD
 
 #### Acceptance criteria
 
-- [ ] The bar's update control re-opens the overlay pre-filled with
+- [x] The bar's update control re-opens the overlay pre-filled with
       the live connection's details.
-- [ ] Changing host/port/user/auth tears down and reconnects;
+- [x] Changing host/port/user/auth tears down and reconnects;
       changing only label / remember persists with no reconnect.
-- [ ] Close disconnects and returns to the resting overlay.
-- [ ] Selecting a different KNOWN HOST while connected closes the
+- [x] Close disconnects and returns to the resting overlay.
+- [x] Selecting a different KNOWN HOST while connected closes the
       current session first; `make test` stays green.

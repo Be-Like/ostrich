@@ -23,6 +23,10 @@ struct App {
     char      fingerprint[128];
     bool      hostkey_unknown;
     bool      hostkey_mismatch;
+
+    /* UPDATE / close / switch */
+    SshConfig live_cfg;     /* identity of the currently-live connection */
+    bool      overlay_open; /* UPDATE: show overlay overlay while bar-phase */
 };
 
 AppStatus app_init(Arena *a, AppOptions opts, App **out) {
@@ -89,8 +93,10 @@ bool app_tick(App *app) {
             memcpy(app->user_host, ev.user_host, sizeof(app->user_host));
         if (ev.fingerprint[0])
             memcpy(app->fingerprint, ev.fingerprint, sizeof(app->fingerprint));
-        if (ev.phase == CONN_DISCONNECTED)
+        if (ev.phase == CONN_DISCONNECTED || ev.phase == CONN_SEVERED) {
             app->user_host[0] = '\0';
+            app->overlay_open = false;
+        }
     }
 
     UiConnView view = {0};
@@ -99,6 +105,7 @@ bool app_tick(App *app) {
     view.fingerprint         = app->fingerprint;
     view.show_hostkey_prompt = app->hostkey_unknown;
     view.show_mismatch       = app->hostkey_mismatch;
+    view.overlay_open        = app->overlay_open;
     view.known_hosts         = app->known_hosts.items;
     view.known_count         = app->known_hosts.count;
     view.reason = app_phase_reason(app->phase, app->last_reason);
@@ -107,8 +114,17 @@ bool app_tick(App *app) {
     intents.select_host = -1;
     bool keep_going = ui_frame(app->ui, &view, &app->form, &intents);
 
+    bool connected = (app->phase == CONN_ONLINE ||
+                      app->phase == CONN_REACQUIRING);
+
     if (intents.select_host >= 0 &&
         intents.select_host < app->known_hosts.count) {
+        /* Close the live session first when switching to a different host. */
+        if (connected && intents.select_host != app->form.selected_known_host) {
+            SessionCmd cmd = {.kind = CMD_CLOSE};
+            session_submit(app->session, &cmd);
+            app->overlay_open = false;
+        }
         app_conn_to_form(&app->known_hosts.items[intents.select_host],
                          &app->form);
         app->form.selected_known_host = intents.select_host;
@@ -122,15 +138,59 @@ bool app_tick(App *app) {
             store_save(&app->known_hosts);
         }
     }
+    if (intents.update) {
+        /* Re-open the overlay pre-filled with the live connection's details. */
+        app->overlay_open = true;
+    }
+    if (intents.close) {
+        /* Disconnect and return to the resting overlay. */
+        SessionCmd cmd = {.kind = CMD_CLOSE};
+        session_submit(app->session, &cmd);
+        app->overlay_open     = false;
+        app->last_reason      = SSH_OK;
+        app->hostkey_unknown  = false;
+        app->hostkey_mismatch = false;
+    }
     if (intents.breach) {
         SshConfig cfg;
         app_form_to_ssh_config(&app->form, &cfg);
         if (connstate_validate(&cfg)) {
-            SessionCmd cmd = {.kind = CMD_BREACH, .cfg = cfg};
-            session_submit(app->session, &cmd);
-            app->last_reason      = SSH_OK;
-            app->hostkey_unknown  = false;
-            app->hostkey_mismatch = false;
+            bool do_breach = true;
+            if (connected && app->overlay_open) {
+                /* UPDATE mode: compare new identity against live connection. */
+                SshConfig new_id;
+                app_form_to_ssh_config(&app->form, &new_id);
+                bool id_changed =
+                    strcmp(app->live_cfg.host, new_id.host) != 0 ||
+                    app->live_cfg.port != new_id.port              ||
+                    strcmp(app->live_cfg.user, new_id.user) != 0   ||
+                    app->live_cfg.auth != new_id.auth;
+                if (id_changed) {
+                    /* Identity changed: close current session then reconnect. */
+                    SessionCmd close_cmd = {.kind = CMD_CLOSE};
+                    session_submit(app->session, &close_cmd);
+                } else {
+                    /* Only metadata changed: persist with no reconnect. */
+                    int new_idx = app_save_to_list(&app->known_hosts, &app->form,
+                                                   app->form.selected_known_host,
+                                                   app->arena);
+                    if (new_idx >= 0) {
+                        app->form.selected_known_host = new_idx;
+                        store_save(&app->known_hosts);
+                    }
+                    app->overlay_open = false;
+                    do_breach = false;
+                }
+            }
+            if (do_breach) {
+                SessionCmd cmd = {.kind = CMD_BREACH, .cfg = cfg};
+                session_submit(app->session, &cmd);
+                app->live_cfg         = cfg;
+                app->last_reason      = SSH_OK;
+                app->hostkey_unknown  = false;
+                app->hostkey_mismatch = false;
+                app->overlay_open     = false;
+            }
         }
     }
     if (intents.abort) {

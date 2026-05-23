@@ -36,6 +36,7 @@ typedef struct {
     const char *fingerprint;        /* host-key prompt         */
     bool        show_hostkey_prompt; /* unknown host           */
     bool        show_mismatch;       /* security stop          */
+    bool        overlay_open;       /* UPDATE: show overlay during bar phase */
     const Conn *known_hosts;
     int         known_count;
 } UiConnView;

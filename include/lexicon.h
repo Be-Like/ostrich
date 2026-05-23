@@ -52,6 +52,10 @@ typedef enum {
     /* ── known-hosts overlay ───────────────────────────────────────── */
     LEX_CONN_SAVE,     /* "SAVE"    */
 
+    /* ── connection-bar controls ───────────────────────────────────── */
+    LEX_CONN_UPDATE,   /* "UPDATE"  */
+    LEX_CONN_CLOSE,    /* "CLOSE"   */
+
     LEX__COUNT
 } LexKey;
 

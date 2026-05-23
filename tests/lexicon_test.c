@@ -159,9 +159,18 @@ static int test_conn_hostkey_action_keys(void) {
     return 0;
 }
 
+static int test_conn_bar_control_keys(void) {
+    ASSERT("update exact",
+           strcmp(lex(LEX_CONN_UPDATE), "UPDATE") == 0);
+    ASSERT("close exact",
+           strcmp(lex(LEX_CONN_CLOSE), "CLOSE") == 0);
+    PASS("conn_bar_control_keys");
+    return 0;
+}
+
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
-    ASSERT("LEX__COUNT is 33", LEX__COUNT == 33);
+    ASSERT("LEX__COUNT is 35", LEX__COUNT == 35);
     PASS("lex_count_consistency");
     return 0;
 }
@@ -180,6 +189,7 @@ int main(void) {
     failures += test_conn_failure_keys();
     failures += test_conn_field_keys();
     failures += test_conn_hostkey_action_keys();
+    failures += test_conn_bar_control_keys();
     failures += test_lex_count_consistency();
 
     if (failures == 0) {

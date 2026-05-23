@@ -123,6 +123,59 @@ int main(void) {
         }
     }
 
+    /* State-based test: ONLINE view (bar phase) emits no spurious close/update. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents);
+            assert(!intents.close);
+            assert(!intents.update);
+            assert(!intents.breach);
+        }
+    }
+
+    /* State-based test: REACQUIRING view (bar phase) emits no spurious intents. */
+    {
+        UiConnView reacq_view = {0};
+        reacq_view.phase     = CONN_REACQUIRING;
+        reacq_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &reacq_view, &form, &intents);
+            assert(!intents.close);
+            assert(!intents.update);
+        }
+    }
+
+    /* State-based test: ONLINE + overlay_open (UPDATE mode) emits no spurious breach. */
+    {
+        UiConnView update_view = {0};
+        update_view.phase        = CONN_ONLINE;
+        update_view.user_host    = "alice@mac.local";
+        update_view.overlay_open = true;
+
+        ConnForm update_form = {0};
+        update_form.selected_known_host = -1;
+        snprintf(update_form.host, sizeof(update_form.host), "mac.local");
+        snprintf(update_form.user, sizeof(update_form.user), "alice");
+        snprintf(update_form.port, sizeof(update_form.port), "22");
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &update_view, &update_form, &intents);
+            assert(!intents.breach);
+            assert(!intents.close);
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

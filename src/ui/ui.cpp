@@ -426,7 +426,8 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
 }
 
 /* ── connection bar ─────────────────────────────────────────────────── */
-static void draw_conn_bar(const UiConnView *view, double online_since) {
+static void draw_conn_bar(const UiConnView *view, double online_since,
+                          UiIntents *out) {
     const ImGuiIO &io     = ImGui::GetIO();
     const float    avail_w = io.DisplaySize.x;
     const float    pad    = ImGui::GetStyle().FramePadding.y;
@@ -439,8 +440,7 @@ static void draw_conn_bar(const UiConnView *view, double online_since) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{pad * 2.0f, pad});
     ImGui::Begin("##conn_bar", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs |
-                     ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoBringToFrontOnFocus |
                      ImGuiWindowFlags_NoSavedSettings);
     ImGui::PopStyleVar();
@@ -474,6 +474,26 @@ static void draw_conn_bar(const UiConnView *view, double online_since) {
             ImGui::TextUnformatted(lex(LEX_CONN_ONLINE));
             ImGui::PopStyleColor();
         }
+    }
+
+    /* UPDATE and CLOSE buttons — right-aligned */
+    {
+        const float btn_pad  = ImGui::GetStyle().FramePadding.x * 2.0f;
+        const float spc      = ImGui::GetStyle().ItemSpacing.x;
+        float       update_w = ImGui::CalcTextSize(lex(LEX_CONN_UPDATE)).x + btn_pad;
+        float       close_w  = ImGui::CalcTextSize(lex(LEX_CONN_CLOSE)).x  + btn_pad;
+        float       btns_w   = update_w + spc + close_w;
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - btns_w);
+        ImGui::PushStyleColor(ImGuiCol_Button,        C_CYAN_DIM);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, C_CYAN);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  C_CYAN);
+        ImGui::PushStyleColor(ImGuiCol_Text,          C_BG);
+        if (ImGui::SmallButton(lex(LEX_CONN_UPDATE)))
+            out->update = true;
+        ImGui::SameLine();
+        if (ImGui::SmallButton(lex(LEX_CONN_CLOSE)))
+            out->close = true;
+        ImGui::PopStyleColor(4);
     }
 
     ImGui::End();
@@ -666,14 +686,16 @@ bool ui_frame(Ui *ui, const UiConnView *view, ConnForm *form, UiIntents *out) {
     bool bar_phase = (view->phase == CONN_ONLINE ||
                       view->phase == CONN_REACQUIRING);
     if (bar_phase)
-        draw_conn_bar(view, ui->online_since);
+        draw_conn_bar(view, ui->online_since, out);
 
     /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY /
-          SEVERED — SEVERED shows reason + BREACH to re-connect) ──────── */
+          SEVERED — SEVERED shows reason + BREACH to re-connect;
+          overlay_open shows overlay over the bar for UPDATE) ──────── */
     bool overlay_phase = (view->phase == CONN_DISCONNECTED ||
                           view->phase == CONN_CONNECTING ||
                           view->phase == CONN_AWAITING_HOSTKEY ||
-                          view->phase == CONN_SEVERED);
+                          view->phase == CONN_SEVERED ||
+                          view->overlay_open);
     if (overlay_phase)
         draw_breach_overlay(view, form, out);
 
