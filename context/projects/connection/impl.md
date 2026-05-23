@@ -115,7 +115,7 @@ Task 4 consumes the archive.
 
 ### Task 2 - spsc_ring primitive
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: US-44 (multi-channel-ready — this ring is
   the cross-thread handoff that lets later log streams drop on),
@@ -142,14 +142,14 @@ non-arena allocation"). Add `build/spsc_ring_test` to `make test`.
 
 #### Acceptance criteria
 
-- [ ] `include/spsc_ring.h` matches the ARD signature
+- [x] `include/spsc_ring.h` matches the ARD signature
       (`spsc_create`/`spsc_push`/`spsc_pop`/`spsc_destroy`).
-- [ ] `tests/spsc_ring_test.c` black-box tests FIFO ordering,
+- [x] `tests/spsc_ring_test.c` black-box tests FIFO ordering,
       wraparound, full/empty edges, and capacity edges
       (single-threaded), per ARD "Testing".
-- [ ] `make test` builds and runs `spsc_ring_test` alongside the
+- [x] `make test` builds and runs `spsc_ring_test` alongside the
       existing pure-tier tests; all pass.
-- [ ] Builds warning-clean under `-Wall -Wextra`; the shipping app is
+- [x] Builds warning-clean under `-Wall -Wextra`; the shipping app is
       unchanged.
 
 ### Task 3 - lexicon connection keys

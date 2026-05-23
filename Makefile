@@ -153,6 +153,9 @@ $(BUILD)/ssh_version_smoke: tools/ssh_version_smoke.c $(BUILD)/liblibssh2.a | $(
 	    -o $@ $< $(BUILD)/liblibssh2.a $(OPENSSL_LIBS)
 
 # ── Tests ─────────────────────────────────────────────────────────────
+$(BUILD)/spsc_ring_test: $(TESTS)/spsc_ring_test.c $(SRC)/spsc_ring.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
+
 $(BUILD)/arena_test: $(TESTS)/arena_test.c $(SRC)/arena.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
 
@@ -181,8 +184,9 @@ $(BUILD)/ui_test: $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
 	    $(BUILD)/ui_lexicon.o $(BUILD)/ui_framestats.o \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
-test: all $(BUILD)/arena_test $(BUILD)/lexicon_test \
-      $(BUILD)/framestats_test $(BUILD)/ui_test
+test: all $(BUILD)/spsc_ring_test $(BUILD)/arena_test \
+      $(BUILD)/lexicon_test $(BUILD)/framestats_test $(BUILD)/ui_test
+	./$(BUILD)/spsc_ring_test
 	./$(BUILD)/arena_test
 	./$(BUILD)/lexicon_test
 	./$(BUILD)/framestats_test
