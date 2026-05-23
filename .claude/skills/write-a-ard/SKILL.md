@@ -5,7 +5,11 @@ description: Create a ARD through user interview, codebase exploration and then 
 
 ## Process
 
-1. The projects context should be in the conversation. If it isn't, read context/projects/README.md
+1. The project's context should be in the conversation. If it isn't, read context/projects/README.md
+
+1a. The project's design goals should be in the conversation. If it isn't, read context/design.md.
+
+1c. The project's workflow process should be in the conversation. If it isn't, read the context/workflow.md.
 
 2. If the PRD is not in the conversation. Check if there is a PRD in the project and read it if there is. If there is not, just ask the user for what this project is focused on.
 
