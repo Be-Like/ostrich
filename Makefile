@@ -96,11 +96,15 @@ CONNSTATE_OBJS := $(patsubst %.c,$(BUILD)/connstate/%.o,$(CONNSTATE_SRC))
 STORE_SRC  := store.c
 STORE_OBJS := $(patsubst %.c,$(BUILD)/store/%.o,$(STORE_SRC))
 
-.PHONY: all clean test ssh_version_smoke ssh_smoke
+# session (worker thread + SPSC rings)
+SESSION_SRC  := session.c
+SESSION_OBJS := $(patsubst %.c,$(BUILD)/session/%.o,$(SESSION_SRC))
+
+.PHONY: all clean test ssh_version_smoke ssh_smoke session_smoke
 
 all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
      $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
-     $(BUILD)/libstore.a
+     $(BUILD)/libstore.a $(BUILD)/libsession.a
 
 # ── GLFW ──────────────────────────────────────────────────────────────
 $(BUILD)/glfw/%.o: $(GLFW_DIR)/src/%.c | $(BUILD)/glfw
@@ -179,6 +183,13 @@ $(BUILD)/store/%.o: $(SRC)/store/%.c | $(BUILD)/store
 $(BUILD)/libstore.a: $(STORE_OBJS)
 	ar rcs $@ $^
 
+# ── session library (worker thread + rings) ───────────────────────────
+$(BUILD)/session/%.o: $(SRC)/session/%.c | $(BUILD)/session
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/libsession.a: $(SESSION_OBJS)
+	ar rcs $@ $^
+
 # ── Dev smokes (not part of make test) ───────────────────────────────
 ssh_version_smoke: $(BUILD)/ssh_version_smoke
 	./$(BUILD)/ssh_version_smoke
@@ -195,6 +206,18 @@ $(BUILD)/ssh_smoke: tools/ssh_smoke.c $(BUILD)/libssh.a $(BUILD)/liblibssh2.a \
 	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/ssh_smoke.c $(SRC)/arena.c \
 	    $(BUILD)/libssh.a $(BUILD)/liblibssh2.a $(OPENSSL_LIBS)
+
+session_smoke: $(BUILD)/session_smoke
+
+$(BUILD)/session_smoke: tools/session_smoke.c $(BUILD)/libsession.a \
+                        $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+                        $(BUILD)/liblibssh2.a \
+                        $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
+	    -o $@ tools/session_smoke.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+	    $(BUILD)/liblibssh2.a $(OPENSSL_LIBS) -lpthread -lm
 
 # ── Tests ─────────────────────────────────────────────────────────────
 $(BUILD)/connstate_test: $(TESTS)/connstate_test.c $(BUILD)/libconnstate.a \
@@ -276,6 +299,9 @@ $(BUILD)/connstate: | $(BUILD)
 
 $(BUILD)/store: | $(BUILD)
 	mkdir -p $(BUILD)/store
+
+$(BUILD)/session: | $(BUILD)
+	mkdir -p $(BUILD)/session
 
 clean:
 	rm -rf $(BUILD)

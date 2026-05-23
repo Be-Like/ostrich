@@ -333,7 +333,7 @@ Black-box tested per ARD "Testing".
 
 ### Task 7 - session library + smoke
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 2, Task 4, Task 5
 - **User stories covered**: US-15 (window stays smooth during connect
   — work is off the UI thread), US-34 (reconnect also off the UI
@@ -369,17 +369,17 @@ is the host-gated dev harness, excluded from `make test`.
 
 #### Acceptance criteria
 
-- [ ] `include/session.h` matches the ARD; callers see no threads,
+- [x] `include/session.h` matches the ARD; callers see no threads,
       rings, or libssh2 through it.
-- [ ] The worker is event-driven via `poll()` + self-pipe wakeups
+- [x] The worker is event-driven via `poll()` + self-pipe wakeups
       (no busy-wait); only the two SPSC rings + self-pipe + atomics
       cross the boundary (ARD conformance "Thread-confinement").
-- [ ] The `session_open` malloc / `session_close` free of the control
+- [x] The `session_open` malloc / `session_close` free of the control
       block + rings is the only new non-arena allocation; the worker
       uses a per-session arena.
-- [ ] `tools/session_smoke.c` reaches `ONLINE` against a real Mac and
+- [x] `tools/session_smoke.c` reaches `ONLINE` against a real Mac and
       closes cleanly (join, no leak); it is not part of `make test`.
-- [ ] `make`/`make test` stay green; the shipping app is unchanged
+- [x] `make`/`make test` stay green; the shipping app is unchanged
       (the app does not yet create a session).
 
 ### Task 8 - UI seam + app composition root
