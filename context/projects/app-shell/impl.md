@@ -320,7 +320,7 @@ dark; the footer's `ONLINE` only means "ostrich is running").
 
 ### Task 6 - Theme: palette + font styling
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 5
 - **User stories covered**: US-11 (dark cyberpunk identity),
   US-12 (dark near-black base), US-13 (palette discipline),
@@ -348,14 +348,14 @@ HiDPI font scaling from Task 4. No new structure, panels, or flow
 
 #### Acceptance criteria
 
-- [ ] The window renders on a dark near-black base with the
+- [x] The window renders on a dark near-black base with the
       cyberpunk style applied from the first painted frame.
-- [ ] JetBrains Mono regular and bold are the typeface used for
+- [x] JetBrains Mono regular and bold are the typeface used for
       all rendered text.
-- [ ] The ImGui style uses decorative cyan/magenta for chrome
+- [x] The ImGui style uses decorative cyan/magenta for chrome
       only; semantic green/red/amber are defined but reserved
       (unused) and body text is off-white.
-- [ ] `make`/`make test` stay green; no panels or flow added.
+- [x] `make`/`make test` stay green; no panels or flow added.
 
 ### Task 7 - Resting view: wordmark + identity
 

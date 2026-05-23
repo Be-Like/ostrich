@@ -20,6 +20,101 @@
 
 static const char *GLSL_VERSION = "#version 150";
 
+/* ── palette — context/theme.md ─────────────────────────────────────── */
+static const ImVec4 C_BG          = {0.027f, 0.035f, 0.051f, 1.0f}; /* #07090d */
+static const ImVec4 C_PANEL       = {0.051f, 0.067f, 0.090f, 1.0f}; /* #0d1117 */
+static const ImVec4 C_CYAN_DIM    = {0.055f, 0.353f, 0.388f, 1.0f}; /* #0e5a63 */
+static const ImVec4 C_MAGENTA_DIM = {0.431f, 0.078f, 0.341f, 1.0f}; /* #6e1457 */
+static const ImVec4 C_CYAN        = {0.000f, 0.941f, 1.000f, 1.0f}; /* #00f0ff */
+static const ImVec4 C_MAGENTA     = {1.000f, 0.169f, 0.839f, 1.0f}; /* #ff2bd6 */
+/* semantic — defined, reserved for meaning, unused as chrome */
+[[maybe_unused]] static const ImVec4 C_OK   = {0.098f, 1.000f, 0.478f, 1.0f}; /* #19ff7a */
+[[maybe_unused]] static const ImVec4 C_FAIL = {1.000f, 0.231f, 0.314f, 1.0f}; /* #ff3b50 */
+[[maybe_unused]] static const ImVec4 C_BUSY = {1.000f, 0.690f, 0.000f, 1.0f}; /* #ffb000 */
+static const ImVec4 C_TEXT        = {0.784f, 0.816f, 0.847f, 1.0f}; /* #c8d0d8 */
+static const ImVec4 C_NONE        = {0.000f, 0.000f, 0.000f, 0.0f}; /* transparent */
+
+static void apply_theme(void) {
+    ImGuiStyle &s = ImGui::GetStyle();
+    ImVec4     *c = s.Colors;
+
+    s.WindowRounding    = 0.0f;
+    s.ChildRounding     = 0.0f;
+    s.FrameRounding     = 0.0f;
+    s.PopupRounding     = 0.0f;
+    s.ScrollbarRounding = 2.0f;
+    s.GrabRounding      = 2.0f;
+    s.TabRounding       = 0.0f;
+    s.WindowBorderSize  = 1.0f;
+    s.ChildBorderSize   = 0.0f;
+    s.PopupBorderSize   = 1.0f;
+    s.FrameBorderSize   = 0.0f;
+
+    c[ImGuiCol_Text]                      = C_TEXT;
+    c[ImGuiCol_TextDisabled]              = {C_TEXT.x * 0.4f, C_TEXT.y * 0.4f, C_TEXT.z * 0.4f, 1.0f};
+    c[ImGuiCol_WindowBg]                  = C_PANEL;
+    c[ImGuiCol_ChildBg]                   = C_BG;
+    c[ImGuiCol_PopupBg]                   = C_PANEL;
+    c[ImGuiCol_Border]                    = C_CYAN_DIM;
+    c[ImGuiCol_BorderShadow]              = C_NONE;
+    c[ImGuiCol_FrameBg]                   = C_BG;
+    c[ImGuiCol_FrameBgHovered]            = {C_CYAN_DIM.x, C_CYAN_DIM.y, C_CYAN_DIM.z, 0.4f};
+    c[ImGuiCol_FrameBgActive]             = {C_CYAN_DIM.x, C_CYAN_DIM.y, C_CYAN_DIM.z, 0.7f};
+    c[ImGuiCol_TitleBg]                   = C_BG;
+    c[ImGuiCol_TitleBgActive]             = C_PANEL;
+    c[ImGuiCol_TitleBgCollapsed]          = C_BG;
+    c[ImGuiCol_MenuBarBg]                 = C_BG;
+    c[ImGuiCol_ScrollbarBg]               = C_BG;
+    c[ImGuiCol_ScrollbarGrab]             = C_CYAN_DIM;
+    c[ImGuiCol_ScrollbarGrabHovered]      = C_CYAN;
+    c[ImGuiCol_ScrollbarGrabActive]       = C_CYAN;
+    c[ImGuiCol_CheckMark]                 = C_CYAN;
+    c[ImGuiCol_CheckboxSelectedBg]        = {C_CYAN.x, C_CYAN.y, C_CYAN.z, 0.3f};
+    c[ImGuiCol_SliderGrab]                = C_CYAN_DIM;
+    c[ImGuiCol_SliderGrabActive]          = C_CYAN;
+    c[ImGuiCol_Button]                    = C_MAGENTA_DIM;
+    c[ImGuiCol_ButtonHovered]             = C_MAGENTA;
+    c[ImGuiCol_ButtonActive]              = C_MAGENTA;
+    c[ImGuiCol_Header]                    = C_PANEL;
+    c[ImGuiCol_HeaderHovered]             = {C_CYAN_DIM.x, C_CYAN_DIM.y, C_CYAN_DIM.z, 0.5f};
+    c[ImGuiCol_HeaderActive]              = C_CYAN_DIM;
+    c[ImGuiCol_Separator]                 = C_CYAN_DIM;
+    c[ImGuiCol_SeparatorHovered]          = C_CYAN;
+    c[ImGuiCol_SeparatorActive]           = C_CYAN;
+    c[ImGuiCol_ResizeGrip]                = {C_MAGENTA_DIM.x, C_MAGENTA_DIM.y, C_MAGENTA_DIM.z, 0.4f};
+    c[ImGuiCol_ResizeGripHovered]         = C_MAGENTA;
+    c[ImGuiCol_ResizeGripActive]          = C_MAGENTA;
+    c[ImGuiCol_InputTextCursor]           = C_CYAN;
+    c[ImGuiCol_Tab]                       = C_BG;
+    c[ImGuiCol_TabHovered]                = C_CYAN_DIM;
+    c[ImGuiCol_TabSelected]               = C_PANEL;
+    c[ImGuiCol_TabSelectedOverline]       = C_CYAN;
+    c[ImGuiCol_TabDimmed]                 = C_BG;
+    c[ImGuiCol_TabDimmedSelected]         = {C_PANEL.x, C_PANEL.y, C_PANEL.z, 0.7f};
+    c[ImGuiCol_TabDimmedSelectedOverline] = C_NONE;
+    c[ImGuiCol_DockingPreview]            = {C_CYAN.x, C_CYAN.y, C_CYAN.z, 0.3f};
+    c[ImGuiCol_DockingEmptyBg]            = C_BG;
+    c[ImGuiCol_PlotLines]                 = C_CYAN;
+    c[ImGuiCol_PlotLinesHovered]          = C_CYAN;
+    c[ImGuiCol_PlotHistogram]             = C_CYAN_DIM;
+    c[ImGuiCol_PlotHistogramHovered]      = C_CYAN;
+    c[ImGuiCol_TableHeaderBg]             = C_PANEL;
+    c[ImGuiCol_TableBorderStrong]         = C_CYAN_DIM;
+    c[ImGuiCol_TableBorderLight]          = {C_CYAN_DIM.x, C_CYAN_DIM.y, C_CYAN_DIM.z, 0.3f};
+    c[ImGuiCol_TableRowBg]                = C_NONE;
+    c[ImGuiCol_TableRowBgAlt]             = {C_PANEL.x, C_PANEL.y, C_PANEL.z, 0.5f};
+    c[ImGuiCol_TextLink]                  = C_CYAN;
+    c[ImGuiCol_TextSelectedBg]            = {C_MAGENTA_DIM.x, C_MAGENTA_DIM.y, C_MAGENTA_DIM.z, 0.5f};
+    c[ImGuiCol_TreeLines]                 = C_CYAN_DIM;
+    c[ImGuiCol_DragDropTarget]            = C_CYAN;
+    c[ImGuiCol_DragDropTargetBg]          = {C_CYAN.x, C_CYAN.y, C_CYAN.z, 0.15f};
+    c[ImGuiCol_UnsavedMarker]             = C_CYAN;
+    c[ImGuiCol_NavCursor]                 = C_CYAN;
+    c[ImGuiCol_NavWindowingHighlight]     = C_CYAN;
+    c[ImGuiCol_NavWindowingDimBg]         = {0.0f, 0.0f, 0.0f, 0.6f};
+    c[ImGuiCol_ModalWindowDimBg]          = {0.0f, 0.0f, 0.0f, 0.6f};
+}
+
 struct Ui {
     GLFWwindow *window;
 };
@@ -161,6 +256,7 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
     cfg.FontDataOwnedByAtlas = false;
     io.Fonts->AddFontFromMemoryTTF(bold_data, (int)bold_size, font_size, &cfg);
 
+    apply_theme();
     ImGui::GetStyle().ScaleAllSizes(scale);
 
     Ui *ui = static_cast<Ui *>(arena_alloc(a, sizeof(Ui), alignof(Ui)));
@@ -196,7 +292,7 @@ bool ui_frame(Ui *ui) {
     int fb_w, fb_h;
     glfwGetFramebufferSize(ui->window, &fb_w, &fb_h);
     glViewport(0, 0, fb_w, fb_h);
-    glClearColor(0.05f, 0.05f, 0.07f, 1.0f);
+    glClearColor(C_BG.x, C_BG.y, C_BG.z, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
