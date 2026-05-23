@@ -149,6 +149,9 @@ $(BUILD)/app_main.o: $(SRC)/main.c | $(BUILD)
 $(BUILD)/app_app.o: $(SRC)/app/app.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
+$(BUILD)/app_form.o: $(SRC)/app/app_form.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
 $(BUILD)/app_arena.o: $(SRC)/arena.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
@@ -158,12 +161,23 @@ $(BUILD)/app_lexicon.o: $(SRC)/lexicon.c | $(BUILD)
 $(BUILD)/app_framestats.o: $(SRC)/framestats.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
-APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_app.o $(BUILD)/app_arena.o \
-            $(BUILD)/app_lexicon.o $(BUILD)/app_framestats.o
+$(BUILD)/app_spsc_ring.o: $(SRC)/spsc_ring.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
-$(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a
+APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_app.o $(BUILD)/app_form.o \
+            $(BUILD)/app_arena.o $(BUILD)/app_lexicon.o \
+            $(BUILD)/app_framestats.o $(BUILD)/app_spsc_ring.o
+
+$(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a \
+                  $(BUILD)/libsession.a $(BUILD)/libssh.a \
+                  $(BUILD)/libconnstate.a $(BUILD)/libstore.a \
+                  $(BUILD)/liblibssh2.a
 	$(CXX) -o $@ $(APP_OBJS) \
-	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
+	    $(BUILD)/libui.a $(BUILD)/libglfw.a \
+	    $(BUILD)/libsession.a $(BUILD)/libssh.a \
+	    $(BUILD)/libconnstate.a $(BUILD)/libstore.a \
+	    $(BUILD)/liblibssh2.a \
+	    $(OPENSSL_LIBS) $(PLATFORM_LIBS)
 
 # ── ssh library (our libssh2 wrapper) ────────────────────────────────
 $(BUILD)/ssh/%.o: $(SRC)/ssh/%.c | $(BUILD)/ssh
@@ -223,6 +237,9 @@ $(BUILD)/session_smoke: tools/session_smoke.c $(BUILD)/libsession.a \
 	    $(BUILD)/liblibssh2.a $(OPENSSL_LIBS) -lpthread -lm
 
 # ── Tests ─────────────────────────────────────────────────────────────
+$(BUILD)/app_test: $(TESTS)/app_test.c $(BUILD)/app_form.o | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/app_test.c $(BUILD)/app_form.o
+
 $(BUILD)/connstate_test: $(TESTS)/connstate_test.c $(BUILD)/libconnstate.a \
                          $(SRC)/lexicon.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/connstate_test.c \
@@ -264,9 +281,10 @@ $(BUILD)/ui_test: $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
 	    $(BUILD)/ui_lexicon.o $(BUILD)/ui_framestats.o \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
-test: all $(BUILD)/connstate_test $(BUILD)/spsc_ring_test $(BUILD)/arena_test \
-      $(BUILD)/lexicon_test $(BUILD)/framestats_test $(BUILD)/ui_test \
-      $(BUILD)/store_test
+test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
+      $(BUILD)/arena_test $(BUILD)/lexicon_test $(BUILD)/framestats_test \
+      $(BUILD)/ui_test $(BUILD)/store_test
+	./$(BUILD)/app_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
 	./$(BUILD)/arena_test

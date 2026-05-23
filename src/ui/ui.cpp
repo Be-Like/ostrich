@@ -16,6 +16,7 @@
 #include <GL/gl.h>
 #endif
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -29,12 +30,12 @@ static const ImVec4 C_CYAN_DIM    = {0.055f, 0.353f, 0.388f, 1.0f}; /* #0e5a63 *
 static const ImVec4 C_MAGENTA_DIM = {0.431f, 0.078f, 0.341f, 1.0f}; /* #6e1457 */
 static const ImVec4 C_CYAN        = {0.000f, 0.941f, 1.000f, 1.0f}; /* #00f0ff */
 static const ImVec4 C_MAGENTA     = {1.000f, 0.169f, 0.839f, 1.0f}; /* #ff2bd6 */
-/* semantic — defined, reserved for meaning, unused as chrome */
-[[maybe_unused]] static const ImVec4 C_OK   = {0.098f, 1.000f, 0.478f, 1.0f}; /* #19ff7a */
-[[maybe_unused]] static const ImVec4 C_FAIL = {1.000f, 0.231f, 0.314f, 1.0f}; /* #ff3b50 */
-[[maybe_unused]] static const ImVec4 C_BUSY = {1.000f, 0.690f, 0.000f, 1.0f}; /* #ffb000 */
-static const ImVec4 C_TEXT        = {0.784f, 0.816f, 0.847f, 1.0f}; /* #c8d0d8 */
-static const ImVec4 C_NONE        = {0.000f, 0.000f, 0.000f, 0.0f}; /* transparent */
+/* semantic — defined, reserved for meaning */
+static const ImVec4 C_OK   = {0.098f, 1.000f, 0.478f, 1.0f}; /* #19ff7a */
+static const ImVec4 C_FAIL = {1.000f, 0.231f, 0.314f, 1.0f}; /* #ff3b50 */
+static const ImVec4 C_BUSY = {1.000f, 0.690f, 0.000f, 1.0f}; /* #ffb000 */
+static const ImVec4 C_TEXT = {0.784f, 0.816f, 0.847f, 1.0f}; /* #c8d0d8 */
+static const ImVec4 C_NONE = {0.000f, 0.000f, 0.000f, 0.0f}; /* transparent */
 
 static void apply_theme(void) {
     ImGuiStyle &s = ImGui::GetStyle();
@@ -121,6 +122,8 @@ struct Ui {
     GLFWwindow *window;
     FrameStats  fs;
     double      last_time;
+    double      online_since; /* glfwGetTime() when phase last became ONLINE; 0 = not online */
+    ConnPhase   prev_phase;
 };
 
 static bool has_display(void) {
@@ -192,6 +195,165 @@ static void draw_overlay(void) {
     dl->AddRectFilledMultiColor({0.0f, h - vh}, {w, h}, clear, clear, edge, edge);   /* bottom */
 }
 
+/* ── BREACH overlay ─────────────────────────────────────────────────── */
+static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
+                                UiIntents *out) {
+    const ImGuiIO &io        = ImGui::GetIO();
+    const float    cx        = io.DisplaySize.x * 0.5f;
+    const float    cy        = io.DisplaySize.y * 0.5f;
+    bool           connecting = (view->phase == CONN_CONNECTING ||
+                                 view->phase == CONN_AWAITING_HOSTKEY);
+
+    ImGui::SetNextWindowPos({cx, cy}, ImGuiCond_Always, {0.5f, 0.5f});
+    ImGui::SetNextWindowSize({460.0f, 0.0f}, ImGuiCond_Always);
+    ImGui::PushStyleColor(ImGuiCol_Border, C_CYAN);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
+    ImGui::Begin("##breach_overlay", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+
+    bool first_show = ImGui::IsWindowAppearing();
+
+    /* Header */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN);
+    ImGui::TextUnformatted(lex(LEX_CONN_UPLINK));
+    ImGui::PopStyleColor();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    /* Form fields */
+    ImGuiInputTextFlags ro = connecting ? ImGuiInputTextFlags_ReadOnly : 0;
+    const float         lw = 60.0f; /* label column width */
+
+    /* HOST */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_CONN_FIELD_HOST));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(-1.0f);
+    if (first_show && !connecting) ImGui::SetKeyboardFocusHere();
+    bool host_enter = ImGui::InputText("##host", form->host, sizeof(form->host),
+                                       ro | ImGuiInputTextFlags_EnterReturnsTrue);
+
+    /* PORT */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_CONN_FIELD_PORT));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(90.0f);
+    bool port_enter =
+        ImGui::InputText("##port", form->port, sizeof(form->port),
+                         ro | ImGuiInputTextFlags_EnterReturnsTrue |
+                             ImGuiInputTextFlags_CharsDecimal);
+
+    /* USER */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_CONN_FIELD_USER));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(-1.0f);
+    bool user_enter = ImGui::InputText("##user", form->user, sizeof(form->user),
+                                       ro | ImGuiInputTextFlags_EnterReturnsTrue);
+
+    /* AUTH (SSH-AGENT only in Task 9; Task 12 adds toggle) */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_CONN_FIELD_AUTH));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::PushStyleColor(ImGuiCol_Text, C_TEXT);
+    ImGui::TextUnformatted(lex(LEX_CONN_AUTH_AGENT));
+    ImGui::PopStyleColor();
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    /* Status line: phase message or failure reason */
+    if (connecting) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
+        ImGui::TextUnformatted(lex(LEX_CONN_BREACHING));
+        ImGui::PopStyleColor();
+    } else if (view->reason && view->reason[0]) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_MAGENTA);
+        ImGui::Text("%s %s", lex(LEX_VOICE_PREFIX), view->reason);
+        ImGui::PopStyleColor();
+    } else {
+        ImGui::TextUnformatted(" "); /* placeholder keeps height stable */
+    }
+
+    ImGui::Spacing();
+
+    /* Action button */
+    if (connecting) {
+        if (ImGui::Button(lex(LEX_CONN_ABORT)))
+            out->abort = true;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+            out->abort = true;
+    } else {
+        bool valid = (form->host[0] != '\0' && form->user[0] != '\0');
+        bool enter = host_enter || port_enter || user_enter;
+
+        if (!valid) ImGui::BeginDisabled();
+        if (ImGui::Button(lex(LEX_CONN_BREACH)) || (valid && enter))
+            out->breach = true;
+        if (!valid) ImGui::EndDisabled();
+    }
+
+    ImGui::End();
+}
+
+/* ── connection bar ─────────────────────────────────────────────────── */
+static void draw_conn_bar(const UiConnView *view, double online_since) {
+    const ImGuiIO &io     = ImGui::GetIO();
+    const float    avail_w = io.DisplaySize.x;
+    const float    pad    = ImGui::GetStyle().FramePadding.y;
+    const float    bar_h  = ImGui::GetTextLineHeight() + pad * 2.0f;
+
+    ImGui::SetNextWindowPos({0.0f, 0.0f});
+    ImGui::SetNextWindowSize({avail_w, bar_h});
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, C_BG);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{pad * 2.0f, pad});
+    ImGui::Begin("##conn_bar", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoBringToFrontOnFocus |
+                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+
+    /* user@host */
+    if (view->user_host && view->user_host[0]) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_TEXT);
+        ImGui::TextUnformatted(view->user_host);
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+    }
+
+    /* Grant stamp fades after 2.5 s; then steady * ONLINE with slow pulse */
+    double now     = glfwGetTime();
+    double elapsed = (online_since > 0.0) ? now - online_since : 9999.0;
+
+    if (elapsed < 2.5) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_OK);
+        ImGui::TextUnformatted(lex(LEX_CONN_ACCESS_GRANTED));
+        ImGui::PopStyleColor();
+    } else {
+        /* Pulse the * dot between ~40 % and 100 % brightness */
+        float pulse = 0.7f + 0.3f * (float)sin(now * 1.8);
+        ImVec4 c_pulse = {C_OK.x, C_OK.y, C_OK.z, pulse};
+        ImGui::PushStyleColor(ImGuiCol_Text, c_pulse);
+        ImGui::TextUnformatted(lex(LEX_CONN_ONLINE));
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::End();
+}
+
 static void teardown(GLFWwindow *window) {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
@@ -233,6 +395,7 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
 
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
         ImGui::DestroyContext();
@@ -292,15 +455,15 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
         return UI_ERR_OOM;
     }
     frame_stats_init(&ui->fs);
-    ui->last_time = glfwGetTime();
-    ui->window = window;
+    ui->last_time    = glfwGetTime();
+    ui->online_since = 0.0;
+    ui->prev_phase   = CONN_DISCONNECTED;
+    ui->window       = window;
     *out = ui;
     return UI_OK;
 }
 
 bool ui_frame(Ui *ui, const UiConnView *view, ConnForm *form, UiIntents *out) {
-    (void)view;
-    (void)form;
     *out = {};
     out->select_host = -1;
     double now = glfwGetTime();
@@ -317,6 +480,13 @@ bool ui_frame(Ui *ui, const UiConnView *view, ConnForm *form, UiIntents *out) {
         (glfwGetKey(ui->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
          glfwGetKey(ui->window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS))
         return false;
+
+    /* Track ONLINE transition for the grant stamp timer. */
+    if (view->phase == CONN_ONLINE && ui->prev_phase != CONN_ONLINE)
+        ui->online_since = glfwGetTime();
+    if (view->phase != CONN_ONLINE)
+        ui->online_since = 0.0;
+    ui->prev_phase = view->phase;
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -366,6 +536,20 @@ bool ui_frame(Ui *ui, const UiConnView *view, ConnForm *form, UiIntents *out) {
 
         ImGui::End();
     }
+
+    /* ── connection bar (ONLINE / REACQUIRING / SEVERED) ────────────── */
+    bool bar_phase = (view->phase == CONN_ONLINE ||
+                      view->phase == CONN_REACQUIRING ||
+                      view->phase == CONN_SEVERED);
+    if (bar_phase)
+        draw_conn_bar(view, ui->online_since);
+
+    /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY) ─ */
+    bool overlay_phase = (view->phase == CONN_DISCONNECTED ||
+                          view->phase == CONN_CONNECTING ||
+                          view->phase == CONN_AWAITING_HOSTKEY);
+    if (overlay_phase)
+        draw_breach_overlay(view, form, out);
 
     /* ── diagnostics footer ──────────────────────────────────────────── */
     {

@@ -430,7 +430,7 @@ and lifetimes"). No `session`/`store`/`ssh` calls yet.
 
 ### Task 9 - First light (agent connect, end to end)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 7, Task 8
 - **User stories covered**: US-1, US-2, US-3, US-4, US-5 (agent),
   US-6, US-11, US-14, US-15, US-16, US-17, US-19, US-22, US-23,
@@ -473,21 +473,21 @@ ostrich never auto-connects (US-11).
 
 #### Acceptance criteria
 
-- [ ] On launch the modal BREACH overlay paints instantly over the
+- [x] On launch the modal BREACH overlay paints instantly over the
       resting wordmark with HOST/PORT/USER + SSH-AGENT, fully
       keyboard-drivable; nothing connects until BREACH/Enter.
-- [ ] A BREACH to a Mac already in `~/.ssh/known_hosts`, via ssh-
+- [x] A BREACH to a Mac already in `~/.ssh/known_hosts`, via ssh-
       agent, shows `BREACHING PERIMETER…` for the real duration,
       passes the `true` probe, and lands `* ONLINE` in the bar with
       the overlay dismissed instantly; the window stays smooth and
       `■ ABORT` cancels a hung attempt.
-- [ ] `* ONLINE` only appears after a clean exec-channel probe
+- [x] `* ONLINE` only appears after a clean exec-channel probe
       (US-23) and the `* ONLINE` dot pulses slowly.
-- [ ] Distinct failures (host unreachable / port closed / timeout /
+- [x] Distinct failures (host unreachable / port closed / timeout /
       `ACCESS DENIED` / `NO FOOTHOLD`, plus a host-key reason for an
       unknown/mismatched key) render in the `>` voice in the overlay
       with entered details preserved.
-- [ ] All connection copy is sourced from `lexicon`; palette/voice
+- [x] All connection copy is sourced from `lexicon`; palette/voice
       discipline holds; `make test` stays green (the headless
       `ui_test` still skips without a display).
 

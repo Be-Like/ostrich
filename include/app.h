@@ -23,7 +23,10 @@ typedef enum {
     APP_ERR
 } AppStatus;
 
-/* Stand up the app: init UI, zero the ConnForm. */
+/* Pure form conversion — no I/O or threads; testable without a session. */
+void app_form_to_ssh_config(const ConnForm *form, SshConfig *cfg);
+
+/* Stand up the app: init UI, open the session, zero the ConnForm. */
 AppStatus app_init(Arena *a, AppOptions opts, App **out);
 
 /* Pump one frame: build the view-model, call ui_frame, handle intents.
