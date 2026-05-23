@@ -22,10 +22,14 @@ $(BUILD)/arena_test: $(TESTS)/arena_test.c $(SRC)/arena.c | $(BUILD)
 $(BUILD)/lexicon_test: $(TESTS)/lexicon_test.c $(SRC)/lexicon.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
 
-test: all $(BUILD)/smoke_test $(BUILD)/arena_test $(BUILD)/lexicon_test
+$(BUILD)/framestats_test: $(TESTS)/framestats_test.c $(SRC)/framestats.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
+
+test: all $(BUILD)/smoke_test $(BUILD)/arena_test $(BUILD)/lexicon_test $(BUILD)/framestats_test
 	./$(BUILD)/smoke_test
 	./$(BUILD)/arena_test
 	./$(BUILD)/lexicon_test
+	./$(BUILD)/framestats_test
 
 $(BUILD):
 	mkdir -p $(BUILD)

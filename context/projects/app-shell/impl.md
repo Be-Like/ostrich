@@ -132,7 +132,7 @@ houses it (ARD "Theme and lexicon governance"). Adds
 
 ### Task 3 - Framestats module
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: backs US-19 (the footer's live
   frame-rate readout) and US-25 (resting-view centering that
@@ -159,12 +159,12 @@ tier is complete; the UI smoke tier arrives in Task 4.
 
 #### Acceptance criteria
 
-- [ ] `include/framestats.h` matches the ARD signatures.
-- [ ] `frame_stats_update` returns a sane positive FPS for a
+- [x] `include/framestats.h` matches the ARD signatures.
+- [x] `frame_stats_update` returns a sane positive FPS for a
       stream of plausible deltas and smooths jitter.
-- [ ] `center_offset` returns `(avail - content)/2` and clamps
+- [x] `center_offset` returns `(avail - content)/2` and clamps
       to `0` when `content > avail`.
-- [ ] `tests/framestats_test.c` asserts the above; `make test`
+- [x] `tests/framestats_test.c` asserts the above; `make test`
       runs all three pure-tier tests and they pass.
 
 ### Task 4 - Build integration + UI seam skeleton
