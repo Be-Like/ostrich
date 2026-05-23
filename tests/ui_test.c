@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "arena.h"
 #include "ui.h"
@@ -34,10 +35,20 @@ int main(void) {
 
     assert(ui != NULL);
 
-    /* Run a few frames to exercise the frame loop. */
+    /* State-based test: a resting (zeroed) view produces no intents. */
+    UiConnView view    = {0};
+    ConnForm   form    = {0};
+    form.selected_known_host = -1;
+
     for (int i = 0; i < 3; i++) {
-        int keep_going = ui_frame(ui);
+        UiIntents intents = {0};
+        int keep_going = ui_frame(ui, &view, &form, &intents);
         (void)keep_going;
+        /* Resting view emits no action intents. */
+        assert(!intents.breach);
+        assert(!intents.abort);
+        assert(!intents.close);
+        assert(intents.select_host == -1);
     }
 
     ui_shutdown(ui);

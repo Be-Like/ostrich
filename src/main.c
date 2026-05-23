@@ -1,16 +1,15 @@
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "arena.h"
-#include "ui.h"
+#include "app.h"
 
 #define APP_ARENA_BYTES (8 * 1024 * 1024)
 
 int main(void) {
-    Arena *app = arena_create(APP_ARENA_BYTES);
-    if (!app) return EXIT_FAILURE;
+    Arena *a = arena_create(APP_ARENA_BYTES);
+    if (!a) return EXIT_FAILURE;
 
-    UiOptions opts = {
+    AppOptions opts = {
         .title    = "ostrich",
         .width    = 1280,
         .height   = 800,
@@ -18,17 +17,15 @@ int main(void) {
         .headless = false,
     };
 
-    Ui *ui = NULL;
-    UiStatus st = ui_init(app, opts, &ui);
-    if (st != UI_OK) {
-        fprintf(stderr, "ostrich: %s\n", ui_status_str(st));
-        arena_destroy(app);
+    App *app = NULL;
+    if (app_init(a, opts, &app) != APP_OK) {
+        arena_destroy(a);
         return EXIT_FAILURE;
     }
 
-    while (ui_frame(ui)) { }
+    while (app_tick(app)) { }
 
-    ui_shutdown(ui);
-    arena_destroy(app);
+    app_shutdown(app);
+    arena_destroy(a);
     return EXIT_SUCCESS;
 }

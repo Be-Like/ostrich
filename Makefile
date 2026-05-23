@@ -146,6 +146,9 @@ $(BUILD)/libui.a: $(UI_OBJS) $(IMGUI_OBJS)
 $(BUILD)/app_main.o: $(SRC)/main.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
+$(BUILD)/app_app.o: $(SRC)/app/app.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
 $(BUILD)/app_arena.o: $(SRC)/arena.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
@@ -155,7 +158,7 @@ $(BUILD)/app_lexicon.o: $(SRC)/lexicon.c | $(BUILD)
 $(BUILD)/app_framestats.o: $(SRC)/framestats.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
-APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_arena.o \
+APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_app.o $(BUILD)/app_arena.o \
             $(BUILD)/app_lexicon.o $(BUILD)/app_framestats.o
 
 $(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a

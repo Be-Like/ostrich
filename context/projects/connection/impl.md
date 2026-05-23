@@ -384,7 +384,7 @@ is the host-gated dev harness, excluded from `make test`.
 
 ### Task 8 - UI seam + app composition root
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 4, Task 5, Task 6
 - **User stories covered**: none directly user-visible — the enabling
   refactor for US-1/US-28 (overlay + bar) and the app-glue data flow;
@@ -417,15 +417,15 @@ and lifetimes"). No `session`/`store`/`ssh` calls yet.
 
 #### Acceptance criteria
 
-- [ ] `include/ui.h` carries the new `ui_frame` signature +
+- [x] `include/ui.h` carries the new `ui_frame` signature +
       `UiConnView`/`ConnForm`/`UiIntents`, pure C, no C++ types.
-- [ ] `src/main.c` is reduced to the app arena +
+- [x] `src/main.c` is reduced to the app arena +
       `app_init`/`app_tick`/`app_shutdown`; orchestration lives in
       `src/app/*.c`, which touches no ImGui directly.
-- [ ] `tests/ui_test.c` compiles against the new signature (zeroed
+- [x] `tests/ui_test.c` compiles against the new signature (zeroed
       view/form, ignored intents) and still skips with
       `SKIP: no display`.
-- [ ] Running `./build/ostrich` is visually identical to before (same
+- [x] Running `./build/ostrich` is visually identical to before (same
       resting shell + footer); `make`/`make test` stay green.
 
 ### Task 9 - First light (agent connect, end to end)

@@ -298,7 +298,11 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
     return UI_OK;
 }
 
-bool ui_frame(Ui *ui) {
+bool ui_frame(Ui *ui, const UiConnView *view, ConnForm *form, UiIntents *out) {
+    (void)view;
+    (void)form;
+    *out = {};
+    out->select_host = -1;
     double now = glfwGetTime();
     double dt  = now - ui->last_time;
     ui->last_time = now;
