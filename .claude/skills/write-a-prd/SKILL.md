@@ -5,7 +5,9 @@ description: Create a PRD through user interview, codebase exploration and then 
 
 This skill will be invoked when the user wants to create a PRD. You may skip steps if you don't consider them necessary.
 
-1. The projects context should be in the conversation. If it isn't, read context/projects/README.md
+1. The projects context should be in the conversation. If it isn't, read context/projects/README.md.
+
+1a. The projects design goals should be in the conversation. If it isn't, read context/design.md.
 
 2. Ask the user for a long, detailed description of the problem they want to solve and any potential ideas for solutions.
 

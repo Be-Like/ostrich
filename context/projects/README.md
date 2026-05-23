@@ -20,3 +20,4 @@ and their naming conventions are as follows.
 | Folder | Description |
 | ------ | ----------- |
 | project-setup | Bootstrap: plain Make build, hello-world C entry point, a `make test` smoke harness, and the project README. |
+| app-shell | The themed GUI application entry point: a single GLFW + OpenGL 3 + Dear ImGui (docking) window, ~60 FPS render loop, full cyberpunk theme, centered ASCII wordmark, diagnostics footer, and clean shutdown. Empty docking host, no panels yet. |
