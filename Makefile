@@ -83,9 +83,15 @@ LIBSSH2_CFLAGS := \
     -I$(LIBSSH2_DIR)/include -I$(LIBSSH2_DIR)/src \
     $(LOCAL_CFLAGS) $(OPENSSL_CFLAGS)
 
-.PHONY: all clean test ssh_version_smoke
+# libssh (our wrapper over libssh2)
+SSH_SRC  := ssh.c
+SSH_OBJS := $(patsubst %.c,$(BUILD)/ssh/%.o,$(SSH_SRC))
+SSH_CFLAGS := -I$(LIBSSH2_DIR)/include $(LOCAL_CFLAGS) $(OPENSSL_CFLAGS)
 
-all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a $(BUILD)/liblibssh2.a
+.PHONY: all clean test ssh_version_smoke ssh_smoke
+
+all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
+     $(BUILD)/liblibssh2.a $(BUILD)/libssh.a
 
 # ── GLFW ──────────────────────────────────────────────────────────────
 $(BUILD)/glfw/%.o: $(GLFW_DIR)/src/%.c | $(BUILD)/glfw
@@ -143,7 +149,14 @@ $(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a
 	$(CXX) -o $@ $(APP_OBJS) \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
-# ── Dev smoke (not part of make test) ────────────────────────────────
+# ── ssh library (our libssh2 wrapper) ────────────────────────────────
+$(BUILD)/ssh/%.o: $(SRC)/ssh/%.c | $(BUILD)/ssh
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) -c $< -o $@
+
+$(BUILD)/libssh.a: $(SSH_OBJS)
+	ar rcs $@ $^
+
+# ── Dev smokes (not part of make test) ───────────────────────────────
 ssh_version_smoke: $(BUILD)/ssh_version_smoke
 	./$(BUILD)/ssh_version_smoke
 
@@ -151,6 +164,14 @@ $(BUILD)/ssh_version_smoke: tools/ssh_version_smoke.c $(BUILD)/liblibssh2.a | $(
 	$(CC) $(CFLAGS) $(LOCAL_CFLAGS) $(OPENSSL_CFLAGS) \
 	    -I$(LIBSSH2_DIR)/include \
 	    -o $@ $< $(BUILD)/liblibssh2.a $(OPENSSL_LIBS)
+
+ssh_smoke: $(BUILD)/ssh_smoke
+
+$(BUILD)/ssh_smoke: tools/ssh_smoke.c $(BUILD)/libssh.a $(BUILD)/liblibssh2.a \
+                    $(SRC)/arena.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
+	    -o $@ tools/ssh_smoke.c $(SRC)/arena.c \
+	    $(BUILD)/libssh.a $(BUILD)/liblibssh2.a $(OPENSSL_LIBS)
 
 # ── Tests ─────────────────────────────────────────────────────────────
 $(BUILD)/spsc_ring_test: $(TESTS)/spsc_ring_test.c $(SRC)/spsc_ring.c | $(BUILD)
@@ -210,6 +231,9 @@ $(BUILD)/ui: | $(BUILD)
 
 $(BUILD)/libssh2: | $(BUILD)
 	mkdir -p $(BUILD)/libssh2
+
+$(BUILD)/ssh: | $(BUILD)
+	mkdir -p $(BUILD)/ssh
 
 clean:
 	rm -rf $(BUILD)

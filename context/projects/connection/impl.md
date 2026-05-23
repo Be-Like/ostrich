@@ -196,7 +196,7 @@ terminator and the out-of-range placeholder behavior. Extend
 
 ### Task 4 - ssh library + smoke
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 1
 - **User stories covered**: US-44 (multi-channel-ready —
   `ssh_channel_open` exists), US-45/US-46 (real SSH in the binary,
@@ -232,17 +232,17 @@ dedicated Make target and excluded from `make test`.
 
 #### Acceptance criteria
 
-- [ ] `include/ssh.h` matches the ARD contract and is pure C; all
+- [x] `include/ssh.h` matches the ARD contract and is pure C; all
       libssh2 use is confined to `src/ssh/*.c`.
-- [ ] `make` builds `build/libssh.a` and links it with
+- [x] `make` builds `build/libssh.a` and links it with
       `liblibssh2.a`, warning-clean, honoring `CC`/`CFLAGS`.
-- [ ] `ssh_channel_open` exists and the probe path opens an exec
+- [x] `ssh_channel_open` exists and the probe path opens an exec
       channel (the multi-channel-ready seam), per ARD "The connect
       protocol".
-- [ ] `tools/ssh_smoke.c` connects to a real Mac via ssh-agent, runs
+- [x] `tools/ssh_smoke.c` connects to a real Mac via ssh-agent, runs
       the `true` probe to a clean exit, and prints the result; it is
       not part of `make test`.
-- [ ] `make test` stays green; the shipping app is unchanged (no app
+- [x] `make test` stays green; the shipping app is unchanged (no app
       code calls `ssh` yet).
 
 ### Task 5 - connstate library
