@@ -3,6 +3,10 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct Arena Arena;
 
 /* Reserve `cap` bytes up front. Returns NULL on OOM. */
@@ -17,5 +21,9 @@ void arena_reset(Arena *a);
 
 /* Release the whole arena. */
 void arena_destroy(Arena *a);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* ARENA_H */

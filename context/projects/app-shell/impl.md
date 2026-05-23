@@ -169,7 +169,7 @@ tier is complete; the UI smoke tier arrives in Task 4.
 
 ### Task 4 - Build integration + UI seam skeleton
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 1
 - **User stories covered**: US-4 (GLFW + OpenGL 3 context),
   US-5 (ImGui docking context enabled), US-9 (vsync, no CPU
@@ -236,23 +236,23 @@ other non-`OK` outcome or teardown crash fails hard. The existing
 
 #### Acceptance criteria
 
-- [ ] Build setup initializes only the `imgui` and `glfw`
+- [x] Build setup initializes only the `imgui` and `glfw`
       submodules; `libssh2` stays registered in `.gitmodules`
       but is never compiled or linked into any target.
-- [ ] `make` builds `build/libglfw.a` and `build/libui.a` from
+- [x] `make` builds `build/libglfw.a` and `build/libui.a` from
       vendored source on Linux (and the macOS path is wired);
       `CC`/`CFLAGS`/`CXX`/`CXXFLAGS` overrides are honored and
       our own code compiles warning-clean.
-- [ ] `include/ui.h` is the ARD contract, `extern "C"`, with no
+- [x] `include/ui.h` is the ARD contract, `extern "C"`, with no
       C++ types; all C++ is confined to `src/ui/*.cpp`.
-- [ ] On a display, `ui_test` runs `ui_init`(headless) →
+- [x] On a display, `ui_test` runs `ui_init`(headless) →
       `ui_frame` ×N → `ui_shutdown` returning `UI_OK` with no
       crash or leak; with no display it prints `SKIP: no display`
       and exits 0.
-- [ ] `ui_init` returns `UI_ERR_FONT` when a vendored TTF is
+- [x] `ui_init` returns `UI_ERR_FONT` when a vendored TTF is
       absent and requests a GL 3.2-core context with vsync
       enabled.
-- [ ] `make test` runs the three pure-tier tests plus `ui_test`
+- [x] `make test` runs the three pure-tier tests plus `ui_test`
       (and the still-present `smoke_test`); all pass/skip; the
       console-stub binary still ships unchanged.
 
