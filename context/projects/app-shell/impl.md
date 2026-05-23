@@ -93,7 +93,7 @@ Makefile gains a `build/arena_test` rule and runs it from
 
 ### Task 2 - Lexicon module
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: US-21 (camp copy from a single
   centralized lexicon, not scattered literals); supplies the

@@ -19,9 +19,13 @@ $(BUILD)/smoke_test: $(TESTS)/smoke_test.c | $(BUILD)
 $(BUILD)/arena_test: $(TESTS)/arena_test.c $(SRC)/arena.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
 
-test: all $(BUILD)/smoke_test $(BUILD)/arena_test
+$(BUILD)/lexicon_test: $(TESTS)/lexicon_test.c $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
+
+test: all $(BUILD)/smoke_test $(BUILD)/arena_test $(BUILD)/lexicon_test
 	./$(BUILD)/smoke_test
 	./$(BUILD)/arena_test
+	./$(BUILD)/lexicon_test
 
 $(BUILD):
 	mkdir -p $(BUILD)
