@@ -292,7 +292,7 @@ ARD "Testing".
 
 ### Task 6 - store library
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 4
 - **User stories covered**: US-40 (KNOWN HOSTS persist across
   launches), US-42 (ssh-agent stores no secret), US-43 (stored-
@@ -320,15 +320,15 @@ Black-box tested per ARD "Testing".
 
 #### Acceptance criteria
 
-- [ ] `include/store.h` matches the ARD; `store_load` takes an
+- [x] `include/store.h` matches the ARD; `store_load` takes an
       `Arena *`; errors use the status-enum + `store_status_str`
       shape.
-- [ ] `tests/store_test.c` covers serialize/deserialize round-trip,
+- [x] `tests/store_test.c` covers serialize/deserialize round-trip,
       MRU ordering, ssh-agent-stores-no-secret, opt-in passkey
       persisted, and atomic write, in a temp dir.
-- [ ] The saved file is created `0600` and the test asserts the
+- [x] The saved file is created `0600` and the test asserts the
       permission bits (US-43).
-- [ ] `make test` builds and runs `store_test`; all pass; the
+- [x] `make test` builds and runs `store_test`; all pass; the
       shipping app is unchanged.
 
 ### Task 7 - session library + smoke

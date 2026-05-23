@@ -92,10 +92,15 @@ SSH_CFLAGS := -I$(LIBSSH2_DIR)/include $(LOCAL_CFLAGS) $(OPENSSL_CFLAGS)
 CONNSTATE_SRC  := connstate.c
 CONNSTATE_OBJS := $(patsubst %.c,$(BUILD)/connstate/%.o,$(CONNSTATE_SRC))
 
+# store (saved connections)
+STORE_SRC  := store.c
+STORE_OBJS := $(patsubst %.c,$(BUILD)/store/%.o,$(STORE_SRC))
+
 .PHONY: all clean test ssh_version_smoke ssh_smoke
 
 all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
-     $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a
+     $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+     $(BUILD)/libstore.a
 
 # ── GLFW ──────────────────────────────────────────────────────────────
 $(BUILD)/glfw/%.o: $(GLFW_DIR)/src/%.c | $(BUILD)/glfw
@@ -167,6 +172,13 @@ $(BUILD)/connstate/%.o: $(SRC)/connstate/%.c | $(BUILD)/connstate
 $(BUILD)/libconnstate.a: $(CONNSTATE_OBJS)
 	ar rcs $@ $^
 
+# ── store library (saved connections) ────────────────────────────────
+$(BUILD)/store/%.o: $(SRC)/store/%.c | $(BUILD)/store
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/libstore.a: $(STORE_OBJS)
+	ar rcs $@ $^
+
 # ── Dev smokes (not part of make test) ───────────────────────────────
 ssh_version_smoke: $(BUILD)/ssh_version_smoke
 	./$(BUILD)/ssh_version_smoke
@@ -189,6 +201,11 @@ $(BUILD)/connstate_test: $(TESTS)/connstate_test.c $(BUILD)/libconnstate.a \
                          $(SRC)/lexicon.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/connstate_test.c \
 	    $(SRC)/lexicon.c $(BUILD)/libconnstate.a -lm
+
+$(BUILD)/store_test: $(TESTS)/store_test.c $(BUILD)/libstore.a \
+                     $(SRC)/arena.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/store_test.c \
+	    $(SRC)/arena.c $(BUILD)/libstore.a
 
 $(BUILD)/spsc_ring_test: $(TESTS)/spsc_ring_test.c $(SRC)/spsc_ring.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
@@ -222,13 +239,15 @@ $(BUILD)/ui_test: $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
 test: all $(BUILD)/connstate_test $(BUILD)/spsc_ring_test $(BUILD)/arena_test \
-      $(BUILD)/lexicon_test $(BUILD)/framestats_test $(BUILD)/ui_test
+      $(BUILD)/lexicon_test $(BUILD)/framestats_test $(BUILD)/ui_test \
+      $(BUILD)/store_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
 	./$(BUILD)/arena_test
 	./$(BUILD)/lexicon_test
 	./$(BUILD)/framestats_test
 	./$(BUILD)/ui_test
+	./$(BUILD)/store_test
 
 # ── Build directories ─────────────────────────────────────────────────
 $(BUILD):
@@ -254,6 +273,9 @@ $(BUILD)/ssh: | $(BUILD)
 
 $(BUILD)/connstate: | $(BUILD)
 	mkdir -p $(BUILD)/connstate
+
+$(BUILD)/store: | $(BUILD)
+	mkdir -p $(BUILD)/store
 
 clean:
 	rm -rf $(BUILD)
