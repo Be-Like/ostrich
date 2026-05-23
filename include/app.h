@@ -26,6 +26,12 @@ typedef enum {
 /* Pure form helpers — no I/O or threads; testable without a session. */
 void app_form_to_ssh_config(const ConnForm *form, SshConfig *cfg);
 
+/* Compute the overlay reason string from the current phase and last
+   SSH error.  Returns lex(LEX_CONN_SEVERED) when SEVERED, the matching
+   failure string when DISCONNECTED with a non-OK reason, and NULL
+   otherwise (no reason line to show). */
+const char *app_phase_reason(ConnPhase phase, SshStatus last_reason);
+
 /* Copy a saved Conn's fields into the mutable form (host, port, user,
    auth, passkey, remember). Does not touch selected_known_host. */
 void app_conn_to_form(const Conn *conn, ConnForm *form);

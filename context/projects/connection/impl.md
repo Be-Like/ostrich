@@ -650,7 +650,7 @@ store nothing. OS-keychain storage stays the deferred hardening
 
 ### Task 14 - Keepalive + auto-reconnect
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 9
 - **User stories covered**: US-30, US-31, US-32, US-33, US-34, US-52.
 
@@ -678,15 +678,15 @@ link requires a manual re-breach (one Enter with MRU pre-select).
 
 #### Acceptance criteria
 
-- [ ] A dropped Mac (sleep / Wi-Fi blip) is detected promptly via
+- [x] A dropped Mac (sleep / Wi-Fi blip) is detected promptly via
       keepalive and shows `REACQUIRING SIGNAL…` rather than a hang.
-- [ ] Reconnect retries run off the UI thread with backoff; a
+- [x] Reconnect retries run off the UI thread with backoff; a
       transient drop heals to `* ONLINE` automatically and the window
       stays smooth.
-- [ ] An exhausted attempt budget transitions to `LINK SEVERED`;
+- [x] An exhausted attempt budget transitions to `LINK SEVERED`;
       local state (selected connection, layout) is preserved across
       the whole drop/reconnect cycle.
-- [ ] Phase copy from `lexicon`; `make test` stays green.
+- [x] Phase copy from `lexicon`; `make test` stays green.
 
 ### Task 15 - Update / close / switch
 

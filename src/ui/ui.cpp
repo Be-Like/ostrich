@@ -454,21 +454,26 @@ static void draw_conn_bar(const UiConnView *view, double online_since) {
         ImGui::SameLine();
     }
 
-    /* Grant stamp fades after 2.5 s; then steady * ONLINE with slow pulse */
-    double now     = glfwGetTime();
-    double elapsed = (online_since > 0.0) ? now - online_since : 9999.0;
-
-    if (elapsed < 2.5) {
-        ImGui::PushStyleColor(ImGuiCol_Text, C_OK);
-        ImGui::TextUnformatted(lex(LEX_CONN_ACCESS_GRANTED));
+    if (view->phase == CONN_REACQUIRING) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
+        ImGui::TextUnformatted(lex(LEX_CONN_REACQUIRING));
         ImGui::PopStyleColor();
     } else {
-        /* Pulse the * dot between ~40 % and 100 % brightness */
-        float pulse = 0.7f + 0.3f * (float)sin(now * 1.8);
-        ImVec4 c_pulse = {C_OK.x, C_OK.y, C_OK.z, pulse};
-        ImGui::PushStyleColor(ImGuiCol_Text, c_pulse);
-        ImGui::TextUnformatted(lex(LEX_CONN_ONLINE));
-        ImGui::PopStyleColor();
+        /* CONN_ONLINE: grant stamp fades after 2.5 s, then * ONLINE pulse */
+        double now     = glfwGetTime();
+        double elapsed = (online_since > 0.0) ? now - online_since : 9999.0;
+
+        if (elapsed < 2.5) {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_OK);
+            ImGui::TextUnformatted(lex(LEX_CONN_ACCESS_GRANTED));
+            ImGui::PopStyleColor();
+        } else {
+            float  pulse   = 0.7f + 0.3f * (float)sin(now * 1.8);
+            ImVec4 c_pulse = {C_OK.x, C_OK.y, C_OK.z, pulse};
+            ImGui::PushStyleColor(ImGuiCol_Text, c_pulse);
+            ImGui::TextUnformatted(lex(LEX_CONN_ONLINE));
+            ImGui::PopStyleColor();
+        }
     }
 
     ImGui::End();
@@ -657,17 +662,18 @@ bool ui_frame(Ui *ui, const UiConnView *view, ConnForm *form, UiIntents *out) {
         ImGui::End();
     }
 
-    /* ── connection bar (ONLINE / REACQUIRING / SEVERED) ────────────── */
+    /* ── connection bar (ONLINE / REACQUIRING) ──────────────────────── */
     bool bar_phase = (view->phase == CONN_ONLINE ||
-                      view->phase == CONN_REACQUIRING ||
-                      view->phase == CONN_SEVERED);
+                      view->phase == CONN_REACQUIRING);
     if (bar_phase)
         draw_conn_bar(view, ui->online_since);
 
-    /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY) ─ */
+    /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY /
+          SEVERED — SEVERED shows reason + BREACH to re-connect) ──────── */
     bool overlay_phase = (view->phase == CONN_DISCONNECTED ||
                           view->phase == CONN_CONNECTING ||
-                          view->phase == CONN_AWAITING_HOSTKEY);
+                          view->phase == CONN_AWAITING_HOSTKEY ||
+                          view->phase == CONN_SEVERED);
     if (overlay_phase)
         draw_breach_overlay(view, form, out);
 

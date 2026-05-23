@@ -7,6 +7,8 @@
 #include "ssh.h"
 #include "store.h"
 #include "arena.h"
+#include "connstate.h"
+#include "lexicon.h"
 
 /* ── form_to_ssh_config state-based tests ─────────────────────────── */
 
@@ -392,6 +394,49 @@ static void test_conn_to_form_preserves_passkey_for_password_auth(void) {
     assert(form.auth == SSH_AUTH_PASSWORD);
 }
 
+/* ── app_phase_reason tests ──────────────────────────────────────────── */
+
+static void test_phase_reason_severed_returns_link_severed(void) {
+    const char *r = app_phase_reason(CONN_SEVERED, SSH_ERR_IO);
+    assert(r != NULL);
+    assert(strcmp(r, lex(LEX_CONN_SEVERED)) == 0);
+}
+
+static void test_phase_reason_severed_regardless_of_last_reason(void) {
+    /* SEVERED always returns LINK SEVERED, even when last_reason is SSH_OK */
+    const char *r = app_phase_reason(CONN_SEVERED, SSH_OK);
+    assert(r != NULL);
+    assert(strcmp(r, lex(LEX_CONN_SEVERED)) == 0);
+}
+
+static void test_phase_reason_disconnected_with_failure(void) {
+    const char *r = app_phase_reason(CONN_DISCONNECTED, SSH_ERR_AUTH);
+    assert(r != NULL);
+    assert(r[0] != '\0');
+    /* Must match what connstate_reason_lex maps SSH_ERR_AUTH to */
+    assert(strcmp(r, lex(connstate_reason_lex(SSH_ERR_AUTH))) == 0);
+}
+
+static void test_phase_reason_disconnected_clean_returns_null(void) {
+    const char *r = app_phase_reason(CONN_DISCONNECTED, SSH_OK);
+    assert(r == NULL);
+}
+
+static void test_phase_reason_online_returns_null(void) {
+    assert(app_phase_reason(CONN_ONLINE, SSH_OK) == NULL);
+    assert(app_phase_reason(CONN_ONLINE, SSH_ERR_IO) == NULL);
+}
+
+static void test_phase_reason_reacquiring_returns_null(void) {
+    /* REACQUIRING is shown in the bar, not via the overlay reason field */
+    assert(app_phase_reason(CONN_REACQUIRING, SSH_ERR_IO) == NULL);
+    assert(app_phase_reason(CONN_REACQUIRING, SSH_OK) == NULL);
+}
+
+static void test_phase_reason_connecting_returns_null(void) {
+    assert(app_phase_reason(CONN_CONNECTING, SSH_OK) == NULL);
+}
+
 int main(void) {
     test_basic_agent_form();
     test_empty_port_defaults_to_22();
@@ -414,6 +459,14 @@ int main(void) {
     test_save_password_not_persisted_without_remember();
     test_save_remember_disabled_clears_stored_passkey();
     test_save_oom_returns_minus1();
+
+    test_phase_reason_severed_returns_link_severed();
+    test_phase_reason_severed_regardless_of_last_reason();
+    test_phase_reason_disconnected_with_failure();
+    test_phase_reason_disconnected_clean_returns_null();
+    test_phase_reason_online_returns_null();
+    test_phase_reason_reacquiring_returns_null();
+    test_phase_reason_connecting_returns_null();
 
     printf("app_test: ok\n");
     return 0;

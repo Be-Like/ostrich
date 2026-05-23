@@ -101,8 +101,7 @@ bool app_tick(App *app) {
     view.show_mismatch       = app->hostkey_mismatch;
     view.known_hosts         = app->known_hosts.items;
     view.known_count         = app->known_hosts.count;
-    if (app->phase == CONN_DISCONNECTED && app->last_reason != SSH_OK)
-        view.reason = lex(connstate_reason_lex(app->last_reason));
+    view.reason = app_phase_reason(app->phase, app->last_reason);
 
     UiIntents intents = {0};
     intents.select_host = -1;

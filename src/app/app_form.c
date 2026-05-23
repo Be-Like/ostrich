@@ -3,6 +3,8 @@
 #include "ssh.h"
 #include "store.h"
 #include "arena.h"
+#include "connstate.h"
+#include "lexicon.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -61,4 +63,12 @@ int app_save_to_list(ConnList *list, const ConnForm *form,
     list->count         = new_idx + 1;
     list->mru_index     = new_idx;
     return new_idx;
+}
+
+const char *app_phase_reason(ConnPhase phase, SshStatus last_reason) {
+    if (phase == CONN_SEVERED)
+        return lex(LEX_CONN_SEVERED);
+    if (phase == CONN_DISCONNECTED && last_reason != SSH_OK)
+        return lex(connstate_reason_lex(last_reason));
+    return NULL;
 }
