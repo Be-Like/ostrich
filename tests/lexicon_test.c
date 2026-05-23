@@ -74,6 +74,90 @@ static int test_out_of_range_stable(void) {
     return 0;
 }
 
+static int test_conn_overlay_keys(void) {
+    ASSERT("uplink exact", strcmp(lex(LEX_CONN_UPLINK), "OSTRICH // UPLINK") == 0);
+    ASSERT("breach exact", strcmp(lex(LEX_CONN_BREACH), "BREACH") == 0);
+    ASSERT("abort exact",
+           strcmp(lex(LEX_CONN_ABORT), "\xe2\x96\xa0 ABORT") == 0);
+    ASSERT("known_hosts exact",
+           strcmp(lex(LEX_CONN_KNOWN_HOSTS), "KNOWN HOSTS") == 0);
+    ASSERT("no_known_hosts exact",
+           strcmp(lex(LEX_CONN_NO_KNOWN_HOSTS), "// NO KNOWN HOSTS") == 0);
+    PASS("conn_overlay_keys");
+    return 0;
+}
+
+static int test_conn_phase_keys(void) {
+    ASSERT("breaching exact",
+           strcmp(lex(LEX_CONN_BREACHING),
+                  "BREACHING PERIMETER\xe2\x80\xa6") == 0);
+    ASSERT("access_granted exact",
+           strcmp(lex(LEX_CONN_ACCESS_GRANTED), "ACCESS GRANTED") == 0);
+    ASSERT("welcome exact",
+           strcmp(lex(LEX_CONN_WELCOME),
+                  "\xe2\x80\xa6WELCOME, OPERATOR.") == 0);
+    ASSERT("access_denied exact",
+           strcmp(lex(LEX_CONN_ACCESS_DENIED), "ACCESS DENIED") == 0);
+    ASSERT("online exact", strcmp(lex(LEX_CONN_ONLINE), "* ONLINE") == 0);
+    ASSERT("reacquiring exact",
+           strcmp(lex(LEX_CONN_REACQUIRING),
+                  "REACQUIRING SIGNAL\xe2\x80\xa6") == 0);
+    ASSERT("severed exact",
+           strcmp(lex(LEX_CONN_SEVERED), "LINK SEVERED") == 0);
+    PASS("conn_phase_keys");
+    return 0;
+}
+
+static int test_conn_failure_keys(void) {
+    ASSERT("err_no_route exact",
+           strcmp(lex(LEX_CONN_ERR_NO_ROUTE),
+                  "HOST UNREACHABLE // NO ROUTE") == 0);
+    ASSERT("err_port_closed exact",
+           strcmp(lex(LEX_CONN_ERR_PORT_CLOSED),
+                  "PERIMETER SEALED // PORT CLOSED") == 0);
+    ASSERT("err_timeout exact",
+           strcmp(lex(LEX_CONN_ERR_TIMEOUT), "NO RESPONSE // TIMEOUT") == 0);
+    ASSERT("err_hostkey_mismatch exact",
+           strcmp(lex(LEX_CONN_ERR_HOSTKEY_MISMATCH),
+                  "HOST KEY MISMATCH // POSSIBLE INTERCEPTION") == 0);
+    ASSERT("err_no_shell exact",
+           strcmp(lex(LEX_CONN_ERR_NO_SHELL),
+                  "NO FOOTHOLD // SHELL DENIED") == 0);
+    ASSERT("unknown_host prefix exact",
+           strcmp(lex(LEX_CONN_UNKNOWN_HOST), "UNKNOWN HOST //") == 0);
+    PASS("conn_failure_keys");
+    return 0;
+}
+
+static int test_conn_field_keys(void) {
+    ASSERT("field_host exact",
+           strcmp(lex(LEX_CONN_FIELD_HOST), "HOST") == 0);
+    ASSERT("field_port exact",
+           strcmp(lex(LEX_CONN_FIELD_PORT), "PORT") == 0);
+    ASSERT("field_user exact",
+           strcmp(lex(LEX_CONN_FIELD_USER), "USER") == 0);
+    ASSERT("field_auth exact",
+           strcmp(lex(LEX_CONN_FIELD_AUTH), "AUTH") == 0);
+    ASSERT("auth_agent exact",
+           strcmp(lex(LEX_CONN_AUTH_AGENT), "SSH-AGENT") == 0);
+    ASSERT("auth_passkey exact",
+           strcmp(lex(LEX_CONN_AUTH_PASSKEY), "PASSKEY") == 0);
+    ASSERT("remember_passkey exact",
+           strcmp(lex(LEX_CONN_REMEMBER_PASSKEY), "REMEMBER PASSKEY") == 0);
+    PASS("conn_field_keys");
+    return 0;
+}
+
+static int test_lex_count_consistency(void) {
+    /*
+     * Verify LEX__COUNT matches the number of entries we know exist.
+     * Update this constant when new keys are added.
+     */
+    ASSERT("LEX__COUNT is 30", LEX__COUNT == 30);
+    PASS("lex_count_consistency");
+    return 0;
+}
+
 int main(void) {
     int failures = 0;
     failures += test_all_keys_non_empty();
@@ -83,6 +167,11 @@ int main(void) {
     failures += test_footer_online();
     failures += test_wordmark_non_empty();
     failures += test_out_of_range_stable();
+    failures += test_conn_overlay_keys();
+    failures += test_conn_phase_keys();
+    failures += test_conn_failure_keys();
+    failures += test_conn_field_keys();
+    failures += test_lex_count_consistency();
 
     if (failures == 0) {
         printf("All lexicon tests passed.\n");

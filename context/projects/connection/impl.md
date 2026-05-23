@@ -154,7 +154,7 @@ non-arena allocation"). Add `build/spsc_ring_test` to `make test`.
 
 ### Task 3 - lexicon connection keys
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: US-48 (all connection copy sourced from
   the centralized lexicon so a future straight-mode is a no-UI swap);
@@ -185,13 +185,13 @@ terminator and the out-of-range placeholder behavior. Extend
 
 #### Acceptance criteria
 
-- [ ] Every new connection `LexKey` resolves to the exact `theme.md`
+- [x] Every new connection `LexKey` resolves to the exact `theme.md`
       copy; `LEX__COUNT` still terminates the enum.
-- [ ] An out-of-range key still returns a stable non-`NULL`
+- [x] An out-of-range key still returns a stable non-`NULL`
       placeholder (no crash).
-- [ ] `tests/lexicon_test.c` asserts each new key is non-empty and
+- [x] `tests/lexicon_test.c` asserts each new key is non-empty and
       the count is consistent; `make test` runs it and it passes.
-- [ ] No behavioral change to the running app (keys unused until the
+- [x] No behavioral change to the running app (keys unused until the
       UI tasks).
 
 ### Task 4 - ssh library + smoke
