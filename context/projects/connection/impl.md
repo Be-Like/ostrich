@@ -611,7 +611,7 @@ password connects are protected. No persistence of the password yet
 
 ### Task 13 - REMEMBER PASSKEY (opt-in persistence)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 11, Task 12
 - **User stories covered**: US-8, US-41, US-43.
 
@@ -638,14 +638,14 @@ store nothing. OS-keychain storage stays the deferred hardening
 
 #### Acceptance criteria
 
-- [ ] REMEMBER PASSKEY is off by default; enabling it persists the
+- [x] REMEMBER PASSKEY is off by default; enabling it persists the
       password for that KNOWN HOST, disabling it removes the stored
       password.
-- [ ] A remembered password is restored into the form on select, so a
+- [x] A remembered password is restored into the form on select, so a
       password connect is launch → Enter (US-41).
-- [ ] The connections file is `0600` whenever a password is stored
+- [x] The connections file is `0600` whenever a password is stored
       (US-43); agent connections still store no secret.
-- [ ] `make test` stays green (the `store` permission/round-trip
+- [x] `make test` stays green (the `store` permission/round-trip
       coverage from Task 6 still passes).
 
 ### Task 14 - Keepalive + auto-reconnect

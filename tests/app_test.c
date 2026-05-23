@@ -342,6 +342,39 @@ static void test_save_oom_returns_minus1(void) {
     assert(list.count == 0);
 }
 
+static void test_save_remember_disabled_clears_stored_passkey(void) {
+    Arena *a = arena_create(64 * 1024);
+    assert(a);
+
+    /* Existing entry that previously had remember=true with a stored passkey. */
+    Conn c0 = {0};
+    snprintf(c0.label,   sizeof(c0.label),   "Srv");
+    snprintf(c0.host,    sizeof(c0.host),    "h");
+    c0.port = 22;
+    snprintf(c0.user,    sizeof(c0.user),    "u");
+    c0.auth     = SSH_AUTH_PASSWORD;
+    c0.remember = true;
+    snprintf(c0.passkey, sizeof(c0.passkey), "oldpass");
+    ConnList list = { &c0, 1, 0 };
+
+    /* User unchecks remember and saves — passkey must be cleared. */
+    ConnForm form = {0};
+    snprintf(form.host,    sizeof(form.host),    "h");
+    snprintf(form.port,    sizeof(form.port),    "22");
+    snprintf(form.user,    sizeof(form.user),    "u");
+    form.auth     = SSH_AUTH_PASSWORD;
+    form.remember = false;
+    snprintf(form.passkey, sizeof(form.passkey), "oldpass");
+
+    int idx = app_save_to_list(&list, &form, 0, a);
+
+    assert(idx == 0);
+    assert(list.items[0].passkey[0] == '\0');
+    assert(list.items[0].remember == false);
+
+    arena_destroy(a);
+}
+
 static void test_conn_to_form_preserves_passkey_for_password_auth(void) {
     Conn conn = {0};
     snprintf(conn.host,    sizeof(conn.host),    "h");
@@ -379,6 +412,7 @@ int main(void) {
     test_save_agent_no_passkey();
     test_save_password_persisted_when_remember();
     test_save_password_not_persisted_without_remember();
+    test_save_remember_disabled_clears_stored_passkey();
     test_save_oom_returns_minus1();
 
     printf("app_test: ok\n");
