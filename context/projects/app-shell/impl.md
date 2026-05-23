@@ -51,7 +51,7 @@ releasable commit/PR.
 
 ### Task 1 - Arena module
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: foundation for caller-controlled
   memory; underpins US-24 (clean teardown) and US-32 (a
@@ -81,14 +81,14 @@ Makefile gains a `build/arena_test` rule and runs it from
 
 #### Acceptance criteria
 
-- [ ] `include/arena.h` matches the ARD signature
+- [x] `include/arena.h` matches the ARD signature
       (`arena_create`/`arena_alloc`/`arena_reset`/`arena_destroy`)
       and is pure C.
-- [ ] `tests/arena_test.c` black-box tests alloc, alignment,
+- [x] `tests/arena_test.c` black-box tests alloc, alignment,
       reset reuse, and OOM/exhaustion returning `NULL`.
-- [ ] `make test` builds and runs `arena_test` alongside the
+- [x] `make test` builds and runs `arena_test` alongside the
       existing `smoke_test`; both pass.
-- [ ] `make` still builds the console stub; build is
+- [x] `make` still builds the console stub; build is
       warning-clean under `-Wall -Wextra`.
 
 ### Task 2 - Lexicon module
