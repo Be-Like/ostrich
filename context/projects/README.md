@@ -21,3 +21,4 @@ and their naming conventions are as follows.
 | ------ | ----------- |
 | project-setup | Bootstrap: plain Make build, hello-world C entry point, a `make test` smoke harness, and the project README. |
 | app-shell | The themed GUI application entry point: a single GLFW + OpenGL 3 + Dear ImGui (docking) window, ~60 FPS render loop, full cyberpunk theme, centered ASCII wordmark, diagnostics footer, and clean shutdown. Empty docking host, no panels yet. |
+| connection | The Connect phase: the BREACH connection overlay and thin connection bar, libssh2 linked in, ssh-agent / password auth, TOFU host-key verification against `~/.ssh/known_hosts`, off-thread cancelable connect, an exec-channel liveness probe, distinct failure reporting, keepalive-driven auto-reconnect, saved connections (KNOWN HOSTS) with opt-in remembered password, and a multi-channel-ready session. Stops before discovery/run-config/play/logs. |

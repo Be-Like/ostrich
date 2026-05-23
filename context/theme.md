@@ -218,16 +218,30 @@ implementation keeps all of it in **one centralized strings table** (a
 single lexicon source, not scattered string literals) so a future
 "straight mode" is a trivial swap with no UI work.
 
-**Connection / auth**
+**Connection / auth** (the live-link lifecycle)
 
 | Real event/state | Copy |
 | --- | --- |
 | connecting (handshake) | `BREACHING PERIMETER…` |
 | auth success | `ACCESS GRANTED` (then `…WELCOME, OPERATOR.` in narration) |
-| auth failure | `ACCESS DENIED` |
 | connected | `* ONLINE` |
 | reconnecting (with backoff) | `REACQUIRING SIGNAL…` |
 | disconnected | `LINK SEVERED` |
+
+**Connection failures** — each beat dwells in the overlay, where
+the operator is sitting to retry, in the `>` voice and the semantic
+`fail` red. `ACCESS DENIED` is the auth-specific case; the rest name
+distinct causes so the fix is obvious (a sealed port is not a wrong
+passkey).
+
+| Real failure | Copy |
+| --- | --- |
+| auth rejected | `ACCESS DENIED` |
+| host unreachable / no route / DNS | `HOST UNREACHABLE // NO ROUTE` |
+| connection refused (port closed / sshd off) | `PERIMETER SEALED // PORT CLOSED` |
+| connect timed out | `NO RESPONSE // TIMEOUT` |
+| host-key mismatch (possible interception) | `HOST KEY MISMATCH // POSSIBLE INTERCEPTION` |
+| authenticated, no usable shell / channel | `NO FOOTHOLD // SHELL DENIED` |
 
 **Run-state label** (Control/Status strip)
 
@@ -245,6 +259,7 @@ single lexicon source, not scattered string literals) so a future
 
 | Real action | Label | Notes |
 | --- | --- | --- |
+| Connect (the breach) | `BREACH` | toggles to `■ ABORT` while connecting |
 | Play (full chain) | `▶ EXECUTE` | toggles to `■ ABORT` while running |
 | Build (build-only) | `COMPILE` | |
 | Stop | `■ ABORT` | consistent with `OPERATION ABORTED` |
@@ -274,10 +289,20 @@ animation, per Principle 1) framing a still-legible form. Field
 ```
 
 - Saved connections → **`KNOWN HOSTS`** (an SSH `known_hosts` pun).
-- Connect button → **`BREACH`**.
+  Note this is ostrich's *saved-connections* list, distinct from the
+  real SSH host-key store (the system `~/.ssh/known_hosts`).
+- Connect button → **`BREACH`**; while a breach is in flight it
+  becomes **`■ ABORT`** to cancel the attempt (no fake delay — it
+  dwells only for the real handshake duration).
 - Auth methods → **`SSH-AGENT`** / **`PASSKEY`**, with
   **`REMEMBER PASSKEY`**.
 - Field labels (`HOST` / `PORT` / `USER`) stay literal for usability.
+- A changed host key raises a **blocking**
+  **`HOST KEY MISMATCH // POSSIBLE INTERCEPTION`** alert in semantic
+  `fail` red *before* any passkey is sent. This is a real **security
+  stop**, not a whimsy gate (Principle 1 forbids only *decorative*
+  gating): it blocks because proceeding could leak a credential to an
+  impostor, exactly as real `ssh` refuses a changed host key.
 
 ---
 
