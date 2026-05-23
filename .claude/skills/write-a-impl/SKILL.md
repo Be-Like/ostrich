@@ -13,6 +13,8 @@ description: Create an Implementation Plan through user interview, codebase expl
 
 4. If unfamiliar with the codebase, launch an Explore agent to map architecture, existing patterns, and the integration layers relevant to this feature.
 
+4a. Read context/coding_standards.md and ensure the implementation plan conforms to it (memory via arenas, modules as compiled libraries, the C/C++ seam, interface error-handling, and testing). Address its ARD/IMPL conformance checklist when scoping tasks.
+
 5. Decompose requirements into tasks. Each task is scoped to produce a working, verifiable increment, minimizing integration risk and enabling continuous delivery.
 	a. Break the requirements into layers appropriate to the architecture (e.g. UI → service → domain → infrastructure for web; protocol → handler → domain for backends).
 	b. Plan tasks based on the layers, bottom-up (infrastructure/domain first, UI last) so each task lands on already committed foundations. Each task should be a single commit/PR that proves a checkpoint toward the goal.

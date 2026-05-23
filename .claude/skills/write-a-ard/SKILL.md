@@ -11,6 +11,8 @@ description: Create a ARD through user interview, codebase exploration and then 
 
 3. If you have not already explored the codebase, do so to understand the current architecture, existing patterns, and integration layers.
 
+3a. Read context/coding_standards.md and ensure the ARD conforms to it (memory via arenas, modules as compiled libraries, the C/C++ seam, interface error-handling, and testing). Address its ARD/IMPL conformance checklist in the ARD.
+
 4. Interview the user relentlessly about every aspect of this plan until you reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. ASK ONE QUESTION AT A TIME.
 
 5. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
