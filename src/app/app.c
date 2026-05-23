@@ -4,6 +4,7 @@
 #include "session.h"
 #include "connstate.h"
 #include "lexicon.h"
+#include "store.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -11,7 +12,9 @@
 struct App {
     Ui       *ui;
     Session  *session;
+    Arena    *arena; /* app arena, for growing known_hosts on save */
     ConnForm  form;
+    ConnList  known_hosts; /* loaded from store; items in app arena  */
 
     /* persistent view state, updated from session events each frame */
     ConnPhase phase;
@@ -57,9 +60,18 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
     memset(app, 0, sizeof(*app));
     app->ui                       = ui;
     app->session                  = session;
+    app->arena                    = a;
     app->form.selected_known_host = -1;
     app->phase                    = CONN_DISCONNECTED;
     snprintf(app->form.port, sizeof(app->form.port), "22");
+
+    /* Load saved connections; non-fatal if the store is missing or empty. */
+    store_load(a, &app->known_hosts);
+    if (app->known_hosts.count > 0) {
+        int mru = app->known_hosts.mru_index;
+        app_conn_to_form(&app->known_hosts.items[mru], &app->form);
+        app->form.selected_known_host = mru;
+    }
 
     *out = app;
     return APP_OK;
@@ -87,6 +99,8 @@ bool app_tick(App *app) {
     view.fingerprint         = app->fingerprint;
     view.show_hostkey_prompt = app->hostkey_unknown;
     view.show_mismatch       = app->hostkey_mismatch;
+    view.known_hosts         = app->known_hosts.items;
+    view.known_count         = app->known_hosts.count;
     if (app->phase == CONN_DISCONNECTED && app->last_reason != SSH_OK)
         view.reason = lex(connstate_reason_lex(app->last_reason));
 
@@ -94,6 +108,21 @@ bool app_tick(App *app) {
     intents.select_host = -1;
     bool keep_going = ui_frame(app->ui, &view, &app->form, &intents);
 
+    if (intents.select_host >= 0 &&
+        intents.select_host < app->known_hosts.count) {
+        app_conn_to_form(&app->known_hosts.items[intents.select_host],
+                         &app->form);
+        app->form.selected_known_host = intents.select_host;
+    }
+    if (intents.save) {
+        int new_idx = app_save_to_list(&app->known_hosts, &app->form,
+                                       app->form.selected_known_host,
+                                       app->arena);
+        if (new_idx >= 0) {
+            app->form.selected_known_host = new_idx;
+            store_save(&app->known_hosts);
+        }
+    }
     if (intents.breach) {
         SshConfig cfg;
         app_form_to_ssh_config(&app->form, &cfg);

@@ -237,8 +237,9 @@ $(BUILD)/session_smoke: tools/session_smoke.c $(BUILD)/libsession.a \
 	    $(BUILD)/liblibssh2.a $(OPENSSL_LIBS) -lpthread -lm
 
 # ── Tests ─────────────────────────────────────────────────────────────
-$(BUILD)/app_test: $(TESTS)/app_test.c $(BUILD)/app_form.o | $(BUILD)
-	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/app_test.c $(BUILD)/app_form.o
+$(BUILD)/app_test: $(TESTS)/app_test.c $(BUILD)/app_form.o $(BUILD)/app_arena.o | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/app_test.c \
+	    $(BUILD)/app_form.o $(BUILD)/app_arena.o
 
 $(BUILD)/connstate_test: $(TESTS)/connstate_test.c $(BUILD)/libconnstate.a \
                          $(SRC)/lexicon.c | $(BUILD)

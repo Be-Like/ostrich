@@ -49,6 +49,9 @@ typedef enum {
     LEX_CONN_TRUST,    /* "TRUST"   */
     LEX_CONN_DECLINE,  /* "DECLINE" */
 
+    /* ── known-hosts overlay ───────────────────────────────────────── */
+    LEX_CONN_SAVE,     /* "SAVE"    */
+
     LEX__COUNT
 } LexKey;
 

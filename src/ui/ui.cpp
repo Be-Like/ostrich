@@ -267,6 +267,39 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
     ImGui::TextUnformatted(lex(LEX_CONN_AUTH_AGENT));
     ImGui::PopStyleColor();
 
+    /* KNOWN HOSTS */
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_CONN_KNOWN_HOSTS));
+    ImGui::PopStyleColor();
+
+    if (view->known_count == 0) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_CONN_NO_KNOWN_HOSTS));
+        ImGui::PopStyleColor();
+    } else {
+        int max_vis  = (view->known_count < 4) ? view->known_count : 4;
+        float list_h = ImGui::GetTextLineHeightWithSpacing() * (float)max_vis;
+        ImGui::BeginChild("##kh", {0.0f, list_h}, false);
+        for (int i = 0; i < view->known_count; ++i) {
+            const Conn *c   = &view->known_hosts[i];
+            const char *lbl = (c->label[0] != '\0') ? c->label : c->host;
+            char buf[270]; /* "o " + max(label=63, host=255) + null */
+            snprintf(buf, sizeof(buf), "o %s", lbl);
+            bool sel = (form->selected_known_host == i);
+            ImGui::PushStyleColor(ImGuiCol_Text, sel ? C_CYAN : C_TEXT);
+            if (!connecting && ImGui::Selectable(buf, sel))
+                out->select_host = i;
+            else if (connecting)
+                ImGui::TextUnformatted(buf);
+            ImGui::PopStyleColor();
+        }
+        ImGui::EndChild();
+    }
+
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -334,6 +367,13 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
         if (!valid) ImGui::BeginDisabled();
         if (ImGui::Button(lex(LEX_CONN_BREACH)) || (valid && enter))
             out->breach = true;
+        if (!valid) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+
+        if (!valid) ImGui::BeginDisabled();
+        if (ImGui::Button(lex(LEX_CONN_SAVE)))
+            out->save = true;
         if (!valid) ImGui::EndDisabled();
     }
 

@@ -536,7 +536,7 @@ the TRUST/DECLINE intents.
 
 ### Task 11 - KNOWN HOSTS (saved connections, no secrets)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 6, Task 9
 - **User stories covered**: US-9, US-10, US-12, US-13, US-40, US-42.
 
@@ -564,13 +564,13 @@ fields; REMEMBER PASSKEY is Task 13. ostrich still never auto-connects
 
 #### Acceptance criteria
 
-- [ ] The overlay lists saved KNOWN HOSTS; selecting one fills the
+- [x] The overlay lists saved KNOWN HOSTS; selecting one fills the
       form; `// NO KNOWN HOSTS` shows when the store is empty.
-- [ ] SAVE persists label/host/port/user/auth via `store`, and the
+- [x] SAVE persists label/host/port/user/auth via `store`, and the
       list survives a relaunch (US-40).
-- [ ] The MRU connection is pre-selected on launch so an agent
+- [x] The MRU connection is pre-selected on launch so an agent
       connect is launch → Enter (US-10).
-- [ ] An ssh-agent KNOWN HOST stores no secret on disk (US-42);
+- [x] An ssh-agent KNOWN HOST stores no secret on disk (US-42);
       `make test` stays green.
 
 ### Task 12 - Password auth (PASSKEY path)

@@ -42,6 +42,8 @@ static const char *s_table[LEX__COUNT] = {
 
     /* LEX_CONN_TRUST    */ "TRUST",
     /* LEX_CONN_DECLINE  */ "DECLINE",
+
+    /* LEX_CONN_SAVE     */ "SAVE",
 };
 
 const char *lex(LexKey key) {

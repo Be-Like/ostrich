@@ -23,8 +23,20 @@ typedef enum {
     APP_ERR
 } AppStatus;
 
-/* Pure form conversion — no I/O or threads; testable without a session. */
+/* Pure form helpers — no I/O or threads; testable without a session. */
 void app_form_to_ssh_config(const ConnForm *form, SshConfig *cfg);
+
+/* Copy a saved Conn's fields into the mutable form (host, port, user,
+   auth, passkey, remember). Does not touch selected_known_host. */
+void app_conn_to_form(const Conn *conn, ConnForm *form);
+
+/* Upsert the current form into `list`.  If selected_idx is a valid
+   index, update that slot (preserving its label) and set mru_index to
+   it.  Otherwise append a new entry (auto-label "user@host") using `a`
+   for the backing array.  Returns the mru_index of the affected entry,
+   or -1 on OOM (append path only). */
+int app_save_to_list(ConnList *list, const ConnForm *form,
+                     int selected_idx, Arena *a);
 
 /* Stand up the app: init UI, open the session, zero the ConnForm. */
 AppStatus app_init(Arena *a, AppOptions opts, App **out);
