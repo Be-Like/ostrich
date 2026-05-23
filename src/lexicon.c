@@ -39,6 +39,9 @@ static const char *s_table[LEX__COUNT] = {
     /* LEX_CONN_AUTH_AGENT       */ "SSH-AGENT",
     /* LEX_CONN_AUTH_PASSKEY     */ "PASSKEY",
     /* LEX_CONN_REMEMBER_PASSKEY */ "REMEMBER PASSKEY",
+
+    /* LEX_CONN_TRUST    */ "TRUST",
+    /* LEX_CONN_DECLINE  */ "DECLINE",
 };
 
 const char *lex(LexKey key) {

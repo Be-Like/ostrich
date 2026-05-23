@@ -493,7 +493,7 @@ ostrich never auto-connects (US-11).
 
 ### Task 10 - Host-key TOFU (trust prompt + mismatch stop)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 9
 - **User stories covered**: US-18, US-20, US-21.
 
@@ -524,15 +524,15 @@ the TRUST/DECLINE intents.
 
 #### Acceptance criteria
 
-- [ ] A brand-new host shows the unknown-host prompt with its
+- [x] A brand-new host shows the unknown-host prompt with its
       fingerprint; TRUST appends to `~/.ssh/known_hosts` and the
       handshake continues to `* ONLINE`; DECLINE aborts cleanly.
-- [ ] After a TRUSTed connect, the host is recognized without
+- [x] After a TRUSTed connect, the host is recognized without
       re-prompting on the next connect (shares system known_hosts).
-- [ ] A changed key for a known host raises the loud blocking
+- [x] A changed key for a known host raises the loud blocking
       `HOST KEY MISMATCH // POSSIBLE INTERCEPTION` stop; proceeding is
       impossible — only DECLINE/ABORT works.
-- [ ] Copy comes from `lexicon`; `make test` stays green.
+- [x] Copy comes from `lexicon`; `make test` stays green.
 
 ### Task 11 - KNOWN HOSTS (saved connections, no secrets)
 

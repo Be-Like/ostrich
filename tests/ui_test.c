@@ -51,6 +51,38 @@ int main(void) {
         assert(intents.select_host == -1);
     }
 
+    /* State-based test: TOFU prompt (AWAITING_HOSTKEY) emits no spurious trust/decline. */
+    {
+        UiConnView tofu_view          = {0};
+        tofu_view.phase               = CONN_AWAITING_HOSTKEY;
+        tofu_view.show_hostkey_prompt = true;
+        tofu_view.fingerprint         = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &tofu_view, &form, &intents);
+            assert(!intents.trust);
+            assert(!intents.decline);
+            assert(!intents.breach);
+        }
+    }
+
+    /* State-based test: mismatch stop (DISCONNECTED + show_mismatch) emits no spurious trust. */
+    {
+        UiConnView mismatch_view    = {0};
+        mismatch_view.phase         = CONN_DISCONNECTED;
+        mismatch_view.show_mismatch = true;
+        mismatch_view.fingerprint   = "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &mismatch_view, &form, &intents);
+            assert(!intents.trust);
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

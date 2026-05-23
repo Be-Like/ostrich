@@ -271,8 +271,20 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
     ImGui::Separator();
     ImGui::Spacing();
 
-    /* Status line: phase message or failure reason */
-    if (connecting) {
+    /* Status line: TOFU prompt, mismatch stop, connecting, failure, or idle */
+    if (view->show_hostkey_prompt) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
+        ImGui::Text("%s %s", lex(LEX_CONN_UNKNOWN_HOST),
+                    (view->fingerprint && view->fingerprint[0])
+                        ? view->fingerprint : "");
+        ImGui::PopStyleColor();
+    } else if (view->show_mismatch) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
+        ImGui::TextUnformatted(lex(LEX_CONN_ERR_HOSTKEY_MISMATCH));
+        if (view->fingerprint && view->fingerprint[0])
+            ImGui::Text("  %s", view->fingerprint);
+        ImGui::PopStyleColor();
+    } else if (connecting) {
         ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
         ImGui::TextUnformatted(lex(LEX_CONN_BREACHING));
         ImGui::PopStyleColor();
@@ -286,8 +298,31 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
 
     ImGui::Spacing();
 
-    /* Action button */
-    if (connecting) {
+    /* Action buttons */
+    if (view->show_hostkey_prompt) {
+        /* TOFU: TRUST (green) and DECLINE (red) */
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              {C_OK.x * 0.25f, C_OK.y * 0.25f, C_OK.z * 0.25f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                              {C_OK.x * 0.45f, C_OK.y * 0.45f, C_OK.z * 0.45f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, C_OK);
+        if (ImGui::Button(lex(LEX_CONN_TRUST)))
+            out->trust = true;
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              {C_FAIL.x * 0.25f, C_FAIL.y * 0.25f, C_FAIL.z * 0.25f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                              {C_FAIL.x * 0.45f, C_FAIL.y * 0.45f, C_FAIL.z * 0.45f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, C_FAIL);
+        if (ImGui::Button(lex(LEX_CONN_DECLINE)))
+            out->decline = true;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+            out->decline = true;
+        ImGui::PopStyleColor(3);
+    } else if (connecting) {
         if (ImGui::Button(lex(LEX_CONN_ABORT)))
             out->abort = true;
         if (ImGui::IsKeyPressed(ImGuiKey_Escape))

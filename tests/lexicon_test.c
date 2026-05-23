@@ -148,12 +148,18 @@ static int test_conn_field_keys(void) {
     return 0;
 }
 
+static int test_conn_hostkey_action_keys(void) {
+    ASSERT("trust exact",
+           strcmp(lex(LEX_CONN_TRUST), "TRUST") == 0);
+    ASSERT("decline exact",
+           strcmp(lex(LEX_CONN_DECLINE), "DECLINE") == 0);
+    PASS("conn_hostkey_action_keys");
+    return 0;
+}
+
 static int test_lex_count_consistency(void) {
-    /*
-     * Verify LEX__COUNT matches the number of entries we know exist.
-     * Update this constant when new keys are added.
-     */
-    ASSERT("LEX__COUNT is 30", LEX__COUNT == 30);
+    /* Update this constant when new keys are added. */
+    ASSERT("LEX__COUNT is 32", LEX__COUNT == 32);
     PASS("lex_count_consistency");
     return 0;
 }
@@ -171,6 +177,7 @@ int main(void) {
     failures += test_conn_phase_keys();
     failures += test_conn_failure_keys();
     failures += test_conn_field_keys();
+    failures += test_conn_hostkey_action_keys();
     failures += test_lex_count_consistency();
 
     if (failures == 0) {

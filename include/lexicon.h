@@ -45,6 +45,10 @@ typedef enum {
     LEX_CONN_AUTH_PASSKEY,     /* "PASSKEY"          */
     LEX_CONN_REMEMBER_PASSKEY, /* "REMEMBER PASSKEY" */
 
+    /* ── host-key trust actions ────────────────────────────────────── */
+    LEX_CONN_TRUST,    /* "TRUST"   */
+    LEX_CONN_DECLINE,  /* "DECLINE" */
+
     LEX__COUNT
 } LexKey;
 
