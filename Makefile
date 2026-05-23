@@ -9,8 +9,9 @@ SRC     := src
 TESTS   := tests
 INCLUDE := include
 
-IMGUI_DIR := third_party/imgui
-GLFW_DIR  := third_party/glfw
+IMGUI_DIR   := third_party/imgui
+GLFW_DIR    := third_party/glfw
+LIBSSH2_DIR := third_party/libssh2
 
 UNAME_S := $(shell uname -s)
 
@@ -29,6 +30,8 @@ GLFW_PLAT_SRC := \
     posix_time.c posix_thread.c posix_module.c posix_poll.c \
     x11_init.c x11_monitor.c x11_window.c xkb_unicode.c \
     glx_context.c linux_joystick.c
+OPENSSL_CFLAGS := $(shell pkg-config --cflags openssl 2>/dev/null)
+OPENSSL_LIBS   := $(shell pkg-config --libs   openssl 2>/dev/null)
 endif
 
 ifeq ($(UNAME_S),Darwin)
@@ -40,6 +43,12 @@ GLFW_PLAT_SRC := \
     posix_thread.c posix_module.c macos_time.c \
     cocoa_init.m cocoa_joystick.m cocoa_monitor.m \
     cocoa_window.m nsgl_context.m
+# Homebrew prefix fallback when pkg-config misses it
+BREW_PREFIX    := $(shell brew --prefix openssl 2>/dev/null)
+OPENSSL_CFLAGS := $(shell pkg-config --cflags openssl 2>/dev/null || \
+                      (test -n "$(BREW_PREFIX)" && echo "-I$(BREW_PREFIX)/include"))
+OPENSSL_LIBS   := $(shell pkg-config --libs   openssl 2>/dev/null || \
+                      (test -n "$(BREW_PREFIX)" && echo "-L$(BREW_PREFIX)/lib -lssl -lcrypto"))
 endif
 
 GLFW_COMMON_SRC := \
@@ -60,9 +69,23 @@ IMGUI_OBJS        := $(patsubst %.cpp,$(BUILD)/imgui/%.o,$(IMGUI_SRC)) \
 
 UI_OBJS := $(BUILD)/ui/ui.o
 
-.PHONY: all clean test
+# libssh2 sources: OpenSSL backend only; exclude libgcrypt, mbedtls, os400qc3, wincng
+LIBSSH2_SRC := \
+    agent.c bcrypt_pbkdf.c blowfish.c chacha.c channel.c \
+    cipher-chachapoly.c comp.c crypt.c global.c hostkey.c \
+    keepalive.c kex.c knownhost.c mac.c misc.c openssl.c \
+    packet.c pem.c poly1305.c publickey.c scp.c session.c \
+    sftp.c transport.c userauth.c userauth_kbd_packet.c version.c
+LIBSSH2_OBJS := $(patsubst %.c,$(BUILD)/libssh2/%.o,$(LIBSSH2_SRC))
+LIBSSH2_CFLAGS := \
+    -DHAVE_CONFIG_H -DLIBSSH2_OPENSSL \
+    -Ithird_party \
+    -I$(LIBSSH2_DIR)/include -I$(LIBSSH2_DIR)/src \
+    $(LOCAL_CFLAGS) $(OPENSSL_CFLAGS)
 
-all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a
+.PHONY: all clean test ssh_version_smoke
+
+all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a $(BUILD)/liblibssh2.a
 
 # ── GLFW ──────────────────────────────────────────────────────────────
 $(BUILD)/glfw/%.o: $(GLFW_DIR)/src/%.c | $(BUILD)/glfw
@@ -74,6 +97,13 @@ $(BUILD)/glfw/%.o: $(GLFW_DIR)/src/%.m | $(BUILD)/glfw
 	    $(LOCAL_CFLAGS) -w -O2 -o $@ $<
 
 $(BUILD)/libglfw.a: $(GLFW_OBJS)
+	ar rcs $@ $^
+
+# ── libssh2 ───────────────────────────────────────────────────────────
+$(BUILD)/libssh2/%.o: $(LIBSSH2_DIR)/src/%.c | $(BUILD)/libssh2
+	$(CC) -c $(LIBSSH2_CFLAGS) -w -O2 -o $@ $<
+
+$(BUILD)/liblibssh2.a: $(LIBSSH2_OBJS)
 	ar rcs $@ $^
 
 # ── ImGui ─────────────────────────────────────────────────────────────
@@ -112,6 +142,15 @@ APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_arena.o \
 $(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a
 	$(CXX) -o $@ $(APP_OBJS) \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
+
+# ── Dev smoke (not part of make test) ────────────────────────────────
+ssh_version_smoke: $(BUILD)/ssh_version_smoke
+	./$(BUILD)/ssh_version_smoke
+
+$(BUILD)/ssh_version_smoke: tools/ssh_version_smoke.c $(BUILD)/liblibssh2.a | $(BUILD)
+	$(CC) $(CFLAGS) $(LOCAL_CFLAGS) $(OPENSSL_CFLAGS) \
+	    -I$(LIBSSH2_DIR)/include \
+	    -o $@ $< $(BUILD)/liblibssh2.a $(OPENSSL_LIBS)
 
 # ── Tests ─────────────────────────────────────────────────────────────
 $(BUILD)/arena_test: $(TESTS)/arena_test.c $(SRC)/arena.c | $(BUILD)
@@ -164,6 +203,9 @@ $(BUILD)/imgui_be: | $(BUILD)
 
 $(BUILD)/ui: | $(BUILD)
 	mkdir -p $(BUILD)/ui
+
+$(BUILD)/libssh2: | $(BUILD)
+	mkdir -p $(BUILD)/libssh2
 
 clean:
 	rm -rf $(BUILD)

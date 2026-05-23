@@ -75,7 +75,7 @@ Foundations (no blockers): 2 spsc_ring, 3 lexicon
 
 ### Task 1 - libssh2 build integration
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: US-45 (libssh2 vendored-in and linked
   into the Make build), US-46 (builds on Linux and macOS).
@@ -103,14 +103,14 @@ Task 4 consumes the archive.
 
 #### Acceptance criteria
 
-- [ ] `make` builds `build/liblibssh2.a` from the vendored submodule
+- [x] `make` builds `build/liblibssh2.a` from the vendored submodule
       with the OpenSSL backend; the `libssh2` submodule is
       initialized.
-- [ ] `libssl`/`libcrypto` are found via `pkg-config` with a Homebrew
+- [x] `libssl`/`libcrypto` are found via `pkg-config` with a Homebrew
       fallback on macOS; `~/.local` include/lib handling is honored.
-- [ ] A throwaway smoke links `liblibssh2.a` and prints a real
+- [x] A throwaway smoke links `liblibssh2.a` and prints a real
       `libssh2_version(0)` string on Linux (the macOS path is wired).
-- [ ] `make`/`make test` stay green and the shipping app is unchanged
+- [x] `make`/`make test` stay green and the shipping app is unchanged
       (no ostrich code references libssh2 yet).
 
 ### Task 2 - spsc_ring primitive
