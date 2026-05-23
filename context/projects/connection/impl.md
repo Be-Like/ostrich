@@ -575,7 +575,7 @@ fields; REMEMBER PASSKEY is Task 13. ostrich still never auto-connects
 
 ### Task 12 - Password auth (PASSKEY path)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 9
 - **User stories covered**: US-5 (PASSKEY choice), US-7.
 
@@ -600,14 +600,14 @@ password connects are protected. No persistence of the password yet
 
 #### Acceptance criteria
 
-- [ ] AUTH offers SSH-AGENT and PASSKEY; selecting PASSKEY reveals a
+- [x] AUTH offers SSH-AGENT and PASSKEY; selecting PASSKEY reveals a
       masked password field.
-- [ ] A BREACH with PASSKEY authenticates to a password-requiring Mac
+- [x] A BREACH with PASSKEY authenticates to a password-requiring Mac
       and reaches `* ONLINE` via the same probe path; a wrong password
       yields `ACCESS DENIED` in the `>` voice with details preserved.
-- [ ] The password is held only in the in-memory `ConnForm` (not
+- [x] The password is held only in the in-memory `ConnForm` (not
       persisted this task).
-- [ ] Copy from `lexicon`; `make test` stays green.
+- [x] Copy from `lexicon`; `make test` stays green.
 
 ### Task 13 - REMEMBER PASSKEY (opt-in persistence)
 

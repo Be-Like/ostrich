@@ -83,6 +83,46 @@ int main(void) {
         }
     }
 
+    /* State-based test: PASSKEY auth with empty passkey renders without crash
+     * and produces no breach (BREACH button is disabled). */
+    {
+        ConnForm pw_form = {0};
+        pw_form.selected_known_host = -1;
+        snprintf(pw_form.host, sizeof(pw_form.host), "example.com");
+        snprintf(pw_form.user, sizeof(pw_form.user), "alice");
+        snprintf(pw_form.port, sizeof(pw_form.port), "22");
+        pw_form.auth = SSH_AUTH_PASSWORD;
+        /* passkey intentionally empty — BREACH must stay disabled */
+
+        UiConnView pw_view = {0};
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &pw_view, &pw_form, &intents);
+            assert(!intents.breach);
+        }
+    }
+
+    /* State-based test: PASSKEY auth with passkey filled renders without crash
+     * and produces no spurious breach (no button press). */
+    {
+        ConnForm pw_form = {0};
+        pw_form.selected_known_host = -1;
+        snprintf(pw_form.host, sizeof(pw_form.host), "example.com");
+        snprintf(pw_form.user, sizeof(pw_form.user), "alice");
+        snprintf(pw_form.port, sizeof(pw_form.port), "22");
+        pw_form.auth = SSH_AUTH_PASSWORD;
+        snprintf(pw_form.passkey, sizeof(pw_form.passkey), "s3cr3t");
+
+        UiConnView pw_view = {0};
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &pw_view, &pw_form, &intents);
+            assert(!intents.breach);
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

@@ -215,7 +215,8 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
 
-    bool first_show = ImGui::IsWindowAppearing();
+    bool first_show    = ImGui::IsWindowAppearing();
+    bool passkey_enter = false;
 
     /* Header */
     ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN);
@@ -258,14 +259,45 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
     bool user_enter = ImGui::InputText("##user", form->user, sizeof(form->user),
                                        ro | ImGuiInputTextFlags_EnterReturnsTrue);
 
-    /* AUTH (SSH-AGENT only in Task 9; Task 12 adds toggle) */
+    /* AUTH toggle: SSH-AGENT or PASSKEY */
     ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
     ImGui::TextUnformatted(lex(LEX_CONN_FIELD_AUTH));
     ImGui::PopStyleColor();
     ImGui::SameLine(lw);
-    ImGui::PushStyleColor(ImGuiCol_Text, C_TEXT);
-    ImGui::TextUnformatted(lex(LEX_CONN_AUTH_AGENT));
-    ImGui::PopStyleColor();
+    {
+        const char *auth_label = (form->auth == SSH_AUTH_PASSWORD)
+            ? lex(LEX_CONN_AUTH_PASSKEY)
+            : lex(LEX_CONN_AUTH_AGENT);
+        if (connecting) {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_TEXT);
+            ImGui::TextUnformatted(auth_label);
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::BeginCombo("##auth", auth_label)) {
+                if (ImGui::Selectable(lex(LEX_CONN_AUTH_AGENT),
+                                      form->auth == SSH_AUTH_AGENT))
+                    form->auth = SSH_AUTH_AGENT;
+                if (ImGui::Selectable(lex(LEX_CONN_AUTH_PASSKEY),
+                                      form->auth == SSH_AUTH_PASSWORD))
+                    form->auth = SSH_AUTH_PASSWORD;
+                ImGui::EndCombo();
+            }
+        }
+    }
+
+    /* PASSKEY field — only visible when auth == SSH_AUTH_PASSWORD */
+    if (form->auth == SSH_AUTH_PASSWORD) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_CONN_AUTH_PASSKEY));
+        ImGui::PopStyleColor();
+        ImGui::SameLine(lw);
+        ImGui::SetNextItemWidth(-1.0f);
+        passkey_enter = ImGui::InputText(
+            "##passkey", form->passkey, sizeof(form->passkey),
+            ro | ImGuiInputTextFlags_Password |
+                ImGuiInputTextFlags_EnterReturnsTrue);
+    }
 
     /* KNOWN HOSTS */
     ImGui::Spacing();
@@ -361,8 +393,10 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
         if (ImGui::IsKeyPressed(ImGuiKey_Escape))
             out->abort = true;
     } else {
-        bool valid = (form->host[0] != '\0' && form->user[0] != '\0');
-        bool enter = host_enter || port_enter || user_enter;
+        bool valid = (form->host[0] != '\0' && form->user[0] != '\0' &&
+                      (form->auth == SSH_AUTH_AGENT ||
+                       form->passkey[0] != '\0'));
+        bool enter = host_enter || port_enter || user_enter || passkey_enter;
 
         if (!valid) ImGui::BeginDisabled();
         if (ImGui::Button(lex(LEX_CONN_BREACH)) || (valid && enter))
