@@ -258,7 +258,7 @@ other non-`OK` outcome or teardown crash fails hard. The existing
 
 ### Task 5 - Windowed entry point + docking host + quit
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 4
 - **User stories covered**: US-1 (a native window opens), US-2
   (single window titled `ostrich`), US-3 (resizable/native
@@ -305,16 +305,16 @@ dark; the footer's `ONLINE` only means "ostrich is running").
 
 #### Acceptance criteria
 
-- [ ] `./build/ostrich` opens one resizable native window
+- [x] `./build/ostrich` opens one resizable native window
       titled `ostrich` that paints immediately (no splash) and
       can be moved/min/maximized via the OS.
-- [ ] The window presents an empty ImGui docking host; it stays
+- [x] The window presents an empty ImGui docking host; it stays
       a single OS window (multi-viewport off).
-- [ ] Closing the window **and** pressing Ctrl-Q each quit
+- [x] Closing the window **and** pressing Ctrl-Q each quit
       cleanly, tearing down ImGui/GL/GLFW with no crash or hang,
       and `main` returns the `UiStatus`-mapped exit code.
-- [ ] Launch performs no network/SSH activity.
-- [ ] `tests/smoke_test.c` is removed; `make test` runs only the
+- [x] Launch performs no network/SSH activity.
+- [x] `tests/smoke_test.c` is removed; `make test` runs only the
       three pure-tier tests plus `ui_test`, and all
       pass (or `ui_test` skips with no display).
 

@@ -93,14 +93,27 @@ $(BUILD)/ui/ui.o: $(SRC)/ui/ui.cpp | $(BUILD)/ui
 $(BUILD)/libui.a: $(UI_OBJS) $(IMGUI_OBJS)
 	ar rcs $@ $^
 
-# ── Ostrich binary (console stub — unchanged through Task 4) ──────────
-$(BUILD)/ostrich: $(SRC)/main.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $<
+# ── Ostrich binary ────────────────────────────────────────────────────
+$(BUILD)/app_main.o: $(SRC)/main.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/app_arena.o: $(SRC)/arena.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/app_lexicon.o: $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/app_framestats.o: $(SRC)/framestats.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_arena.o \
+            $(BUILD)/app_lexicon.o $(BUILD)/app_framestats.o
+
+$(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a
+	$(CXX) -o $@ $(APP_OBJS) \
+	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
 # ── Tests ─────────────────────────────────────────────────────────────
-$(BUILD)/smoke_test: $(TESTS)/smoke_test.c | $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $<
-
 $(BUILD)/arena_test: $(TESTS)/arena_test.c $(SRC)/arena.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $^
 
@@ -121,9 +134,8 @@ $(BUILD)/ui_test: $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
 	$(CXX) -o $@ $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
-test: all $(BUILD)/smoke_test $(BUILD)/arena_test $(BUILD)/lexicon_test \
+test: all $(BUILD)/arena_test $(BUILD)/lexicon_test \
       $(BUILD)/framestats_test $(BUILD)/ui_test
-	./$(BUILD)/smoke_test
 	./$(BUILD)/arena_test
 	./$(BUILD)/lexicon_test
 	./$(BUILD)/framestats_test
