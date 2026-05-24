@@ -433,13 +433,14 @@ static void draw_conn_bar(const UiConnView *view, double online_since,
     const ImGuiIO &io     = ImGui::GetIO();
     const float    avail_w = io.DisplaySize.x;
     const float    pad    = ImGui::GetStyle().FramePadding.y;
-    const float    bar_h  = ImGui::GetTextLineHeight() + pad * 2.0f;
+    const float    v_pad  = pad * 2.0f;
+    const float    bar_h  = ImGui::GetTextLineHeight() + v_pad * 2.0f;
 
     ImGui::SetNextWindowPos({0.0f, 0.0f});
     ImGui::SetNextWindowSize({avail_w, bar_h});
     ImGui::SetNextWindowBgAlpha(1.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, C_BG);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{pad * 2.0f, pad});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{pad * 2.0f, v_pad});
     ImGui::Begin("##conn_bar", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize |
                      ImGuiWindowFlags_NoMove |

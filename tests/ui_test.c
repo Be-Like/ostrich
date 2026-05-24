@@ -223,6 +223,31 @@ int main(void) {
         }
     }
 
+    /* State-based test: bar spacing — ONLINE and REACQUIRING both render across
+     * multiple frames without crash and emit no spurious intents (guards the
+     * bar_h / v_pad sizing change in draw_conn_bar). */
+    {
+        const char *hosts[] = {"alice@mac.local", "bob@192.168.1.10", ""};
+        ConnPhase   phases[] = {CONN_ONLINE, CONN_REACQUIRING};
+
+        for (int pi = 0; pi < 2; pi++) {
+            for (int hi = 0; hi < 3; hi++) {
+                UiConnView bar_view = {0};
+                bar_view.phase     = phases[pi];
+                bar_view.user_host = hosts[hi];
+
+                for (int i = 0; i < 5; i++) {
+                    UiIntents intents = {0};
+                    intents.select_host = -1;
+                    ui_frame(ui, &bar_view, &form, &intents);
+                    assert(!intents.close);
+                    assert(!intents.update);
+                    assert(!intents.breach);
+                }
+            }
+        }
+    }
+
     /* State-based test: overlay with SSH_AUTH_AGENT (HOST/PORT/USER nav fields)
      * renders without crash and emits no spurious intents (nav enabled). */
     {

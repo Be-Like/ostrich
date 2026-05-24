@@ -829,7 +829,7 @@ the C++ UI library behind `ui.h`; no header/app changes.
 
 ### Task 18 - Connection bar top spacing
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none (builds on the completed Task 9)
 - **User stories covered**: US-28 (the thin connection bar showing
   `user@host  * ONLINE`); polish toward US-50 (a legible voice
@@ -858,11 +858,11 @@ changes.
 
 #### Acceptance criteria
 
-- [ ] After breaching, the bar's `user@host  * ONLINE` text has
+- [x] After breaching, the bar's `user@host  * ONLINE` text has
       visible spacing above it and no longer hugs the top window
       edge.
-- [ ] The bar stays full-width and opaque; the UPDATE/CLOSE controls
+- [x] The bar stays full-width and opaque; the UPDATE/CLOSE controls
       stay right-aligned and unclipped; the grant stamp → pulse and
       REACQUIRING states are unchanged.
-- [ ] `make`/`make test` stay green (the headless `ui_test` still
+- [x] `make`/`make test` stay green (the headless `ui_test` still
       skips without a display).
