@@ -417,7 +417,7 @@ against a chosen project path.
 
 ### Task 8 - session 5c: SWEEP
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 6, 2
 - **User stories covered**: 26, 27, 34, 35, 41
 

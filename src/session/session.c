@@ -54,6 +54,8 @@ typedef enum {
     DJOB_KIND_SCAN,
     DJOB_KIND_READ_BLUEPRINT,
     DJOB_KIND_RESOLVE_BUNDLE_ID,
+    DJOB_KIND_SWEEP_DEVICECTL,  /* devicectl half of a sweep */
+    DJOB_KIND_SWEEP_SIMCTL,     /* simctl half of a sweep    */
 } DiscJobKind;
 
 typedef enum {
@@ -83,6 +85,8 @@ typedef struct {
     StrList       configs;
     /* DJOB_KIND_RESOLVE_BUNDLE_ID result */
     char          bundle_id[256];
+    /* DJOB_KIND_SWEEP_* emit data */
+    TargetList    targets;
 } DiscJob;
 
 /* ── worker-private sub-phase ─────────────────────────────────────── */
@@ -112,6 +116,10 @@ typedef struct {
     /* discovery job engine */
     DiscJob          disc_jobs[DISC_MAX_JOBS];
     Arena           *disc_arenas[DISC_MAX_JOBS];
+    /* sweep group tracking (one sweep at a time) */
+    int              sweep_group_remaining; /* sweep jobs still in flight */
+    bool             sweep_group_failed;    /* SWEEP_FAILED already emitted */
+    int              sweep_total;           /* DEV_TARGET events emitted so far */
 } WorkerCtx;
 
 /* ── time helpers ─────────────────────────────────────────────────── */
@@ -192,6 +200,8 @@ static SessionDiscEventKind failure_event_for(DiscJobKind kind)
     switch (kind) {
     case DJOB_KIND_READ_BLUEPRINT:    return DEV_BLUEPRINT_FAILED;
     case DJOB_KIND_RESOLVE_BUNDLE_ID: return DEV_BUNDLE_ID_FAILED;
+    case DJOB_KIND_SWEEP_DEVICECTL:
+    case DJOB_KIND_SWEEP_SIMCTL:      return DEV_SWEEP_FAILED;
     default:                          return DEV_SCAN_FAILED;
     }
 }
@@ -201,11 +211,26 @@ static void fail_disc_job(WorkerCtx *ctx, int i, DiscStatus st)
     DiscJob *j = &ctx->disc_jobs[i];
     if (j->ch) { ssh_channel_close(j->ch); j->ch = NULL; }
     arena_reset(ctx->disc_arenas[i]);
-    SessionDiscEvent ev;
-    memset(&ev, 0, sizeof(ev));
-    ev.kind        = failure_event_for(j->kind);
-    ev.disc_status = st;
-    push_disc_ev(ctx, &ev);
+
+    bool is_sweep = (j->kind == DJOB_KIND_SWEEP_DEVICECTL ||
+                     j->kind == DJOB_KIND_SWEEP_SIMCTL);
+    if (is_sweep) {
+        ctx->sweep_group_remaining--;
+        if (!ctx->sweep_group_failed) {
+            ctx->sweep_group_failed = true;
+            SessionDiscEvent ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.kind        = DEV_SWEEP_FAILED;
+            ev.disc_status = st;
+            push_disc_ev(ctx, &ev);
+        }
+    } else {
+        SessionDiscEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind        = failure_event_for(j->kind);
+        ev.disc_status = st;
+        push_disc_ev(ctx, &ev);
+    }
     j->kind = DJOB_KIND_NONE;
 }
 
@@ -218,11 +243,26 @@ static void fail_all_disc_jobs(WorkerCtx *ctx)
         if (j->kind == DJOB_KIND_NONE) continue;
         j->ch = NULL;  /* session teardown frees it */
         arena_reset(ctx->disc_arenas[i]);
-        SessionDiscEvent ev;
-        memset(&ev, 0, sizeof(ev));
-        ev.kind        = failure_event_for(j->kind);
-        ev.disc_status = DISC_ERR_COMMAND_FAILED;
-        push_disc_ev(ctx, &ev);
+
+        bool is_sweep = (j->kind == DJOB_KIND_SWEEP_DEVICECTL ||
+                         j->kind == DJOB_KIND_SWEEP_SIMCTL);
+        if (is_sweep) {
+            ctx->sweep_group_remaining--;
+            if (!ctx->sweep_group_failed) {
+                ctx->sweep_group_failed = true;
+                SessionDiscEvent ev;
+                memset(&ev, 0, sizeof(ev));
+                ev.kind        = DEV_SWEEP_FAILED;
+                ev.disc_status = DISC_ERR_COMMAND_FAILED;
+                push_disc_ev(ctx, &ev);
+            }
+        } else {
+            SessionDiscEvent ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.kind        = failure_event_for(j->kind);
+            ev.disc_status = DISC_ERR_COMMAND_FAILED;
+            push_disc_ev(ctx, &ev);
+        }
         j->kind = DJOB_KIND_NONE;
     }
 }
@@ -303,6 +343,12 @@ static void drive_disc_job(WorkerCtx *ctx, int i)
                 case DJOB_KIND_RESOLVE_BUNDLE_ID:
                     ds = disc_parse_bundle_id(raw, j->bundle_id, sizeof(j->bundle_id));
                     break;
+                case DJOB_KIND_SWEEP_DEVICECTL:
+                    ds = disc_parse_devicectl(ctx->disc_arenas[i], raw, &j->targets);
+                    break;
+                case DJOB_KIND_SWEEP_SIMCTL:
+                    ds = disc_parse_simctl(ctx->disc_arenas[i], raw, &j->targets);
+                    break;
                 default:
                     ds = DISC_ERR_COMMAND_FAILED;
                     break;
@@ -374,6 +420,31 @@ static void drive_disc_job(WorkerCtx *ctx, int i)
                 memcpy(ev.bundle_id, j->bundle_id, len);
                 ev.bundle_id[len] = '\0';
                 push_disc_ev(ctx, &ev);
+                break;
+            }
+            case DJOB_KIND_SWEEP_DEVICECTL:
+            case DJOB_KIND_SWEEP_SIMCTL: {
+                /* Emit targets only if the group hasn't already failed. */
+                if (!ctx->sweep_group_failed) {
+                    while (j->emit_idx < j->targets.count) {
+                        SessionDiscEvent ev;
+                        memset(&ev, 0, sizeof(ev));
+                        ev.kind   = DEV_TARGET;
+                        ev.target = j->targets.items[j->emit_idx];
+                        if (!spsc_push(ctx->s->disc_event_ring, &ev)) return;
+                        j->emit_idx++;
+                        ctx->sweep_total++;
+                    }
+                }
+                ctx->sweep_group_remaining--;
+                if (ctx->sweep_group_remaining == 0 && !ctx->sweep_group_failed) {
+                    SessionDiscEvent ev;
+                    memset(&ev, 0, sizeof(ev));
+                    ev.kind  = DEV_SWEEP_COMPLETE;
+                    ev.count = ctx->sweep_total;
+                    push_disc_ev(ctx, &ev);
+                }
+                /* outer code clears arena + kind */
                 break;
             }
             default:
@@ -528,15 +599,75 @@ static void handle_disc_resolve_bundle_id(WorkerCtx *ctx, const SessionDiscCmd *
     j->state = DJOB_OPEN;
 }
 
+static void handle_disc_sweep(WorkerCtx *ctx)
+{
+    if (ctx->sub != SUB_ONLINE) return;
+
+    /* Require no sweep already in flight; find two free slots. */
+    int slots[2] = {-1, -1};
+    int found    = 0;
+    for (int i = 0; i < DISC_MAX_JOBS; i++) {
+        DiscJobKind k = ctx->disc_jobs[i].kind;
+        if (k == DJOB_KIND_SWEEP_DEVICECTL || k == DJOB_KIND_SWEEP_SIMCTL)
+            return;  /* sweep in flight — silently drop */
+        if (k == DJOB_KIND_NONE && found < 2)
+            slots[found++] = i;
+    }
+    if (found < 2) {
+        SessionDiscEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind        = DEV_SWEEP_FAILED;
+        ev.disc_status = DISC_ERR_OOM;
+        push_disc_ev(ctx, &ev);
+        return;
+    }
+
+    DiscStatus ds = DISC_OK;
+    DiscJob   *jd = &ctx->disc_jobs[slots[0]];
+    DiscJob   *js = &ctx->disc_jobs[slots[1]];
+    memset(jd, 0, sizeof(*jd));
+    memset(js, 0, sizeof(*js));
+
+    ds = disc_devicectl_cmd(jd->cmd, sizeof(jd->cmd));
+    if (ds != DISC_OK) goto fail;
+    jd->buf = arena_alloc(ctx->disc_arenas[slots[0]], DISC_JOB_BUF_CAP, 1);
+    if (!jd->buf) { ds = DISC_ERR_OOM; goto fail; }
+
+    ds = disc_simctl_cmd(js->cmd, sizeof(js->cmd));
+    if (ds != DISC_OK) goto fail;
+    js->buf = arena_alloc(ctx->disc_arenas[slots[1]], DISC_JOB_BUF_CAP, 1);
+    if (!js->buf) { ds = DISC_ERR_OOM; goto fail; }
+
+    ctx->sweep_group_remaining = 2;
+    ctx->sweep_group_failed    = false;
+    ctx->sweep_total           = 0;
+
+    jd->kind  = DJOB_KIND_SWEEP_DEVICECTL;
+    jd->state = DJOB_OPEN;
+    js->kind  = DJOB_KIND_SWEEP_SIMCTL;
+    js->state = DJOB_OPEN;
+    return;
+
+fail:
+    arena_reset(ctx->disc_arenas[slots[0]]);
+    arena_reset(ctx->disc_arenas[slots[1]]);
+    SessionDiscEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.kind        = DEV_SWEEP_FAILED;
+    ev.disc_status = ds;
+    push_disc_ev(ctx, &ev);
+}
+
 static void drain_disc_cmds(WorkerCtx *ctx)
 {
     SessionDiscCmd cmd;
     while (spsc_pop(ctx->s->disc_cmd_ring, &cmd)) {
         switch (cmd.kind) {
-        case DCMD_SCAN_HOST:         handle_disc_scan(ctx, &cmd);             break;
-        case DCMD_ABORT_SCAN:        handle_disc_abort(ctx);                  break;
-        case DCMD_READ_BLUEPRINT:    handle_disc_read_blueprint(ctx, &cmd);   break;
+        case DCMD_SCAN_HOST:         handle_disc_scan(ctx, &cmd);              break;
+        case DCMD_ABORT_SCAN:        handle_disc_abort(ctx);                   break;
+        case DCMD_READ_BLUEPRINT:    handle_disc_read_blueprint(ctx, &cmd);    break;
         case DCMD_RESOLVE_BUNDLE_ID: handle_disc_resolve_bundle_id(ctx, &cmd); break;
+        case DCMD_SWEEP_TARGETS:     handle_disc_sweep(ctx);                   break;
         }
     }
 }

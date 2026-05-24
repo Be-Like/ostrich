@@ -42,7 +42,8 @@ typedef enum {
     DCMD_SCAN_HOST,
     DCMD_ABORT_SCAN,
     DCMD_READ_BLUEPRINT,    /* xcodebuild -list for a chosen project    */
-    DCMD_RESOLVE_BUNDLE_ID  /* xcodebuild -showBuildSettings for bundle */
+    DCMD_RESOLVE_BUNDLE_ID, /* xcodebuild -showBuildSettings for bundle */
+    DCMD_SWEEP_TARGETS      /* devicectl + simctl concurrently          */
 } SessionDiscCmdKind;
 
 typedef struct {
@@ -63,18 +64,22 @@ typedef enum {
     DEV_BLUEPRINT_READ_COMPLETE,/* -list job succeeded; count = schemes+configs   */
     DEV_BLUEPRINT_FAILED,       /* -list job failed; disc_status set              */
     DEV_BUNDLE_ID,              /* resolved PRODUCT_BUNDLE_IDENTIFIER             */
-    DEV_BUNDLE_ID_FAILED        /* bundle id resolve failed; disc_status set      */
+    DEV_BUNDLE_ID_FAILED,       /* bundle id resolve failed; disc_status set      */
+    DEV_TARGET,                 /* one device or simulator                        */
+    DEV_SWEEP_COMPLETE,         /* both jobs done; count = total targets found    */
+    DEV_SWEEP_FAILED            /* sweep ended with error; disc_status set        */
 } SessionDiscEventKind;
 
 typedef struct {
     SessionDiscEventKind kind;
     union {
         Blueprint  blueprint;      /* DEV_BLUEPRINT                               */
-        int        count;          /* DEV_SCAN_COMPLETE / DEV_BLUEPRINT_READ_COMPLETE */
-        DiscStatus disc_status;    /* DEV_SCAN_FAILED / DEV_BLUEPRINT_FAILED / DEV_BUNDLE_ID_FAILED */
+        int        count;          /* DEV_SCAN_COMPLETE / DEV_BLUEPRINT_READ_COMPLETE / DEV_SWEEP_COMPLETE */
+        DiscStatus disc_status;    /* DEV_SCAN_FAILED / DEV_BLUEPRINT_FAILED / DEV_BUNDLE_ID_FAILED / DEV_SWEEP_FAILED */
         char       scheme[256];    /* DEV_SCHEME                                  */
         char       config[128];    /* DEV_CONFIG                                  */
         char       bundle_id[256]; /* DEV_BUNDLE_ID                               */
+        Target     target;         /* DEV_TARGET                                  */
     };
 } SessionDiscEvent;
 

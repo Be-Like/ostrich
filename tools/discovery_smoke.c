@@ -1,7 +1,7 @@
 /* Dev-only smoke: connect → SCAN HOST → print blueprints → optionally
-   READ_BLUEPRINT → RESOLVE_BUNDLE_ID → close.
+   READ_BLUEPRINT → RESOLVE_BUNDLE_ID → SWEEP FOR TARGETS → close.
    Usage: discovery_smoke <host> <user> <scan_root> [port] [depth] [--abort]
-                          [--blueprint <path>]
+                          [--blueprint <path>] [--sweep]
    Not part of `make test`. */
 #define _DEFAULT_SOURCE
 #include "session.h"
@@ -33,11 +33,14 @@ int main(int argc, char **argv)
     int         port       = 22;
     int         max_depth  = 0;  /* 0 → engine default (8) */
     bool        do_abort   = false;
+    bool        do_sweep   = false;
     const char *blueprint  = NULL;  /* --blueprint <path> */
 
     for (int i = 4; i < argc; i++) {
         if (strcmp(argv[i], "--abort") == 0) {
             do_abort = true;
+        } else if (strcmp(argv[i], "--sweep") == 0) {
+            do_sweep = true;
         } else if (strcmp(argv[i], "--blueprint") == 0 && i + 1 < argc) {
             blueprint = argv[++i];
         } else {
@@ -148,7 +151,7 @@ int main(int argc, char **argv)
 scan_done:
 
     /* optionally drive READ_BLUEPRINT + RESOLVE_BUNDLE_ID */
-    if (!blueprint) goto done;
+    if (!blueprint) goto bundle_done;
 
     printf("\nREAD_BLUEPRINT: '%s'\n", blueprint);
     memset(&dcmd, 0, sizeof(dcmd));
@@ -157,7 +160,7 @@ scan_done:
 
     if (!session_disc_submit(s, &dcmd)) {
         fprintf(stderr, "session_disc_submit(READ_BLUEPRINT): ring full\n");
-        goto done;
+        goto bundle_done;
     }
 
     char first_scheme[256] = {0};
@@ -178,7 +181,7 @@ scan_done:
                 goto read_done;
             case DEV_BLUEPRINT_FAILED:
                 printf("BLUEPRINT_FAILED: %s\n", disc_status_str(dev.disc_status));
-                goto done;
+                goto bundle_done;
             default:
                 break;
             }
@@ -190,7 +193,7 @@ read_done:
 
     if (first_scheme[0] == '\0') {
         printf("No schemes found; skipping RESOLVE_BUNDLE_ID\n");
-        goto done;
+        goto bundle_done;
     }
 
     printf("\nRESOLVE_BUNDLE_ID: scheme='%s' config='Debug'\n", first_scheme);
@@ -202,7 +205,7 @@ read_done:
 
     if (!session_disc_submit(s, &dcmd)) {
         fprintf(stderr, "session_disc_submit(RESOLVE_BUNDLE_ID): ring full\n");
-        goto done;
+        goto bundle_done;
     }
 
     for (;;) {
@@ -211,9 +214,46 @@ read_done:
             switch (dev.kind) {
             case DEV_BUNDLE_ID:
                 printf("BUNDLE_ID: %s\n", dev.bundle_id);
-                goto done;
+                goto bundle_done;
             case DEV_BUNDLE_ID_FAILED:
                 printf("BUNDLE_ID_FAILED: %s\n", disc_status_str(dev.disc_status));
+                goto bundle_done;
+            default:
+                break;
+            }
+        } else {
+            sleep_ms(10);
+        }
+    }
+bundle_done:
+
+    if (!do_sweep) goto done;
+
+    printf("\nSWEEP_TARGETS: devicectl + simctl\n");
+    memset(&dcmd, 0, sizeof(dcmd));
+    dcmd.kind = DCMD_SWEEP_TARGETS;
+
+    if (!session_disc_submit(s, &dcmd)) {
+        fprintf(stderr, "session_disc_submit(SWEEP_TARGETS): ring full\n");
+        goto done;
+    }
+
+    for (;;) {
+        SessionDiscEvent dev;
+        if (session_disc_poll(s, &dev)) {
+            switch (dev.kind) {
+            case DEV_TARGET:
+                printf("  TARGET: %s  udid=%s%s%s\n",
+                       dev.target.name,
+                       dev.target.udid,
+                       dev.target.is_simulator ? " [sim]" : " [device]",
+                       dev.target.booted       ? " [booted]" : "");
+                break;
+            case DEV_SWEEP_COMPLETE:
+                printf("SWEEP_COMPLETE: %d target(s) found\n", dev.count);
+                goto done;
+            case DEV_SWEEP_FAILED:
+                printf("SWEEP_FAILED: %s\n", disc_status_str(dev.disc_status));
                 goto done;
             default:
                 break;
