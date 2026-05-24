@@ -3,6 +3,7 @@
 #include "session.h"
 #include "arena.h"
 #include "connstate.h"
+#include "discovery.h"
 #include "spsc_ring.h"
 #include "ssh.h"
 
@@ -17,33 +18,75 @@
 
 /* ── constants ────────────────────────────────────────────────────── */
 
-#define CMD_RING_CAP           16
-#define EVENT_RING_CAP         32
+#define CMD_RING_CAP            16
+#define EVENT_RING_CAP          32
+#define DISC_CMD_RING_CAP        8
+#define DISC_EVENT_RING_CAP    128
 #define WORKER_ARENA_SZ        (512 * 1024)
 #define CONNECT_TIMEOUT_SEC    30.0
 #define KEEPALIVE_INTERVAL_SEC 30
 
+/* ── discovery job engine constants ───────────────────────────────── */
+
+#define DISC_MAX_JOBS      4
+#define DISC_JOB_ARENA_SZ  (1024 * 1024)  /* 1 MB per job arena   */
+#define DISC_JOB_BUF_CAP   (512 * 1024)   /* 512 KB output buffer */
+#define DISC_READ_CHUNK    4096
+#define DISC_SCAN_DEPTH_DEFAULT 8
+
 /* ── Session control block (flagged malloc) ──────────────────────── */
 
 struct Session {
-    SpscRing  *cmd_ring;    /* UI→worker: SessionCmd records   */
-    SpscRing  *event_ring;  /* worker→UI: SessionEvent records */
-    int        pipe_read;   /* worker reads wakeup bytes       */
-    int        pipe_write;  /* UI writes to wake worker        */
+    SpscRing  *cmd_ring;         /* UI→worker: SessionCmd records      */
+    SpscRing  *event_ring;       /* worker→UI: SessionEvent records    */
+    SpscRing  *disc_cmd_ring;    /* UI→worker: SessionDiscCmd records  */
+    SpscRing  *disc_event_ring;  /* worker→UI: SessionDiscEvent records */
+    int        pipe_read;        /* worker reads wakeup bytes          */
+    int        pipe_write;       /* UI writes to wake worker           */
     pthread_t  thread;
-    atomic_int running;     /* 0 = worker must stop            */
+    atomic_int running;          /* 0 = worker must stop               */
 };
+
+/* ── discovery job types (worker-private) ─────────────────────────── */
+
+typedef enum {
+    DJOB_KIND_NONE,
+    DJOB_KIND_SCAN,
+} DiscJobKind;
+
+typedef enum {
+    DJOB_OPEN,  /* opening the SSH channel       */
+    DJOB_EXEC,  /* starting remote command       */
+    DJOB_READ,  /* accumulating channel output   */
+    DJOB_EXIT,  /* collecting exit code          */
+    DJOB_EMIT,  /* emitting curated results      */
+} DiscJobState;
+
+typedef struct {
+    DiscJobKind   kind;
+    DiscJobState  state;
+    SshChannel   *ch;
+    Arena        *arena;       /* from disc_arenas pool; reset on done */
+    char         *buf;         /* output accumulation (arena-alloc'd) */
+    size_t        buf_len;
+    char          cmd[2048];   /* remote command string                */
+    /* scan-specific */
+    int           scan_depth;
+    /* emit phase */
+    BlueprintList curated;
+    int           emit_idx;
+} DiscJob;
 
 /* ── worker-private sub-phase ─────────────────────────────────────── */
 
 typedef enum {
-    SUB_IDLE,          /* waiting for CMD_BREACH              */
-    SUB_HANDSHAKE,     /* TCP connect + SSH handshake         */
-    SUB_AWAIT_HOSTKEY, /* paused for CMD_TRUST / CMD_DECLINE  */
-    SUB_AUTH,          /* authenticating                      */
-    SUB_PROBE,         /* running liveness probe              */
-    SUB_ONLINE,        /* connected, keepalive loop           */
-    SUB_BACKOFF,       /* waiting before reconnect attempt    */
+    SUB_IDLE,
+    SUB_HANDSHAKE,
+    SUB_AWAIT_HOSTKEY,
+    SUB_AUTH,
+    SUB_PROBE,
+    SUB_ONLINE,
+    SUB_BACKOFF,
 } SubPhase;
 
 typedef struct {
@@ -58,6 +101,9 @@ typedef struct {
     struct timespec  deadline;
     bool             has_deadline;
     int              keepalive_next;
+    /* discovery job engine */
+    DiscJob          disc_jobs[DISC_MAX_JOBS];
+    Arena           *disc_arenas[DISC_MAX_JOBS];
 } WorkerCtx;
 
 /* ── time helpers ─────────────────────────────────────────────────── */
@@ -96,7 +142,7 @@ static bool deadline_past(const struct timespec *dl)
     return ms_until(dl) == 0;
 }
 
-/* ── emit helper ──────────────────────────────────────────────────── */
+/* ── emit helpers ─────────────────────────────────────────────────── */
 
 static void emit_ev(WorkerCtx *ctx, ConnPhase phase, SshStatus reason,
                     bool hk_unknown, bool hk_mismatch)
@@ -116,10 +162,233 @@ static void emit_ev(WorkerCtx *ctx, ConnPhase phase, SshStatus reason,
     spsc_push(ctx->s->event_ring, &ev);
 }
 
+/* Push a disc event; spin briefly until space (UI drains each frame). */
+static void push_disc_ev(WorkerCtx *ctx, const SessionDiscEvent *ev)
+{
+    while (!spsc_push(ctx->s->disc_event_ring, ev))
+        ;
+}
+
+/* ── disc job helpers ─────────────────────────────────────────────── */
+
+static bool has_active_disc_jobs(const WorkerCtx *ctx)
+{
+    for (int i = 0; i < DISC_MAX_JOBS; i++) {
+        if (ctx->disc_jobs[i].kind != DJOB_KIND_NONE) return true;
+    }
+    return false;
+}
+
+static void fail_disc_job(WorkerCtx *ctx, int i, DiscStatus st)
+{
+    DiscJob *j = &ctx->disc_jobs[i];
+    if (j->ch) { ssh_channel_close(j->ch); j->ch = NULL; }
+    arena_reset(ctx->disc_arenas[i]);
+    SessionDiscEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.kind        = DEV_SCAN_FAILED;
+    ev.disc_status = st;
+    push_disc_ev(ctx, &ev);
+    j->kind = DJOB_KIND_NONE;
+}
+
+/* Called before ssh_disconnect; channel pointers will be freed by the
+   session teardown, so we null them rather than closing individually. */
+static void fail_all_disc_jobs(WorkerCtx *ctx)
+{
+    for (int i = 0; i < DISC_MAX_JOBS; i++) {
+        DiscJob *j = &ctx->disc_jobs[i];
+        if (j->kind == DJOB_KIND_NONE) continue;
+        j->ch = NULL;  /* session teardown frees it */
+        arena_reset(ctx->disc_arenas[i]);
+        SessionDiscEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind        = DEV_SCAN_FAILED;
+        ev.disc_status = DISC_ERR_COMMAND_FAILED;
+        push_disc_ev(ctx, &ev);
+        j->kind = DJOB_KIND_NONE;
+    }
+}
+
+/* Drive a single disc job through its state machine.
+   Returns without blocking; re-called each worker iteration. */
+static void drive_disc_job(WorkerCtx *ctx, int i)
+{
+    DiscJob *j = &ctx->disc_jobs[i];
+    bool again = true;
+
+    while (again && j->kind != DJOB_KIND_NONE) {
+        again = false;
+
+        switch (j->state) {
+        case DJOB_OPEN: {
+            SshStatus st = ssh_channel_open(ctx->ssh, &j->ch);
+            if (st == SSH_AGAIN) return;
+            if (st != SSH_OK) { fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED); return; }
+            j->state = DJOB_EXEC;
+            again    = true;
+            break;
+        }
+        case DJOB_EXEC: {
+            SshStatus st = ssh_channel_exec(j->ch, j->cmd);
+            if (st == SSH_AGAIN) return;
+            if (st != SSH_OK) { fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED); return; }
+            j->state = DJOB_READ;
+            again    = true;
+            break;
+        }
+        case DJOB_READ: {
+            for (;;) {
+                if (ssh_channel_eof(j->ch)) {
+                    j->state = DJOB_EXIT;
+                    again    = true;
+                    break;
+                }
+                char tmp[DISC_READ_CHUNK];
+                size_t n = 0;
+                SshStatus st = ssh_channel_read(j->ch, tmp, sizeof(tmp), &n);
+                if (st == SSH_AGAIN) break;
+                if (st != SSH_OK) {
+                    fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED);
+                    return;
+                }
+                if (n == 0) break;
+                if (j->buf_len + n > DISC_JOB_BUF_CAP) {
+                    fail_disc_job(ctx, i, DISC_ERR_OOM);
+                    return;
+                }
+                memcpy(j->buf + j->buf_len, tmp, n);
+                j->buf_len += n;
+            }
+            break;
+        }
+        case DJOB_EXIT: {
+            int exit_code = -1;
+            SshStatus st  = ssh_channel_exit(j->ch, &exit_code);
+            if (st == SSH_AGAIN) return;
+            ssh_channel_close(j->ch);
+            j->ch = NULL;
+            if (st != SSH_OK) {
+                fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED);
+                return;
+            }
+            if (exit_code == 127) { fail_disc_job(ctx, i, DISC_ERR_XCODE_MISSING); return; }
+            if (exit_code != 0)   { fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED); return; }
+            /* curate scan output */
+            Str raw = { j->buf, j->buf_len };
+            DiscStatus ds = disc_curate_blueprints(ctx->disc_arenas[i], raw,
+                                                   j->scan_depth, &j->curated);
+            if (ds != DISC_OK) { fail_disc_job(ctx, i, ds); return; }
+            j->state    = DJOB_EMIT;
+            j->emit_idx = 0;
+            again       = true;
+            break;
+        }
+        case DJOB_EMIT: {
+            /* emit one blueprint per push attempt; return if ring full */
+            while (j->emit_idx < j->curated.count) {
+                SessionDiscEvent ev;
+                memset(&ev, 0, sizeof(ev));
+                ev.kind      = DEV_BLUEPRINT;
+                ev.blueprint = j->curated.items[j->emit_idx];
+                if (!spsc_push(ctx->s->disc_event_ring, &ev)) return;
+                j->emit_idx++;
+            }
+            /* all blueprints emitted; send completion */
+            SessionDiscEvent ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.kind  = DEV_SCAN_COMPLETE;
+            ev.count = j->curated.count;
+            push_disc_ev(ctx, &ev);
+            arena_reset(ctx->disc_arenas[i]);
+            j->kind = DJOB_KIND_NONE;
+            break;
+        }
+        }
+    }
+}
+
+static void drive_disc_jobs(WorkerCtx *ctx)
+{
+    for (int i = 0; i < DISC_MAX_JOBS; i++) {
+        if (ctx->disc_jobs[i].kind == DJOB_KIND_NONE) continue;
+        drive_disc_job(ctx, i);
+    }
+}
+
+/* ── disc command handlers ────────────────────────────────────────── */
+
+static void handle_disc_scan(WorkerCtx *ctx, const SessionDiscCmd *cmd)
+{
+    if (ctx->sub != SUB_ONLINE) return;
+
+    int slot = -1;
+    for (int i = 0; i < DISC_MAX_JOBS; i++) {
+        if (ctx->disc_jobs[i].kind == DJOB_KIND_NONE) { slot = i; break; }
+    }
+    if (slot < 0) return; /* table full; silently drop */
+
+    DiscJob *j = &ctx->disc_jobs[slot];
+    memset(j, 0, sizeof(*j));
+
+    int depth = cmd->max_depth > 0 ? cmd->max_depth : DISC_SCAN_DEPTH_DEFAULT;
+    DiscStatus ds = disc_scan_cmd(cmd->root, depth, j->cmd, sizeof(j->cmd));
+    if (ds != DISC_OK) {
+        SessionDiscEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind        = DEV_SCAN_FAILED;
+        ev.disc_status = ds;
+        push_disc_ev(ctx, &ev);
+        return;
+    }
+
+    j->buf = arena_alloc(ctx->disc_arenas[slot], DISC_JOB_BUF_CAP, 1);
+    if (!j->buf) {
+        SessionDiscEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind        = DEV_SCAN_FAILED;
+        ev.disc_status = DISC_ERR_OOM;
+        push_disc_ev(ctx, &ev);
+        return;
+    }
+
+    j->scan_depth = depth;
+    j->kind       = DJOB_KIND_SCAN;
+    j->state      = DJOB_OPEN;
+}
+
+static void handle_disc_abort(WorkerCtx *ctx)
+{
+    for (int i = 0; i < DISC_MAX_JOBS; i++) {
+        DiscJob *j = &ctx->disc_jobs[i];
+        if (j->kind != DJOB_KIND_SCAN) continue;
+        if (j->ch) { ssh_channel_close(j->ch); j->ch = NULL; }
+        arena_reset(ctx->disc_arenas[i]);
+        SessionDiscEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind        = DEV_SCAN_FAILED;
+        ev.disc_status = DISC_ERR_COMMAND_FAILED;
+        push_disc_ev(ctx, &ev);
+        j->kind = DJOB_KIND_NONE;
+    }
+}
+
+static void drain_disc_cmds(WorkerCtx *ctx)
+{
+    SessionDiscCmd cmd;
+    while (spsc_pop(ctx->s->disc_cmd_ring, &cmd)) {
+        switch (cmd.kind) {
+        case DCMD_SCAN_HOST:  handle_disc_scan(ctx, &cmd); break;
+        case DCMD_ABORT_SCAN: handle_disc_abort(ctx);      break;
+        }
+    }
+}
+
 /* ── disconnect / reset helpers ───────────────────────────────────── */
 
 static void disconnect_ssh(WorkerCtx *ctx)
 {
+    fail_all_disc_jobs(ctx);
     if (ctx->ssh) {
         ssh_disconnect(ctx->ssh);
         ctx->ssh = NULL;
@@ -153,7 +422,7 @@ static void on_fail(WorkerCtx *ctx, ConnEvent ev, SshStatus reason)
     }
 }
 
-/* ── command handlers ─────────────────────────────────────────────── */
+/* ── connection command handlers ──────────────────────────────────── */
 
 static void handle_breach(WorkerCtx *ctx, const SshConfig *cfg)
 {
@@ -273,7 +542,6 @@ static void drive_sub(WorkerCtx *ctx)
             on_fail(ctx, EV_FAIL, st);
             return;
         }
-        /* handshake done — inspect host key */
         {
             SshHostKeyVerdict verdict;
             st = ssh_hostkey_check(ctx->ssh, &verdict,
@@ -305,11 +573,10 @@ static void drive_sub(WorkerCtx *ctx)
                 emit_ev(ctx, CONN_AWAITING_HOSTKEY, SSH_OK, true, false);
                 return;
             }
-            /* SSH_HOSTKEY_OK */
             connstate_step(&ctx->cs, EV_HOSTKEY_OK);
             ctx->sub = SUB_AUTH;
         }
-        return; /* next iteration drives auth */
+        return;
 
     case SUB_AUTH:
         if (ctx->has_deadline && deadline_past(&ctx->deadline)) {
@@ -324,7 +591,7 @@ static void drive_sub(WorkerCtx *ctx)
         }
         connstate_step(&ctx->cs, EV_AUTH_OK);
         ctx->sub = SUB_PROBE;
-        return; /* next iteration drives probe */
+        return;
 
     case SUB_PROBE:
         if (ctx->has_deadline && deadline_past(&ctx->deadline)) {
@@ -348,7 +615,7 @@ static void drive_sub(WorkerCtx *ctx)
         return;
 
     case SUB_ONLINE:
-        return; /* keepalive handled by poll timeout in main loop */
+        return;
     }
 }
 
@@ -359,7 +626,7 @@ static int compute_timeout_ms(const WorkerCtx *ctx)
     switch (ctx->sub) {
     case SUB_IDLE:
     case SUB_AWAIT_HOSTKEY:
-        return -1; /* block until woken via pipe */
+        return -1;
 
     case SUB_HANDSHAKE:
     case SUB_AUTH:
@@ -378,6 +645,8 @@ static int compute_timeout_ms(const WorkerCtx *ctx)
         return 1000;
 
     case SUB_ONLINE:
+        /* bound poll while disc jobs are in flight so reads stay responsive */
+        if (has_active_disc_jobs(ctx)) return 10;
         return ctx->keepalive_next * 1000;
     }
     return -1;
@@ -401,6 +670,16 @@ static void *worker_fn(void *arg)
         return NULL;
     }
 
+    for (int i = 0; i < DISC_MAX_JOBS; i++) {
+        ctx.disc_arenas[i] = arena_create(DISC_JOB_ARENA_SZ);
+        if (!ctx.disc_arenas[i]) {
+            for (int j = 0; j < i; j++) arena_destroy(ctx.disc_arenas[j]);
+            arena_destroy(ctx.arena);
+            atomic_store(&s->running, 0);
+            return NULL;
+        }
+    }
+
     connstate_init(&ctx.cs);
 
     while (atomic_load(&s->running)) {
@@ -419,16 +698,14 @@ static void *worker_fn(void *arg)
 
         int nready = poll(fds, nfds, compute_timeout_ms(&ctx));
 
-        /* drain self-pipe wakeup bytes */
         if (fds[0].revents & POLLIN) {
             char buf[64];
             (void)read(s->pipe_read, buf, sizeof(buf));
         }
 
-        /* drain command ring */
         drain_cmds(&ctx);
+        drain_disc_cmds(&ctx);
 
-        /* keepalive: triggered only on poll timeout (nready == 0) */
         if (ctx.sub == SUB_ONLINE && nready == 0 && ctx.ssh) {
             SshStatus kst = ssh_keepalive(ctx.ssh, &ctx.keepalive_next);
             if (kst != SSH_OK && kst != SSH_AGAIN) {
@@ -448,11 +725,16 @@ static void *worker_fn(void *arg)
             }
         }
 
-        /* advance sub-phase state machine */
         drive_sub(&ctx);
+
+        if (ctx.sub == SUB_ONLINE && ctx.ssh)
+            drive_disc_jobs(&ctx);
     }
 
     if (ctx.ssh) ssh_disconnect(ctx.ssh);
+    for (int i = 0; i < DISC_MAX_JOBS; i++) {
+        if (ctx.disc_arenas[i]) arena_destroy(ctx.disc_arenas[i]);
+    }
     if (ctx.arena) arena_destroy(ctx.arena);
     return NULL;
 }
@@ -477,8 +759,27 @@ SshStatus session_open(Session **out)
         return SSH_ERR_OOM;
     }
 
+    s->disc_cmd_ring = spsc_create(sizeof(SessionDiscCmd), DISC_CMD_RING_CAP);
+    if (!s->disc_cmd_ring) {
+        spsc_destroy(s->event_ring);
+        spsc_destroy(s->cmd_ring);
+        free(s);
+        return SSH_ERR_OOM;
+    }
+
+    s->disc_event_ring = spsc_create(sizeof(SessionDiscEvent), DISC_EVENT_RING_CAP);
+    if (!s->disc_event_ring) {
+        spsc_destroy(s->disc_cmd_ring);
+        spsc_destroy(s->event_ring);
+        spsc_destroy(s->cmd_ring);
+        free(s);
+        return SSH_ERR_OOM;
+    }
+
     int pipefd[2];
     if (pipe(pipefd) != 0) {
+        spsc_destroy(s->disc_event_ring);
+        spsc_destroy(s->disc_cmd_ring);
         spsc_destroy(s->event_ring);
         spsc_destroy(s->cmd_ring);
         free(s);
@@ -492,6 +793,8 @@ SshStatus session_open(Session **out)
     if (pthread_create(&s->thread, NULL, worker_fn, s) != 0) {
         close(s->pipe_read);
         close(s->pipe_write);
+        spsc_destroy(s->disc_event_ring);
+        spsc_destroy(s->disc_cmd_ring);
         spsc_destroy(s->event_ring);
         spsc_destroy(s->cmd_ring);
         free(s);
@@ -517,6 +820,21 @@ bool session_poll(Session *s, SessionEvent *out)
     return spsc_pop(s->event_ring, out);
 }
 
+bool session_disc_submit(Session *s, const SessionDiscCmd *cmd)
+{
+    bool ok = spsc_push(s->disc_cmd_ring, cmd);
+    if (ok) {
+        char byte = 1;
+        (void)write(s->pipe_write, &byte, 1);
+    }
+    return ok;
+}
+
+bool session_disc_poll(Session *s, SessionDiscEvent *out)
+{
+    return spsc_pop(s->disc_event_ring, out);
+}
+
 void session_close(Session *s)
 {
     if (!s) return;
@@ -526,6 +844,8 @@ void session_close(Session *s)
     pthread_join(s->thread, NULL);
     close(s->pipe_write);
     close(s->pipe_read);
+    spsc_destroy(s->disc_event_ring);
+    spsc_destroy(s->disc_cmd_ring);
     spsc_destroy(s->event_ring);
     spsc_destroy(s->cmd_ring);
     free(s);

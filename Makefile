@@ -105,7 +105,7 @@ SESSION_OBJS := $(patsubst %.c,$(BUILD)/session/%.o,$(SESSION_SRC))
 DISCOVERY_SRC  := discovery.c
 DISCOVERY_OBJS := $(patsubst %.c,$(BUILD)/discovery/%.o,$(DISCOVERY_SRC))
 
-.PHONY: all clean test ssh_version_smoke ssh_smoke session_smoke
+.PHONY: all clean test ssh_version_smoke ssh_smoke session_smoke discovery_smoke
 
 all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
      $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
@@ -176,12 +176,12 @@ APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_app.o $(BUILD)/app_form.o \
 $(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a \
                   $(BUILD)/libsession.a $(BUILD)/libssh.a \
                   $(BUILD)/libconnstate.a $(BUILD)/libstore.a \
-                  $(BUILD)/liblibssh2.a
+                  $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a
 	$(CXX) -o $@ $(APP_OBJS) \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a \
 	    $(BUILD)/libconnstate.a $(BUILD)/libstore.a \
-	    $(BUILD)/liblibssh2.a \
+	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
 	    $(OPENSSL_LIBS) $(PLATFORM_LIBS)
 
 # ── ssh library (our libssh2 wrapper) ────────────────────────────────
@@ -247,6 +247,19 @@ $(BUILD)/session_smoke: tools/session_smoke.c $(BUILD)/libsession.a \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
 	    $(BUILD)/liblibssh2.a $(OPENSSL_LIBS) -lpthread -lm
+
+discovery_smoke: $(BUILD)/discovery_smoke
+
+$(BUILD)/discovery_smoke: tools/discovery_smoke.c $(BUILD)/libsession.a \
+                          $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+                          $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+                          $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
+	    -o $@ tools/discovery_smoke.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+	    $(OPENSSL_LIBS) -lpthread -lm
 
 # ── Tests ─────────────────────────────────────────────────────────────
 $(BUILD)/app_test: $(TESTS)/app_test.c $(BUILD)/app_form.o $(BUILD)/app_arena.o \

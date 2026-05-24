@@ -310,7 +310,7 @@ non-empty string.
 
 ### Task 6 - session 5a: engine + SCAN + ABORT
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 1, 3
 - **User stories covered**: 1, 11, 36, 37, 47, 53
 
