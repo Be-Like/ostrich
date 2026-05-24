@@ -12,6 +12,7 @@ INCLUDE := include
 IMGUI_DIR   := third_party/imgui
 GLFW_DIR    := third_party/glfw
 LIBSSH2_DIR := third_party/libssh2
+JSMN_DIR    := third_party/jsmn
 
 UNAME_S := $(shell uname -s)
 
@@ -213,7 +214,7 @@ $(BUILD)/libsession.a: $(SESSION_OBJS)
 
 # ── discovery library (pure functional core) ──────────────────────────
 $(BUILD)/discovery/%.o: $(SRC)/discovery/%.c | $(BUILD)/discovery
-	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+	$(CC) $(CFLAGS) -I$(INCLUDE) -I$(JSMN_DIR) -c $< -o $@
 
 $(BUILD)/libdiscovery.a: $(DISCOVERY_OBJS)
 	ar rcs $@ $^

@@ -8,3 +8,6 @@
 [submodule "third_party/libssh2"]
 	path = third_party/libssh2
 	url = https://github.com/libssh2/libssh2.git
+[submodule "third_party/jsmn"]
+	path = third_party/jsmn
+	url = https://github.com/zserge/jsmn.git

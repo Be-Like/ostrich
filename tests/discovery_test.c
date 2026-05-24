@@ -389,6 +389,280 @@ static int test_readiness_target_selected_does_not_override_missing_fields(void)
     return 0;
 }
 
+/* ── disc_parse_list ────────────────────────────────────────────── */
+
+static int test_parse_list_project(void) {
+    arena_reset(g_arena);
+    const char *json = "{\"project\":{\"configurations\":[\"Debug\",\"Release\"],"
+                       "\"name\":\"MyApp\",\"schemes\":[\"MyApp\",\"MyAppTests\"],"
+                       "\"targets\":[\"MyApp\"]}}";
+    Str s = {json, strlen(json)};
+    StrList schemes = {0}, configs = {0};
+    DiscStatus st = disc_parse_list(g_arena, s, &schemes, &configs);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("2 schemes", schemes.count == 2);
+    ASSERT("scheme[0]", strcmp(schemes.items[0], "MyApp") == 0);
+    ASSERT("scheme[1]", strcmp(schemes.items[1], "MyAppTests") == 0);
+    ASSERT("2 configs", configs.count == 2);
+    ASSERT("config[0]", strcmp(configs.items[0], "Debug") == 0);
+    ASSERT("config[1]", strcmp(configs.items[1], "Release") == 0);
+    PASS("parse_list_project");
+    return 0;
+}
+
+static int test_parse_list_workspace(void) {
+    arena_reset(g_arena);
+    /* workspace: only schemes, no configurations */
+    const char *json = "{\"workspace\":{\"name\":\"MyApp\","
+                       "\"schemes\":[\"MyApp\",\"MyAppTests\"]}}";
+    Str s = {json, strlen(json)};
+    StrList schemes = {0}, configs = {0};
+    DiscStatus st = disc_parse_list(g_arena, s, &schemes, &configs);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("2 schemes", schemes.count == 2);
+    ASSERT("0 configs", configs.count == 0);
+    PASS("parse_list_workspace");
+    return 0;
+}
+
+static int test_parse_list_drifted(void) {
+    arena_reset(g_arena);
+    /* Unknown keys at multiple levels must be silently ignored. */
+    const char *json = "{\"project\":{\"configurations\":[\"Debug\"],"
+                       "\"name\":\"MyApp\",\"schemes\":[\"MyApp\"],"
+                       "\"newXcodeField\":true,\"nestedNew\":{\"x\":1}},"
+                       "\"topLevelExtra\":\"ignored\"}";
+    Str s = {json, strlen(json)};
+    StrList schemes = {0}, configs = {0};
+    DiscStatus st = disc_parse_list(g_arena, s, &schemes, &configs);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("1 scheme", schemes.count == 1);
+    ASSERT("scheme MyApp", strcmp(schemes.items[0], "MyApp") == 0);
+    ASSERT("1 config", configs.count == 1);
+    ASSERT("config Debug", strcmp(configs.items[0], "Debug") == 0);
+    PASS("parse_list_drifted");
+    return 0;
+}
+
+static int test_parse_list_malformed(void) {
+    arena_reset(g_arena);
+    const char *json = "{";
+    Str s = {json, strlen(json)};
+    StrList schemes = {0}, configs = {0};
+    DiscStatus st = disc_parse_list(g_arena, s, &schemes, &configs);
+    ASSERT("malformed → PARSE err", st == DISC_ERR_PARSE);
+    PASS("parse_list_malformed");
+    return 0;
+}
+
+/* ── disc_parse_bundle_id ───────────────────────────────────────── */
+
+static int test_parse_bundle_id_canonical(void) {
+    const char *json = "[{\"action\":\"build\",\"buildSettings\":{"
+                       "\"PRODUCT_BUNDLE_IDENTIFIER\":\"com.example.myapp\","
+                       "\"OTHER\":\"val\"},\"target\":\"MyApp\"}]";
+    Str s = {json, strlen(json)};
+    char out[256] = {0};
+    DiscStatus st = disc_parse_bundle_id(s, out, sizeof(out));
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("bundle id", strcmp(out, "com.example.myapp") == 0);
+    PASS("parse_bundle_id_canonical");
+    return 0;
+}
+
+static int test_parse_bundle_id_drifted(void) {
+    /* Multiple targets, extra unknown fields; first target has the id. */
+    const char *json = "[{\"action\":\"build\",\"unknownField\":123,"
+                       "\"buildSettings\":{\"OTHER\":\"val\","
+                       "\"PRODUCT_BUNDLE_IDENTIFIER\":\"com.example.app\","
+                       "\"EXTRA\":\"extra\"},\"target\":\"App\"},"
+                       "{\"action\":\"build\",\"buildSettings\":{"
+                       "\"PRODUCT_BUNDLE_IDENTIFIER\":\"com.example.other\"},"
+                       "\"target\":\"Other\"}]";
+    Str s = {json, strlen(json)};
+    char out[256] = {0};
+    DiscStatus st = disc_parse_bundle_id(s, out, sizeof(out));
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("first bundle id", strcmp(out, "com.example.app") == 0);
+    PASS("parse_bundle_id_drifted");
+    return 0;
+}
+
+static int test_parse_bundle_id_not_found(void) {
+    const char *json = "[{\"action\":\"build\",\"buildSettings\":{"
+                       "\"OTHER\":\"val\"},\"target\":\"MyApp\"}]";
+    Str s = {json, strlen(json)};
+    char out[256] = {0};
+    DiscStatus st = disc_parse_bundle_id(s, out, sizeof(out));
+    ASSERT("not found → PARSE err", st == DISC_ERR_PARSE);
+    PASS("parse_bundle_id_not_found");
+    return 0;
+}
+
+static int test_parse_bundle_id_malformed(void) {
+    const char *json = "[{incomplete";
+    Str s = {json, strlen(json)};
+    char out[256] = {0};
+    DiscStatus st = disc_parse_bundle_id(s, out, sizeof(out));
+    ASSERT("malformed → PARSE err", st == DISC_ERR_PARSE);
+    PASS("parse_bundle_id_malformed");
+    return 0;
+}
+
+/* ── disc_parse_simctl ──────────────────────────────────────────── */
+
+static int test_parse_simctl_canonical(void) {
+    arena_reset(g_arena);
+    const char *json =
+        "{\"devices\":{"
+        "\"com.apple.CoreSimulator.SimRuntime.iOS-16-0\":["
+        "{\"dataPath\":\"/p1\",\"isAvailable\":true,"
+        "\"name\":\"iPhone 14\",\"state\":\"Booted\",\"udid\":\"AAAA-1111\"},"
+        "{\"dataPath\":\"/p2\",\"isAvailable\":true,"
+        "\"name\":\"iPhone 14 Pro\",\"state\":\"Shutdown\",\"udid\":\"BBBB-2222\"}"
+        "],"
+        "\"com.apple.CoreSimulator.SimRuntime.tvOS-16-0\":["
+        "{\"dataPath\":\"/p3\",\"isAvailable\":true,"
+        "\"name\":\"Apple TV\",\"state\":\"Shutdown\",\"udid\":\"CCCC-3333\"}"
+        "]}}";
+    Str s = {json, strlen(json)};
+    TargetList tl = {0};
+    DiscStatus st = disc_parse_simctl(g_arena, s, &tl);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("3 targets", tl.count == 3);
+    for (int idx = 0; idx < tl.count; idx++) ASSERT("is_simulator", tl.items[idx].is_simulator);
+    bool found_booted = false;
+    for (int idx = 0; idx < tl.count; idx++) {
+        if (strcmp(tl.items[idx].udid, "AAAA-1111") == 0) {
+            ASSERT("iPhone 14 name", strcmp(tl.items[idx].name, "iPhone 14") == 0);
+            ASSERT("iPhone 14 booted", tl.items[idx].booted);
+            found_booted = true;
+        } else {
+            ASSERT("others not booted", !tl.items[idx].booted);
+        }
+    }
+    ASSERT("found booted", found_booted);
+    PASS("parse_simctl_canonical");
+    return 0;
+}
+
+static int test_parse_simctl_drifted(void) {
+    arena_reset(g_arena);
+    /* Extra unknown fields in device objects must be skipped. */
+    const char *json =
+        "{\"devices\":{"
+        "\"com.apple.CoreSimulator.SimRuntime.iOS-16-0\":["
+        "{\"dataPath\":\"/p\",\"newField\":\"extra\","
+        "\"name\":\"iPhone 15\",\"state\":\"Booted\","
+        "\"udid\":\"DDDD-4444\",\"nestedNew\":{\"x\":1}}"
+        "]}}";
+    Str s = {json, strlen(json)};
+    TargetList tl = {0};
+    DiscStatus st = disc_parse_simctl(g_arena, s, &tl);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("1 target", tl.count == 1);
+    ASSERT("is_simulator", tl.items[0].is_simulator);
+    ASSERT("booted", tl.items[0].booted);
+    ASSERT("name", strcmp(tl.items[0].name, "iPhone 15") == 0);
+    ASSERT("udid", strcmp(tl.items[0].udid, "DDDD-4444") == 0);
+    PASS("parse_simctl_drifted");
+    return 0;
+}
+
+static int test_parse_simctl_empty(void) {
+    arena_reset(g_arena);
+    const char *json = "{\"devices\":{}}";
+    Str s = {json, strlen(json)};
+    TargetList tl = {0};
+    DiscStatus st = disc_parse_simctl(g_arena, s, &tl);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("0 targets", tl.count == 0);
+    PASS("parse_simctl_empty");
+    return 0;
+}
+
+static int test_parse_simctl_malformed(void) {
+    arena_reset(g_arena);
+    const char *json = "{";
+    Str s = {json, strlen(json)};
+    TargetList tl = {0};
+    DiscStatus st = disc_parse_simctl(g_arena, s, &tl);
+    ASSERT("malformed → PARSE err", st == DISC_ERR_PARSE);
+    PASS("parse_simctl_malformed");
+    return 0;
+}
+
+/* ── disc_parse_devicectl ───────────────────────────────────────── */
+
+static int test_parse_devicectl_canonical(void) {
+    arena_reset(g_arena);
+    const char *json =
+        "{\"info\":{\"outcome\":\"success\"},"
+        "\"result\":{\"devices\":["
+        "{\"capabilities\":[],"
+        "\"deviceProperties\":{\"name\":\"Jake's iPhone\",\"osBuild\":\"22F\"},"
+        "\"hardwareProperties\":{\"udid\":\"DDEE-9999\",\"platform\":\"iOS\"},"
+        "\"identifier\":\"DDEE-9999\"}"
+        "]}}";
+    Str s = {json, strlen(json)};
+    TargetList tl = {0};
+    DiscStatus st = disc_parse_devicectl(g_arena, s, &tl);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("1 target", tl.count == 1);
+    ASSERT("not simulator", !tl.items[0].is_simulator);
+    ASSERT("not booted", !tl.items[0].booted);
+    ASSERT("name", strcmp(tl.items[0].name, "Jake's iPhone") == 0);
+    ASSERT("udid", strcmp(tl.items[0].udid, "DDEE-9999") == 0);
+    PASS("parse_devicectl_canonical");
+    return 0;
+}
+
+static int test_parse_devicectl_drifted(void) {
+    arena_reset(g_arena);
+    /* Extra top-level keys and extra fields inside sub-objects. */
+    const char *json =
+        "{\"info\":{\"outcome\":\"success\",\"extra\":42},"
+        "\"futureKey\":\"ignored\","
+        "\"result\":{\"devices\":["
+        "{\"unknownTop\":true,"
+        "\"deviceProperties\":{\"name\":\"Test Device\",\"newProp\":99},"
+        "\"hardwareProperties\":{\"udid\":\"EEFF-8888\",\"cpuType\":\"arm64\"}}"
+        "]}}";
+    Str s = {json, strlen(json)};
+    TargetList tl = {0};
+    DiscStatus st = disc_parse_devicectl(g_arena, s, &tl);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("1 target", tl.count == 1);
+    ASSERT("not simulator", !tl.items[0].is_simulator);
+    ASSERT("name", strcmp(tl.items[0].name, "Test Device") == 0);
+    ASSERT("udid", strcmp(tl.items[0].udid, "EEFF-8888") == 0);
+    PASS("parse_devicectl_drifted");
+    return 0;
+}
+
+static int test_parse_devicectl_empty(void) {
+    arena_reset(g_arena);
+    const char *json = "{\"info\":{},\"result\":{\"devices\":[]}}";
+    Str s = {json, strlen(json)};
+    TargetList tl = {0};
+    DiscStatus st = disc_parse_devicectl(g_arena, s, &tl);
+    ASSERT("returns OK", st == DISC_OK);
+    ASSERT("0 targets", tl.count == 0);
+    PASS("parse_devicectl_empty");
+    return 0;
+}
+
+static int test_parse_devicectl_malformed(void) {
+    arena_reset(g_arena);
+    const char *json = "{";
+    Str s = {json, strlen(json)};
+    TargetList tl = {0};
+    DiscStatus st = disc_parse_devicectl(g_arena, s, &tl);
+    ASSERT("malformed → PARSE err", st == DISC_ERR_PARSE);
+    PASS("parse_devicectl_malformed");
+    return 0;
+}
+
 /* ── disc_status_str ────────────────────────────────────────────── */
 
 static int test_status_str(void) {
@@ -451,6 +725,30 @@ int main(void) {
     failures += test_readiness_no_target();
     failures += test_readiness_ok();
     failures += test_readiness_target_selected_does_not_override_missing_fields();
+
+    /* disc_parse_list */
+    failures += test_parse_list_project();
+    failures += test_parse_list_workspace();
+    failures += test_parse_list_drifted();
+    failures += test_parse_list_malformed();
+
+    /* disc_parse_bundle_id */
+    failures += test_parse_bundle_id_canonical();
+    failures += test_parse_bundle_id_drifted();
+    failures += test_parse_bundle_id_not_found();
+    failures += test_parse_bundle_id_malformed();
+
+    /* disc_parse_simctl */
+    failures += test_parse_simctl_canonical();
+    failures += test_parse_simctl_drifted();
+    failures += test_parse_simctl_empty();
+    failures += test_parse_simctl_malformed();
+
+    /* disc_parse_devicectl */
+    failures += test_parse_devicectl_canonical();
+    failures += test_parse_devicectl_drifted();
+    failures += test_parse_devicectl_empty();
+    failures += test_parse_devicectl_malformed();
 
     /* disc_status_str */
     failures += test_status_str();

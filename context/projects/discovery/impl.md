@@ -128,7 +128,7 @@ tested through `discovery.h` only (coding_standards "Testing").
 
 ### Task 2 - libdiscovery parsers (jsmn)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 1
 - **User stories covered**: 28, 29, 40, 50
 
