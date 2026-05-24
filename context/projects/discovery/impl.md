@@ -516,7 +516,7 @@ manual entry open. `ui_test.c` keeps passing in headless mode.
 
 ### Task 10 - slice B: scheme/config/bundle-id
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 9, 7
 - **User stories covered**: 14, 15, 18, 19, 20, 49
 

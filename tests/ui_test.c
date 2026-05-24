@@ -537,6 +537,140 @@ int main(void) {
         }
     }
 
+    /* ── Slice B state-based tests ──────────────────────────────────── */
+
+    /* State-based test: reading_blueprint=true renders without crash and
+     * emits no spurious scheme/config/bundle_id edits. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host    = -1;
+            rv.reading_blueprint   = true;
+            snprintf(rf.project, sizeof(rf.project),
+                     "/Users/alice/App/App.xcworkspace");
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.scheme_edited);
+            assert(!ri.config_edited);
+            assert(!ri.bundle_id_edited);
+        }
+    }
+
+    /* State-based test: resolving_bundle_id=true renders without crash. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host      = -1;
+            rv.resolving_bundle_id   = true;
+            snprintf(rf.project, sizeof(rf.project),
+                     "/Users/alice/App/App.xcworkspace");
+            snprintf(rf.scheme, sizeof(rf.scheme), "MyApp");
+            snprintf(rf.config, sizeof(rf.config), "Debug");
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.scheme_edited);
+            assert(!ri.config_edited);
+        }
+    }
+
+    /* State-based test: schemes and configs populated renders hints without
+     * crash and emits no spurious edits. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        char scheme_arr[3][256];
+        snprintf(scheme_arr[0], 256, "MyApp");
+        snprintf(scheme_arr[1], 256, "MyAppTests");
+        snprintf(scheme_arr[2], 256, "MyAppUITests");
+        StrList schemes;
+        schemes.items = scheme_arr;
+        schemes.count = 3;
+
+        char config_arr[2][256];
+        snprintf(config_arr[0], 256, "Debug");
+        snprintf(config_arr[1], 256, "Release");
+        StrList configs;
+        configs.items = config_arr;
+        configs.count = 2;
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host = -1;
+            rv.scan_done        = true;
+            rv.schemes          = &schemes;
+            rv.configs          = &configs;
+            snprintf(rf.project, sizeof(rf.project),
+                     "/Users/alice/App/App.xcworkspace");
+            snprintf(rf.scheme,  sizeof(rf.scheme),  "MyApp");
+            snprintf(rf.config,  sizeof(rf.config),  "Debug");
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.scheme_edited);
+            assert(!ri.config_edited);
+            assert(!ri.bundle_id_edited);
+        }
+    }
+
+    /* State-based test: scheme/config/bundle_id fields persist across frames
+     * without corruption. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        UiReconView rv = make_recon_view();
+        RunConfig   rf = {0};
+        snprintf(rf.project,   sizeof(rf.project),   "/Users/alice/App/App.xcworkspace");
+        snprintf(rf.scheme,    sizeof(rf.scheme),    "MyApp");
+        snprintf(rf.config,    sizeof(rf.config),    "Debug");
+        snprintf(rf.bundle_id, sizeof(rf.bundle_id), "com.example.myapp");
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(strcmp(rf.scheme,    "MyApp")             == 0);
+            assert(strcmp(rf.config,    "Debug")             == 0);
+            assert(strcmp(rf.bundle_id, "com.example.myapp") == 0);
+        }
+    }
+
+    /* State-based test: blueprint_err renders without crash (failed read). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host  = -1;
+            rv.blueprint_err     = DISC_ERR_XCODE_MISSING;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.scheme_edited);
+            assert(!ri.config_edited);
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

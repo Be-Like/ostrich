@@ -11,12 +11,15 @@
 #include <string.h>
 
 #define APP_MAX_BLUEPRINTS 256
+#define APP_MAX_SCHEMES    64
+#define APP_MAX_CONFIGS    64
 
 struct App {
     Ui       *ui;
     Session  *session;
     Arena    *arena;            /* app arena, for known_hosts growth     */
     Arena    *blueprints_arena; /* reset at each SCAN HOST               */
+    Arena    *bp_read_arena;    /* reset at each READ_BLUEPRINT          */
     ConnForm  form;
     ConnList  known_hosts; /* loaded from store; items in app arena  */
 
@@ -41,6 +44,18 @@ struct App {
     DiscStatus    scan_err;
     int           blueprint_selected; /* -1 = none                           */
     char          conn_key[256];      /* user@host:port for store calls      */
+
+    /* slice B — scheme / config / bundle-id */
+    bool          reading_blueprint;
+    bool          resolving_bundle_id;
+    DiscStatus    blueprint_err;
+    bool          scheme_user_edited;
+    bool          config_user_edited;
+    bool          bundle_id_user_edited;
+    char        (*scheme_items)[256]; /* lives in bp_read_arena              */
+    char        (*config_items)[256]; /* lives in bp_read_arena              */
+    StrList       schemes;
+    StrList       configs;
 };
 
 AppStatus app_init(Arena *a, AppOptions opts, App **out) {
@@ -76,8 +91,17 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
         return APP_ERR;
     }
 
+    Arena *bp_read_arena = arena_create(64 * 1024); /* 64 KB for schemes/configs */
+    if (!bp_read_arena) {
+        arena_destroy(bp_arena);
+        session_close(session);
+        ui_shutdown(ui);
+        return APP_ERR;
+    }
+
     App *app = arena_alloc(a, sizeof(App), _Alignof(App));
     if (!app) {
+        arena_destroy(bp_read_arena);
         arena_destroy(bp_arena);
         session_close(session);
         ui_shutdown(ui);
@@ -88,6 +112,7 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
     app->session                  = session;
     app->arena                    = a;
     app->blueprints_arena         = bp_arena;
+    app->bp_read_arena            = bp_read_arena;
     app->form.selected_known_host = -1;
     app->phase                    = CONN_DISCONNECTED;
     app->blueprint_selected       = -1;
@@ -159,6 +184,70 @@ bool app_tick(App *app) {
             app->scan_done = true;
             app->scan_err  = dev.disc_status;
             break;
+        case DEV_SCHEME:
+            if (app->scheme_items && app->schemes.count < APP_MAX_SCHEMES) {
+                snprintf(app->scheme_items[app->schemes.count], 256,
+                         "%s", dev.scheme);
+                if (!app->scheme_user_edited && app->run_cfg.scheme[0] == '\0')
+                    snprintf(app->run_cfg.scheme, sizeof(app->run_cfg.scheme),
+                             "%s", dev.scheme);
+                app->schemes.count++;
+            }
+            break;
+        case DEV_CONFIG:
+            if (app->config_items && app->configs.count < APP_MAX_CONFIGS) {
+                snprintf(app->config_items[app->configs.count], 256,
+                         "%s", dev.config);
+                app->configs.count++;
+            }
+            break;
+        case DEV_BLUEPRINT_READ_COMPLETE:
+            app->reading_blueprint = false;
+            app->blueprint_err     = DISC_OK;
+            if (!app->config_user_edited && app->run_cfg.config[0] == '\0') {
+                const char *chosen = NULL;
+                for (int i = 0; i < app->configs.count; i++) {
+                    if (strcmp(app->config_items[i], "Debug") == 0) {
+                        chosen = app->config_items[i];
+                        break;
+                    }
+                }
+                if (!chosen && app->configs.count > 0)
+                    chosen = app->config_items[0];
+                if (chosen)
+                    snprintf(app->run_cfg.config, sizeof(app->run_cfg.config),
+                             "%s", chosen);
+            }
+            if (!app->bundle_id_user_edited &&
+                app->run_cfg.scheme[0]  != '\0' &&
+                app->run_cfg.config[0]  != '\0' &&
+                app->run_cfg.project[0] != '\0' &&
+                app->phase == CONN_ONLINE) {
+                SessionDiscCmd dcmd = {0};
+                dcmd.kind = DCMD_RESOLVE_BUNDLE_ID;
+                snprintf(dcmd.project, sizeof(dcmd.project), "%s",
+                         app->run_cfg.project);
+                snprintf(dcmd.scheme, sizeof(dcmd.scheme), "%s",
+                         app->run_cfg.scheme);
+                snprintf(dcmd.config, sizeof(dcmd.config), "%s",
+                         app->run_cfg.config);
+                session_disc_submit(app->session, &dcmd);
+                app->resolving_bundle_id = true;
+            }
+            break;
+        case DEV_BLUEPRINT_FAILED:
+            app->reading_blueprint = false;
+            app->blueprint_err     = dev.disc_status;
+            break;
+        case DEV_BUNDLE_ID:
+            if (!app->bundle_id_user_edited)
+                snprintf(app->run_cfg.bundle_id, sizeof(app->run_cfg.bundle_id),
+                         "%s", dev.bundle_id);
+            app->resolving_bundle_id = false;
+            break;
+        case DEV_BUNDLE_ID_FAILED:
+            app->resolving_bundle_id = false;
+            break;
         default:
             break;
         }
@@ -176,14 +265,19 @@ bool app_tick(App *app) {
     view.reason = app_phase_reason(app->phase, app->last_reason);
 
     UiReconView rv = {0};
-    rv.scanning            = app->scanning;
-    rv.scan_done           = app->scan_done;
-    rv.scan_err            = app->scan_err;
-    rv.blueprints          = &app->blueprints;
-    rv.blueprint_selected  = app->blueprint_selected;
-    rv.preset_selected     = -1;
-    rv.target_selected     = -1;
-    rv.readiness           = disc_readiness(&app->run_cfg, false);
+    rv.scanning              = app->scanning;
+    rv.scan_done             = app->scan_done;
+    rv.scan_err              = app->scan_err;
+    rv.blueprints            = &app->blueprints;
+    rv.blueprint_selected    = app->blueprint_selected;
+    rv.reading_blueprint     = app->reading_blueprint;
+    rv.resolving_bundle_id   = app->resolving_bundle_id;
+    rv.blueprint_err         = app->blueprint_err;
+    rv.schemes               = &app->schemes;
+    rv.configs               = &app->configs;
+    rv.preset_selected       = -1;
+    rv.target_selected       = -1;
+    rv.readiness             = disc_readiness(&app->run_cfg, false);
 
     UiIntents     intents = {0};
     UiReconIntents ri     = {0};
@@ -313,10 +407,75 @@ bool app_tick(App *app) {
     }
     if (ri.pick_blueprint >= 0 &&
         ri.pick_blueprint < app->blueprints.count) {
-        app->blueprint_selected = ri.pick_blueprint;
+        app->blueprint_selected    = ri.pick_blueprint;
         snprintf(app->run_cfg.project, sizeof(app->run_cfg.project),
                  "%s", app->blueprints.items[ri.pick_blueprint].path);
+        app->run_cfg.scheme[0]     = '\0';
+        app->run_cfg.config[0]     = '\0';
+        app->run_cfg.bundle_id[0]  = '\0';
+        app->scheme_user_edited    = false;
+        app->config_user_edited    = false;
+        app->bundle_id_user_edited = false;
+        app->blueprint_err         = DISC_OK;
+        app->resolving_bundle_id   = false;
+        if (online) {
+            arena_reset(app->bp_read_arena);
+            app->scheme_items = arena_alloc(app->bp_read_arena,
+                                            sizeof(*app->scheme_items) * APP_MAX_SCHEMES,
+                                            _Alignof(char));
+            app->config_items = arena_alloc(app->bp_read_arena,
+                                            sizeof(*app->config_items) * APP_MAX_CONFIGS,
+                                            _Alignof(char));
+            app->schemes.items = app->scheme_items;
+            app->schemes.count = 0;
+            app->configs.items = app->config_items;
+            app->configs.count = 0;
+            app->reading_blueprint = true;
+            SessionDiscCmd dcmd = {0};
+            dcmd.kind = DCMD_READ_BLUEPRINT;
+            snprintf(dcmd.project, sizeof(dcmd.project), "%s",
+                     app->run_cfg.project);
+            session_disc_submit(app->session, &dcmd);
+        }
     }
+    if (ri.scheme_edited) {
+        app->scheme_user_edited = true;
+        if (online && !app->bundle_id_user_edited &&
+            app->run_cfg.scheme[0]  != '\0' &&
+            app->run_cfg.config[0]  != '\0' &&
+            app->run_cfg.project[0] != '\0') {
+            SessionDiscCmd dcmd = {0};
+            dcmd.kind = DCMD_RESOLVE_BUNDLE_ID;
+            snprintf(dcmd.project, sizeof(dcmd.project), "%s",
+                     app->run_cfg.project);
+            snprintf(dcmd.scheme, sizeof(dcmd.scheme), "%s",
+                     app->run_cfg.scheme);
+            snprintf(dcmd.config, sizeof(dcmd.config), "%s",
+                     app->run_cfg.config);
+            session_disc_submit(app->session, &dcmd);
+            app->resolving_bundle_id = true;
+        }
+    }
+    if (ri.config_edited) {
+        app->config_user_edited = true;
+        if (online && !app->bundle_id_user_edited &&
+            app->run_cfg.scheme[0]  != '\0' &&
+            app->run_cfg.config[0]  != '\0' &&
+            app->run_cfg.project[0] != '\0') {
+            SessionDiscCmd dcmd = {0};
+            dcmd.kind = DCMD_RESOLVE_BUNDLE_ID;
+            snprintf(dcmd.project, sizeof(dcmd.project), "%s",
+                     app->run_cfg.project);
+            snprintf(dcmd.scheme, sizeof(dcmd.scheme), "%s",
+                     app->run_cfg.scheme);
+            snprintf(dcmd.config, sizeof(dcmd.config), "%s",
+                     app->run_cfg.config);
+            session_disc_submit(app->session, &dcmd);
+            app->resolving_bundle_id = true;
+        }
+    }
+    if (ri.bundle_id_edited)
+        app->bundle_id_user_edited = true;
 
     return keep_going;
 }
@@ -325,4 +484,5 @@ void app_shutdown(App *app) {
     session_close(app->session);
     ui_shutdown(app->ui);
     arena_destroy(app->blueprints_arena);
+    arena_destroy(app->bp_read_arena);
 }

@@ -538,6 +538,66 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
     ImGui::InputTextWithHint("##project", "path/to/App.xcworkspace",
                              rf->project, sizeof(rf->project));
 
+    /* ── Slice B: SCHEME / CONFIG / BUNDLE ID ─────────────────────────── */
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    bool reading   = rv->reading_blueprint;
+    bool resolving = rv->resolving_bundle_id;
+
+    if (reading) ImGui::BeginDisabled();
+
+    /* SCHEME */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_REC_FIELD_SCHEME));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputText("##scheme", rf->scheme, sizeof(rf->scheme));
+    if (!reading && ImGui::IsItemEdited())
+        ri->scheme_edited = true;
+    if (rv->schemes && rv->schemes->count > 0 && ImGui::IsItemHovered()) {
+        char hint[1024];
+        int  off = snprintf(hint, sizeof(hint), "> discovered:");
+        for (int i = 0; i < rv->schemes->count && off < (int)sizeof(hint) - 2; i++)
+            off += snprintf(hint + off, sizeof(hint) - (size_t)off,
+                            "\n  %s", rv->schemes->items[i]);
+        ImGui::SetTooltip("%s", hint);
+    }
+
+    /* CONFIG */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_REC_FIELD_CONFIG));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputText("##config", rf->config, sizeof(rf->config));
+    if (!reading && ImGui::IsItemEdited())
+        ri->config_edited = true;
+    if (rv->configs && rv->configs->count > 0 && ImGui::IsItemHovered()) {
+        char hint[512];
+        int  off = snprintf(hint, sizeof(hint), "> discovered:");
+        for (int i = 0; i < rv->configs->count && off < (int)sizeof(hint) - 2; i++)
+            off += snprintf(hint + off, sizeof(hint) - (size_t)off,
+                            "\n  %s", rv->configs->items[i]);
+        ImGui::SetTooltip("%s", hint);
+    }
+
+    if (reading) ImGui::EndDisabled();
+
+    /* BUNDLE ID */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_REC_FIELD_BUNDLE_ID));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputTextWithHint("##bundle_id",
+                             resolving ? "RESOLVING..." : "",
+                             rf->bundle_id, sizeof(rf->bundle_id));
+    if (ImGui::IsItemEdited())
+        ri->bundle_id_edited = true;
+
     ImGui::End();
 }
 
