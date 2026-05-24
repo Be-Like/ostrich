@@ -65,6 +65,10 @@ as deliberate):
 - Run-state labels: `running → TARGET ACQUIRED // LIVE`, etc.
   (overrides the literal state names in `workflow.md`).
 - Connection-overlay wording (`KNOWN HOSTS`, `BREACH`, …).
+- Recon wording: scan → `⌖ SCAN HOST`, project results →
+  `BLUEPRINTS RECOVERED`, sweep → `↻ SWEEP FOR TARGETS`, target
+  results → `TARGETS IN RANGE` (themes `workflow.md`'s neutral
+  discovery flow).
 - All colors, typography, FX, and ostrich's voice.
 
 **It MAY NOT touch STRUCTURE:**
@@ -181,6 +185,8 @@ You are the **OPERATOR**. Everything maps 1:1 onto the real domain:
 | OPERATOR | you, the developer |
 | HOST | the remote Mac |
 | BREACH / uplink | the SSH connection |
+| recon (SCAN / SWEEP) | querying the HOST for build inputs |
+| BLUEPRINT | a buildable Xcode project / workspace |
 | EXPLOIT | the app build artifact being compiled |
 | PAYLOAD | the app being installed |
 | TARGET | the iOS device / simulator |
@@ -266,6 +272,23 @@ passkey).
 
 **Device Log header (while streaming):** `LIVE FEED // INTERCEPTING`
 
+**Discovery / recon** (querying the HOST for build inputs). Recon
+copy lives only on ostrich's own surfaces in the `>`/magenta voice
+and never recolors or fabricates real Xcode output. A real recon
+failure reads in the `>` voice **and** the semantic `fail` red so it
+is unmistakable; an empty-but-successful result is a calm empty
+state (see Conventions), not an error.
+
+| Real action / state | Copy |
+| --- | --- |
+| scan a root for buildable projects | `⌖ SCAN HOST` (toggles to `■ ABORT SCAN` while scanning) |
+| project results header | `BLUEPRINTS RECOVERED` |
+| sweep for devices + simulators | `↻ SWEEP FOR TARGETS` |
+| target results header | `TARGETS IN RANGE` |
+| preset complete + a target locked | `READY // ARMED` |
+| Xcode command-line tools absent | `XCODE NOT FOUND` |
+| command failed / output unparseable | `COULD NOT READ INVENTORY` |
+
 ### Connection overlay (launch screen)
 
 A **static ASCII wordmark/banner** (paints instantly — no boot
@@ -320,6 +343,8 @@ adjust freely as long as the principles hold.
 | `//` | section / status separator |
 | `■` | abort glyph (and the Stop button) |
 | `▶` | execute / play glyph |
+| `⌖` | scan / recon reticle (SCAN HOST) |
+| `↻` | sweep / re-query (SWEEP FOR TARGETS) |
 | `o` | known-host bullet |
 
 **Footer:** `ostrich // 60 FPS // ONLINE` (ostrich's own diagnostics —
@@ -331,6 +356,9 @@ distinct from build/device output).
 - Device Log, nothing launched: `// NO SIGNAL — TARGET DARK`
 - No saved connections: `// NO KNOWN HOSTS`
 - No run-config preset yet: `// NO OPERATION CONFIGURED`
+- No projects found by a scan: `// NO BLUEPRINTS`
+- No targets available from a sweep: `// NO TARGETS IN RANGE`
+- A target not yet selected: `// NO TARGET LOCKED`
 
 **Configurability:** the theme is **fixed** — one identity, no runtime
 toggle or theme picker (that would cut against "lightweight"). The

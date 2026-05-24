@@ -20,8 +20,11 @@ Three ideas frame everything below:
 - **One Mac, one active run configuration.** At any moment ostrich is
   centered on a single connected Mac and a single *active* run
   configuration. Multiple configurations can be *saved*, but only one
-  is live at a time. There is no multi-Mac, multi-project, or
-  multi-window workspace.
+  is live at a time. A configuration captures *what* and *how* to
+  build (project, scheme, configuration, bundle id); *where* to run —
+  the target device or simulator — is chosen separately at run time
+  and is **not** part of the saved configuration. There is no
+  multi-Mac, multi-project, or multi-window workspace.
 - **Phases are states, not screens.** The Connect → Configure → Play →
   Observe phases from `design.md` are *states of persistent panels*,
   not steps in a wizard. The user lives in one docked console rather
@@ -61,13 +64,13 @@ CONNECTED (overlay dismissed):
   | user@mac  * connected      [update] [close]  |  <- thin top bar
   +---------------------------+------------------+
   | Run Configuration         | Control / Status |
-  |  preset: [ my-app  v] +/- |    > Play        |
-  |  workspace ____           |    > Build        |
-  |  scheme    ____           |  state: idle     |
-  |  config    ____           |  build>inst>launch|
-  |  target    (dev)(sim)     |                  |
-  |  UDID      ____           |                  |
-  |  bundle id ____           |                  |
+  |  preset: [ my-app v] +/-  |  target:         |
+  |  [scan host]              |   [ iPhone 15 v] |
+  |  project [ App.xcwsp v] + |   [sweep]        |
+  |  scheme  ___   (hint)     |    > Play        |
+  |  config  ___   (hint)     |    > Build       |
+  |  bundle  ___   (hint)     |  state: idle     |
+  |               * READY     |  build>inst>launch|
   +---------------------------+------------------+
   | Build Log         | Device Log               |
   |  (xcodebuild...)  |  (device log, live       |
@@ -82,10 +85,11 @@ Containers, top to bottom:
 
 - **Connection bar** (thin, full width, top) — connection identity and
   live status, plus controls to update or close the connection.
-- **Run Configuration** (upper-left) — preset selector and the run
-  configuration form.
+- **Run Configuration** (upper-left) — preset selector, the scan
+  action, and the discovery-fed run configuration form.
 - **Control / Status strip** (upper-right, beside Run Configuration) —
-  the Play / Build / Stop actions and the run-state indicator.
+  the target selector, the Play / Build / Stop actions, and the
+  run-state and readiness indicators.
 - **Build Log** (lower-left) and **Device Log** (lower-right) — split
   the full width below and **fill the vertical space** between the
   configuration row and the footer.
@@ -117,27 +121,54 @@ disconnected`), and controls to **update** (re-open the overlay) or
 
 A **preset selector** sits at the top (choose / new / rename /
 delete). Run configurations are **named presets bound to a
-connection**; the active preset drives Play. Below it, the **six
+connection**; the active preset drives Play. A preset holds **four
 essential fields**:
 
 1. **Project/workspace path** — absolute path on the Mac
    (`.xcodeproj` vs `.xcworkspace` inferred from the extension).
 2. **Scheme**
 3. **Build configuration** (default `Debug`)
-4. **Target type** — physical **device** vs **simulator** (switches
-   install/launch between `devicectl` and `simctl`).
-5. **Target UDID** — typed by the user (no discovery in MVP).
-6. **Bundle ID** — used for install/launch.
+4. **Bundle ID** — used for install/launch.
 
-Discovery (auto-scanning the Mac for projects, schemes, devices, and
-simulators) is **post-MVP**: it would *populate* these fields rather
-than replace the form. The `.app` output path needed for install is
-resolved by ostrich (e.g. from build settings) and is **not** a
-user-facing field. Advanced inputs (launch arguments, environment
-variables, extra `xcodebuild` flags) are deferred.
+These four fields are filled by **discovery**, with manual entry
+always available:
+
+- A **scan** action sweeps a pointed-at root on the Mac (defaulting
+  to the home directory, remembered per connection) for buildable
+  projects and lists the curated results. The **project** is chosen
+  from that list via a **dropdown**, or its path typed by hand when
+  the scan does not surface it.
+- Picking a project reads it and **prefills** the scheme, the build
+  configuration (defaulting to `Debug`), and a best-effort bundle id.
+  These three are **prefilled editable inputs**, not locked
+  dropdowns: each shows its full discovered set beside the field as a
+  non-blocking hint, so the operator can accept the prefill, type a
+  different value, or override entirely. A manual edit is never
+  silently re-corrected.
+
+The **target** is **not** part of this form — it lives with the run
+controls (see below), because devices come and go and a saved
+configuration should not rot when one is unplugged.
+
+The `.app` output path needed for install is resolved by ostrich
+(e.g. from build settings) and is **not** a user-facing field.
+Advanced inputs (launch arguments, environment variables, extra
+`xcodebuild` flags) are deferred.
 
 ### Control / Status strip
 
+- **Target selector** — a **sweep** action lists the physical devices
+  and simulators currently in range in **one unified set** (each
+  labeled device vs. simulator, with booted state for simulators).
+  The operator picks one; ostrich infers device-vs-simulator from the
+  choice — there is no separate "target type" switch. The selection
+  is **session-sticky** and remembered separately from any preset;
+  the last target is silently re-selected on connect when it is still
+  in range. An empty or stale result shows a clear "no targets in
+  range" state, prompting a re-sweep.
+- **Readiness** — when the active preset is complete (project, scheme,
+  config, bundle id) and a target is selected, ostrich shows the
+  configuration is **ready** to Play.
 - **Play** — runs the full chain `build → install → launch`. While a
   run is in progress, Play becomes **Stop** (abort).
 - **Build** — build-only; compiles without installing or launching
@@ -192,8 +223,10 @@ idle ──Play──> building ──> installing ──> launching ──> run
 2. Enter host/port/user, pick **ssh-agent** or **password**, click
    **Connect**. Optionally save the connection.
 3. Overlay dismisses; the connection bar and docked area appear.
-4. In Run Configuration, **create a named preset** and fill the six
-   fields.
+4. **Scan** the Mac for projects and pick one (or type its path);
+   accept the prefilled scheme / config / bundle id (or edit them),
+   and **save it as a named preset**. **Sweep** for targets and pick
+   a device or simulator.
 5. Press **Play**. Build Log streams `xcodebuild` output → install →
    launch.
 6. The app launches on the target; the Device Log streams its output.
@@ -202,7 +235,8 @@ idle ──Play──> building ──> installing ──> launching ──> run
 
 1. Launch → overlay with the **last-used connection pre-selected**.
 2. Press **Enter / Connect**.
-3. The **last-active preset is restored** for that connection.
+3. The **last-active preset is restored** for that connection, and
+   the **last target is re-selected** if it is still in range.
 4. Press **Play** → observe. (Everyday path is essentially
    *connect → Play*.)
 
@@ -221,8 +255,8 @@ idle ──Play──> building ──> installing ──> launching ──> run
 
 ### 5. Switch target or preset
 
-1. Change the active preset, or edit a field (e.g. flip **target
-   type** device → simulator and set the simulator UDID).
+1. Pick a different **target** from the swept list (a device or a
+   simulator), or switch the active **preset**.
 2. Press **Play**.
 
 ### 6. Recover from a drop
@@ -241,8 +275,11 @@ ostrich persists, in local configuration:
   **opt-in stored password** (plaintext, single-user local tool;
   ssh-agent connections store no secret).
 - **Named run-config presets per connection** — each connection owns a
-  set of named presets (the six fields each) plus the **last-active**
-  preset.
+  set of named presets (the **four** fields each — project, scheme,
+  config, bundle id) plus the **last-active** preset.
+- **Last-used target per connection** — the most recently selected
+  device/simulator, remembered **separately** from any preset (it is
+  re-validated against a fresh sweep on connect, not blindly trusted).
 
 The *intent* to persist is fixed here; the concrete on-disk format and
 config-persistence mechanism remain design-deferred and belong in a
@@ -253,9 +290,6 @@ per-project ARD/impl.
 Recorded so downstream docs can pick them up; intentionally **out of
 MVP scope**:
 
-- **Discovery / auto-scan** of schemes, build configs, devices, and
-  simulators to populate the form (relies on the JSON-emitting Xcode
-  subcommands). MVP uses the manual form.
 - **Device-log filtering mechanism** (how the app-process filter is
   implemented; firehose vs filtered) — `design.md`-deferred.
 - **Build-error parsing** (structured errors / jump-to) — raw output
@@ -277,3 +311,25 @@ MVP scope**:
 that core functional goal #1 reflects **two** authentication methods —
 **ssh-agent** or **explicit user/host/port/password** — rather than
 ssh-agent only.
+
+## Note on the discovery revision
+
+This document was revised when the **discovery** project (recon the
+Mac for build inputs) promoted discovery from a post-MVP deferral to
+a delivered capability. The revision records four product changes
+resolved in that project's PRD/ARD:
+
+1. The **target is removed from the persisted preset** — it is a
+   build-time, session-sticky selection remembered separately and
+   re-validated on connect, not one of the saved fields.
+2. The separate **device/simulator "target type" switch is dropped**
+   in favor of one unified target list, with the type inferred from
+   the pick.
+3. **Scheme, config, and bundle id are prefilled editable inputs**
+   (with a discovered-set hint), while the **project is a dropdown**
+   of scanned results plus manual entry.
+4. The persisted run configuration is therefore **four** fields
+   (project, scheme, config, bundle id), not six.
+
+See `context/projects/discovery/prd.md` and `ard.md` for the full
+flow and the mechanism behind it.
