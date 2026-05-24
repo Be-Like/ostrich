@@ -75,6 +75,27 @@ SshStatus   ssh_probe_step(Ssh *s, int *exit_code);
    Returns SSH_AGAIN while in progress, SSH_OK on success. */
 SshStatus   ssh_channel_open(Ssh *s, SshChannel **out);
 
+/* Start running cmd on an opened channel. SSH_AGAIN while the request
+   is in flight, SSH_OK once accepted. */
+SshStatus   ssh_channel_exec(SshChannel *ch, const char *cmd);
+
+/* Read available stdout into buf. SSH_AGAIN if it would block; SSH_OK
+   with *out_n bytes written (*out_n == 0 at EOF — confirm with
+   ssh_channel_eof). */
+SshStatus   ssh_channel_read(SshChannel *ch, char *buf, size_t cap,
+                             size_t *out_n);
+
+/* Returns true when the remote side has signalled EOF on the channel. */
+bool        ssh_channel_eof(SshChannel *ch);
+
+/* Drive close and collect exit code. SSH_AGAIN while the close
+   handshake is in flight, SSH_OK once the exit code is available. */
+SshStatus   ssh_channel_exit(SshChannel *ch, int *out_code);
+
+/* Free all resources for the channel. Call after ssh_channel_exit
+   returns SSH_OK (or to abort an in-flight channel). */
+void        ssh_channel_close(SshChannel *ch);
+
 /* Send a keepalive; sets *seconds_to_next to the suggested interval.
    Returns SSH_AGAIN if the send would block. */
 SshStatus   ssh_keepalive(Ssh *s, int *seconds_to_next);

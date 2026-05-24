@@ -391,6 +391,45 @@ SshStatus ssh_channel_open(Ssh *s, SshChannel **out)
     return SSH_OK;
 }
 
+SshStatus ssh_channel_exec(SshChannel *ch, const char *cmd)
+{
+    int rc = libssh2_channel_exec(ch->channel, cmd);
+    if (rc == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
+    if (rc < 0)                     return SSH_ERR_IO;
+    return SSH_OK;
+}
+
+SshStatus ssh_channel_read(SshChannel *ch, char *buf, size_t cap,
+                           size_t *out_n)
+{
+    ssize_t n = libssh2_channel_read(ch->channel, buf, cap);
+    if (n == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
+    if (n < 0)                     return SSH_ERR_IO;
+    *out_n = (size_t)n;
+    return SSH_OK;
+}
+
+bool ssh_channel_eof(SshChannel *ch)
+{
+    return libssh2_channel_eof(ch->channel) != 0;
+}
+
+SshStatus ssh_channel_exit(SshChannel *ch, int *out_code)
+{
+    int rc = libssh2_channel_close(ch->channel);
+    if (rc == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
+    if (rc < 0)                     return SSH_ERR_IO;
+    *out_code = libssh2_channel_get_exit_status(ch->channel);
+    return SSH_OK;
+}
+
+void ssh_channel_close(SshChannel *ch)
+{
+    if (!ch || !ch->channel) return;
+    libssh2_channel_free(ch->channel);
+    ch->channel = NULL;
+}
+
 SshStatus ssh_keepalive(Ssh *s, int *seconds_to_next)
 {
     int rc = libssh2_keepalive_send(s->session, seconds_to_next);

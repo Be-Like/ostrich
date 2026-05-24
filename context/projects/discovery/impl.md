@@ -175,7 +175,7 @@ later.
 
 ### Task 3 - libssh channel primitives
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: 36, 37, 53
 
