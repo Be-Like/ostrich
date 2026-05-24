@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include "arena.h"
 #include "connstate.h"
+#include "discovery.h"
 #include "store.h"
 
 #ifdef __cplusplus
@@ -58,15 +59,74 @@ typedef struct {
     int  select_host; /* -1 = none */
 } UiIntents;
 
+/* Read-only recon view-model the app builds each frame.
+   Fields for slices B–D are zero/NULL until those slices land. */
+typedef struct {
+    /* slice A — scan + blueprints */
+    bool              scanning;           /* scan in progress             */
+    bool              scan_done;          /* at least one scan completed  */
+    DiscStatus        scan_err;           /* meaningful when scan_done    */
+    const BlueprintList *blueprints;      /* NULL until first scan        */
+    int               blueprint_selected; /* -1 = none                    */
+
+    /* slice B — scheme / config / bundle-id (stubs until task 10) */
+    bool              reading_blueprint;
+    bool              resolving_bundle_id;
+    DiscStatus        blueprint_err;
+    const StrList    *schemes;
+    const StrList    *configs;
+
+    /* slice C — presets (stub until task 11) */
+    const PresetList *presets;
+    int               preset_selected;   /* -1 = none                    */
+
+    /* slice D — targets + READY (stub until task 12) */
+    bool              sweeping;
+    bool              sweep_done;
+    DiscStatus        sweep_err;
+    const TargetList *targets;
+    int               target_selected;   /* -1 = none                    */
+
+    /* readiness */
+    Readiness         readiness;
+} UiReconView;
+
+/* Discrete recon intents returned by ui_frame each frame.
+   Slice B–D fields are set to -1 / false until those slices land. */
+typedef struct {
+    /* slice A */
+    bool scan;
+    bool abort_scan;
+    int  pick_blueprint;  /* -1 = no pick; >=0 = index chosen             */
+
+    /* slice B (stubs) */
+    bool scheme_edited;
+    bool config_edited;
+    bool bundle_id_edited;
+
+    /* slice C (stubs) */
+    bool preset_new;
+    bool preset_rename;
+    bool preset_delete;
+    int  pick_preset;     /* -1 = no pick                                  */
+
+    /* slice D (stubs) */
+    bool sweep;
+    int  pick_target;     /* -1 = no pick                                  */
+} UiReconIntents;
+
 /* Stand up window + GL + ImGui + theme + fonts. Allocates the
    Ui handle and font bytes from `a`. */
 UiStatus ui_init(Arena *a, UiOptions opts, Ui **out);
 
 /* Render exactly one frame. Returns false when the window
    should close (close button or Ctrl-Q), true otherwise.
-   Writes discrete intents to *out (zeroed then filled). */
-bool ui_frame(Ui *ui, const UiConnView *view,
-              ConnForm *form, UiIntents *out);
+   Writes discrete intents to *out (zeroed then filled).
+   rv/rf/ri handle the recon panel; rv may be NULL (no panel). */
+bool ui_frame(Ui *ui,
+              const UiConnView *cv, ConnForm *cf, UiIntents *ci,
+              const UiReconView *rv, RunConfig *rf,
+              UiReconIntents *ri);
 
 /* Tear down ImGui, the GL context, and GLFW cleanly. */
 void ui_shutdown(Ui *ui);

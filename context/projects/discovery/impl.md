@@ -459,7 +459,7 @@ Extend `tools/discovery_smoke.c` to drive a sweep.
 
 ### Task 9 - slice A: project discovery
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 6, 5, 4
 - **User stories covered**: 2, 4, 8, 9, 10, 19, 20, 42, 44, 48
 
@@ -497,18 +497,18 @@ manual entry open. `ui_test.c` keeps passing in headless mode.
 
 #### Acceptance criteria
 
-- [ ] `ui_frame`'s extended signature (recon view + `RunConfig` +
+- [x] `ui_frame`'s extended signature (recon view + `RunConfig` +
       recon intents) matches ARD §"Interfaces"; the app builds the
       recon view-model each frame and the existing connection
       panels are unaffected.
-- [ ] SCAN streams blueprints into the list progressively;
+- [x] SCAN streams blueprints into the list progressively;
       `// NO BLUEPRINTS` renders on an empty success and the
       themed failure lines render on `DEV_SCAN_FAILED`, with manual
       path entry always available.
-- [ ] The scan root is restored from `store` on connect and
+- [x] The scan root is restored from `store` on connect and
       editable; the surface is keyboard-drivable and uses semantic
       colors only for failure.
-- [ ] `build/ostrich` builds clean and `make test` passes
+- [x] `build/ostrich` builds clean and `make test` passes
       (`ui_test` headless still green).
 - [ ] Manually against a live Mac: connect → SCAN a real root →
       curated projects appear and one can be selected, or a path

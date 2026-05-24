@@ -428,6 +428,119 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
 }
 
 /* ── connection bar ─────────────────────────────────────────────────── */
+/* ── recon panel (ONLINE / REACQUIRING, slice A) ────────────────────── */
+static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
+                             UiReconIntents *ri) {
+    const ImGuiIO &io    = ImGui::GetIO();
+    const float    pad   = ImGui::GetStyle().FramePadding.y;
+    const float    v_pad = pad * 2.0f;
+    const float    bar_h = ImGui::GetTextLineHeight() + v_pad * 2.0f;
+    const float    cx    = io.DisplaySize.x * 0.5f;
+
+    ImGui::SetNextWindowPos({cx, bar_h + 12.0f}, ImGuiCond_Always, {0.5f, 0.0f});
+    ImGui::SetNextWindowSize({460.0f, 0.0f}, ImGuiCond_Always);
+    ImGui::PushStyleColor(ImGuiCol_Border, C_CYAN_DIM);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
+    ImGui::Begin("##recon_panel", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+
+    const float lw = 90.0f;
+
+    /* SCAN ROOT field */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_REC_FIELD_SCAN_ROOT));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(-1.0f);
+    if (rv->scanning) ImGui::BeginDisabled();
+    ImGui::InputText("##scan_root", rf->scan_root, sizeof(rf->scan_root));
+    if (rv->scanning) ImGui::EndDisabled();
+
+    ImGui::Spacing();
+
+    /* SCAN HOST / ABORT SCAN */
+    if (rv->scanning) {
+        if (ImGui::Button(lex(LEX_REC_ABORT_SCAN)))
+            ri->abort_scan = true;
+    } else {
+        bool can_scan = (rf->scan_root[0] != '\0');
+        if (!can_scan) ImGui::BeginDisabled();
+        if (ImGui::Button(lex(LEX_REC_SCAN_HOST)))
+            ri->scan = true;
+        if (!can_scan) ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    /* Blueprints section */
+    if (rv->scan_done) {
+        if (rv->scan_err == DISC_ERR_XCODE_MISSING) {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
+            ImGui::Text("%s %s", lex(LEX_VOICE_PREFIX), lex(LEX_REC_ERR_XCODE));
+            ImGui::PopStyleColor();
+        } else if (rv->scan_err != DISC_OK) {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
+            ImGui::Text("%s %s", lex(LEX_VOICE_PREFIX), lex(LEX_REC_ERR_INVENTORY));
+            ImGui::PopStyleColor();
+        } else if (!rv->blueprints || rv->blueprints->count == 0) {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+            ImGui::TextUnformatted(lex(LEX_REC_NO_BLUEPRINTS));
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+            ImGui::TextUnformatted(lex(LEX_REC_BLUEPRINTS));
+            ImGui::PopStyleColor();
+
+            int   vis    = rv->blueprints->count < 6 ? rv->blueprints->count : 6;
+            float list_h = ImGui::GetTextLineHeightWithSpacing() * (float)vis;
+            ImGui::BeginChild("##blueprints", {0.0f, list_h}, false);
+            for (int i = 0; i < rv->blueprints->count; i++) {
+                const Blueprint *bp  = &rv->blueprints->items[i];
+                bool             sel = (rv->blueprint_selected == i);
+                const char      *disp = bp->path;
+                const char      *sl   = strrchr(bp->path, '/');
+                if (sl) disp = sl + 1;
+                char buf[1040]; /* glyph(3) + space(1) + path component(1024) + null */
+                /* ⌖ for workspace, ○ for project */
+                snprintf(buf, sizeof(buf), "%s %s",
+                         bp->is_workspace ? "\xe2\x8c\x96" : "\xe2\x97\x8b", disp);
+                ImGui::PushStyleColor(ImGuiCol_Text, sel ? C_CYAN : C_TEXT);
+                if (ImGui::Selectable(buf, sel))
+                    ri->pick_blueprint = i;
+                ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", bp->path);
+            }
+            ImGui::EndChild();
+        }
+    } else if (!rv->scanning) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_REC_NO_OP));
+        ImGui::PopStyleColor();
+    }
+
+    /* PROJECT path — manual entry, always available */
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted("PROJECT");
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputTextWithHint("##project", "path/to/App.xcworkspace",
+                             rf->project, sizeof(rf->project));
+
+    ImGui::End();
+}
+
 static void draw_conn_bar(const UiConnView *view, double online_since,
                           UiIntents *out) {
     const ImGuiIO &io     = ImGui::GetIO();
@@ -611,9 +724,22 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
     return UI_OK;
 }
 
-bool ui_frame(Ui *ui, const UiConnView *view, ConnForm *form, UiIntents *out) {
-    *out = {};
-    out->select_host = -1;
+bool ui_frame(Ui *ui,
+              const UiConnView *cv, ConnForm *cf, UiIntents *ci,
+              const UiReconView *rv, RunConfig *rf,
+              UiReconIntents *ri) {
+    *ci = {};
+    ci->select_host = -1;
+    if (ri) {
+        *ri = {};
+        ri->pick_blueprint = -1;
+        ri->pick_preset    = -1;
+        ri->pick_target    = -1;
+    }
+    /* Aliases for local use — existing code uses view/form/out. */
+    const UiConnView *view = cv;
+    ConnForm         *form = cf;
+    UiIntents        *out  = ci;
     double now = glfwGetTime();
     double dt  = now - ui->last_time;
     ui->last_time = now;
@@ -690,6 +816,10 @@ bool ui_frame(Ui *ui, const UiConnView *view, ConnForm *form, UiIntents *out) {
                       view->phase == CONN_REACQUIRING);
     if (bar_phase)
         draw_conn_bar(view, ui->online_since, out);
+
+    /* ── recon panel (ONLINE / REACQUIRING, no overlay) ─────────────── */
+    if (bar_phase && !view->overlay_open && rv != nullptr && rf != nullptr && ri != nullptr)
+        draw_recon_panel(rv, rf, ri);
 
     /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY /
           SEVERED — SEVERED shows reason + BREACH to re-connect;

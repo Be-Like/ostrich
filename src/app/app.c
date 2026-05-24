@@ -5,14 +5,18 @@
 #include "connstate.h"
 #include "lexicon.h"
 #include "store.h"
+#include "discovery.h"
 
 #include <stdio.h>
 #include <string.h>
 
+#define APP_MAX_BLUEPRINTS 256
+
 struct App {
     Ui       *ui;
     Session  *session;
-    Arena    *arena; /* app arena, for growing known_hosts on save */
+    Arena    *arena;            /* app arena, for known_hosts growth     */
+    Arena    *blueprints_arena; /* reset at each SCAN HOST               */
     ConnForm  form;
     ConnList  known_hosts; /* loaded from store; items in app arena  */
 
@@ -26,7 +30,17 @@ struct App {
 
     /* UPDATE / close / switch */
     SshConfig live_cfg;     /* identity of the currently-live connection */
-    bool      overlay_open; /* UPDATE: show overlay overlay while bar-phase */
+    bool      overlay_open; /* UPDATE: show overlay while bar-phase      */
+
+    /* recon state */
+    RunConfig     run_cfg;            /* mutable run config + scan root      */
+    Blueprint    *bp_items;           /* lives in blueprints_arena           */
+    BlueprintList blueprints;         /* .items = bp_items                   */
+    bool          scanning;
+    bool          scan_done;
+    DiscStatus    scan_err;
+    int           blueprint_selected; /* -1 = none                           */
+    char          conn_key[256];      /* user@host:port for store calls      */
 };
 
 AppStatus app_init(Arena *a, AppOptions opts, App **out) {
@@ -55,8 +69,16 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
         return APP_ERR;
     }
 
+    Arena *bp_arena = arena_create(1024 * 1024); /* 1 MB for streamed blueprints */
+    if (!bp_arena) {
+        session_close(session);
+        ui_shutdown(ui);
+        return APP_ERR;
+    }
+
     App *app = arena_alloc(a, sizeof(App), _Alignof(App));
     if (!app) {
+        arena_destroy(bp_arena);
         session_close(session);
         ui_shutdown(ui);
         return APP_ERR;
@@ -65,8 +87,10 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
     app->ui                       = ui;
     app->session                  = session;
     app->arena                    = a;
+    app->blueprints_arena         = bp_arena;
     app->form.selected_known_host = -1;
     app->phase                    = CONN_DISCONNECTED;
+    app->blueprint_selected       = -1;
     snprintf(app->form.port, sizeof(app->form.port), "22");
 
     /* Load saved connections; non-fatal if the store is missing or empty. */
@@ -82,6 +106,9 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
 }
 
 bool app_tick(App *app) {
+    /* Track phase before draining events to detect ONLINE transition. */
+    ConnPhase prev_phase = app->phase;
+
     /* Drain all pending session events and update view state. */
     SessionEvent ev;
     while (session_poll(app->session, &ev)) {
@@ -96,6 +123,44 @@ bool app_tick(App *app) {
         if (ev.phase == CONN_DISCONNECTED || ev.phase == CONN_SEVERED) {
             app->user_host[0] = '\0';
             app->overlay_open = false;
+            app->scanning     = false;
+            app->conn_key[0]  = '\0';
+        }
+    }
+
+    /* CONN_ONLINE transition: build conn_key and restore scan root. */
+    if (app->phase == CONN_ONLINE && prev_phase != CONN_ONLINE) {
+        Conn tmp = {0};
+        snprintf(tmp.host, sizeof(tmp.host), "%s", app->live_cfg.host);
+        tmp.port = app->live_cfg.port;
+        snprintf(tmp.user, sizeof(tmp.user), "%s", app->live_cfg.user);
+        store_conn_key(&tmp, app->conn_key, sizeof(app->conn_key));
+        scanroot_load(app->conn_key, app->run_cfg.scan_root,
+                      sizeof(app->run_cfg.scan_root));
+    }
+
+    /* Drain discovery events. */
+    SessionDiscEvent dev;
+    while (session_disc_poll(app->session, &dev)) {
+        switch (dev.kind) {
+        case DEV_BLUEPRINT:
+            if (app->bp_items && app->blueprints.count < APP_MAX_BLUEPRINTS) {
+                app->bp_items[app->blueprints.count] = dev.blueprint;
+                app->blueprints.count++;
+            }
+            break;
+        case DEV_SCAN_COMPLETE:
+            app->scanning  = false;
+            app->scan_done = true;
+            app->scan_err  = DISC_OK;
+            break;
+        case DEV_SCAN_FAILED:
+            app->scanning  = false;
+            app->scan_done = true;
+            app->scan_err  = dev.disc_status;
+            break;
+        default:
+            break;
         }
     }
 
@@ -110,9 +175,24 @@ bool app_tick(App *app) {
     view.known_count         = app->known_hosts.count;
     view.reason = app_phase_reason(app->phase, app->last_reason);
 
-    UiIntents intents = {0};
-    intents.select_host = -1;
-    bool keep_going = ui_frame(app->ui, &view, &app->form, &intents);
+    UiReconView rv = {0};
+    rv.scanning            = app->scanning;
+    rv.scan_done           = app->scan_done;
+    rv.scan_err            = app->scan_err;
+    rv.blueprints          = &app->blueprints;
+    rv.blueprint_selected  = app->blueprint_selected;
+    rv.preset_selected     = -1;
+    rv.target_selected     = -1;
+    rv.readiness           = disc_readiness(&app->run_cfg, false);
+
+    UiIntents     intents = {0};
+    UiReconIntents ri     = {0};
+    intents.select_host  = -1;
+    ri.pick_blueprint    = -1;
+    ri.pick_preset       = -1;
+    ri.pick_target       = -1;
+    bool keep_going = ui_frame(app->ui, &view, &app->form, &intents,
+                               &rv, &app->run_cfg, &ri);
 
     bool connected = (app->phase == CONN_ONLINE ||
                       app->phase == CONN_REACQUIRING);
@@ -206,10 +286,43 @@ bool app_tick(App *app) {
         session_submit(app->session, &cmd);
     }
 
+    /* ── recon intents ───────────────────────────────────────────── */
+    bool online = (app->phase == CONN_ONLINE);
+
+    if (ri.scan && online && !app->scanning) {
+        arena_reset(app->blueprints_arena);
+        app->bp_items = arena_alloc(app->blueprints_arena,
+                                    sizeof(Blueprint) * APP_MAX_BLUEPRINTS,
+                                    _Alignof(Blueprint));
+        app->blueprints.items = app->bp_items;
+        app->blueprints.count = 0;
+        app->scanning         = true;
+        app->scan_done        = false;
+        app->scan_err         = DISC_OK;
+        app->blueprint_selected = -1;
+        if (app->conn_key[0] != '\0')
+            scanroot_save(app->conn_key, app->run_cfg.scan_root);
+        SessionDiscCmd dcmd = {0};
+        dcmd.kind = DCMD_SCAN_HOST;
+        snprintf(dcmd.root, sizeof(dcmd.root), "%s", app->run_cfg.scan_root);
+        session_disc_submit(app->session, &dcmd);
+    }
+    if (ri.abort_scan && app->scanning) {
+        SessionDiscCmd dcmd = {.kind = DCMD_ABORT_SCAN};
+        session_disc_submit(app->session, &dcmd);
+    }
+    if (ri.pick_blueprint >= 0 &&
+        ri.pick_blueprint < app->blueprints.count) {
+        app->blueprint_selected = ri.pick_blueprint;
+        snprintf(app->run_cfg.project, sizeof(app->run_cfg.project),
+                 "%s", app->blueprints.items[ri.pick_blueprint].path);
+    }
+
     return keep_going;
 }
 
 void app_shutdown(App *app) {
     session_close(app->session);
     ui_shutdown(app->ui);
+    arena_destroy(app->blueprints_arena);
 }

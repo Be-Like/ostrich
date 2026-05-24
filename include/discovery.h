@@ -62,6 +62,7 @@ typedef struct {
     char scheme[256];
     char config[128];
     char bundle_id[256];
+    char scan_root[1024]; /* search root for SCAN HOST; not part of readiness */
 } RunConfig;
 
 typedef enum {
