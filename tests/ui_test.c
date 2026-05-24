@@ -814,6 +814,228 @@ int main(void) {
         }
     }
 
+    /* ── Slice D state-based tests ──────────────────────────────────── */
+
+    /* State-based test: ONLINE + NULL targets (no sweep yet) renders without
+     * crash and emits no spurious sweep or pick_target. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host   = -1;
+            rv.targets            = NULL;
+            rv.target_selected    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.sweep);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* State-based test: sweeping=true renders SWEEPING... without crash
+     * and emits no spurious sweep. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host   = -1;
+            rv.sweeping           = true;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.sweep);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* State-based test: sweep_done=true with empty target list renders
+     * // NO TARGETS IN RANGE without crash and emits no spurious pick. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        TargetList empty_targets = {0};
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host   = -1;
+            rv.sweep_done         = true;
+            rv.sweep_err          = DISC_OK;
+            rv.targets            = &empty_targets;
+            rv.target_selected    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* State-based test: sweep_done=true with populated target list renders
+     * TARGETS IN RANGE without crash and emits no spurious picks. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Target target_arr[3];
+        memset(target_arr, 0, sizeof(target_arr));
+        snprintf(target_arr[0].name, sizeof(target_arr[0].name), "iPhone 15");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
+                 "00001111-AAAA-BBBB-CCCC-000011112222");
+        target_arr[0].is_simulator = false;
+        target_arr[0].booted       = false;
+        snprintf(target_arr[1].name, sizeof(target_arr[1].name), "iPad Air");
+        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid),
+                 "11112222-AAAA-BBBB-CCCC-000011112222");
+        target_arr[1].is_simulator = true;
+        target_arr[1].booted       = true;
+        snprintf(target_arr[2].name, sizeof(target_arr[2].name), "iPhone SE");
+        snprintf(target_arr[2].udid, sizeof(target_arr[2].udid),
+                 "22223333-AAAA-BBBB-CCCC-000011112222");
+        target_arr[2].is_simulator = true;
+        target_arr[2].booted       = false;
+        TargetList targets = { .items = target_arr, .count = 3 };
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host   = -1;
+            rv.sweep_done         = true;
+            rv.sweep_err          = DISC_OK;
+            rv.targets            = &targets;
+            rv.target_selected    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* State-based test: sweep_done=true with a selected target renders
+     * the selection highlighted without crash. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Target target_arr[2];
+        memset(target_arr, 0, sizeof(target_arr));
+        snprintf(target_arr[0].name, sizeof(target_arr[0].name), "My iPhone");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
+                 "AAAA1111-BBBB-CCCC-DDDD-EEEE11112222");
+        target_arr[0].is_simulator = false;
+        snprintf(target_arr[1].name, sizeof(target_arr[1].name), "iPhone 16 Sim");
+        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid),
+                 "BBBB2222-CCCC-DDDD-EEEE-FFFF22223333");
+        target_arr[1].is_simulator = true;
+        target_arr[1].booted       = true;
+        TargetList targets = { .items = target_arr, .count = 2 };
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host   = -1;
+            rv.sweep_done         = true;
+            rv.sweep_err          = DISC_OK;
+            rv.targets            = &targets;
+            rv.target_selected    = 0; /* first target selected */
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* State-based test: sweep_done=true with DISC_ERR_COMMAND_FAILED renders
+     * error state without crash. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host   = -1;
+            rv.sweep_done         = true;
+            rv.sweep_err          = DISC_ERR_COMMAND_FAILED;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* State-based test: READY_OK renders READY indicator without crash. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Target target_arr[1];
+        memset(target_arr, 0, sizeof(target_arr));
+        snprintf(target_arr[0].name, sizeof(target_arr[0].name), "My iPhone");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
+                 "CCCC3333-DDDD-EEEE-FFFF-AAAA33334444");
+        target_arr[0].is_simulator = false;
+        TargetList targets = { .items = target_arr, .count = 1 };
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host   = -1;
+            rv.sweep_done         = true;
+            rv.sweep_err          = DISC_OK;
+            rv.targets            = &targets;
+            rv.target_selected    = 0;
+            rv.readiness          = READY_OK;
+            snprintf(rf.project,   sizeof(rf.project),   "/Users/alice/App.xcworkspace");
+            snprintf(rf.scheme,    sizeof(rf.scheme),    "App");
+            snprintf(rf.config,    sizeof(rf.config),    "Debug");
+            snprintf(rf.bundle_id, sizeof(rf.bundle_id), "com.acme.app");
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(ri.pick_target == -1);
+            assert(!ri.sweep);
+        }
+    }
+
+    /* State-based test: each non-OK readiness value renders a hint without crash. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Readiness states[] = {
+            READY_NO_PROJECT, READY_NO_SCHEME, READY_NO_CONFIG,
+            READY_NO_BUNDLE_ID, READY_NO_TARGET
+        };
+        int n = (int)(sizeof(states) / sizeof(states[0]));
+        for (int s = 0; s < n; s++) {
+            for (int i = 0; i < 3; i++) {
+                UiIntents      intents = {0};
+                UiReconView    rv      = make_recon_view();
+                RunConfig      rf      = {0};
+                UiReconIntents ri      = make_recon_intents();
+                intents.select_host   = -1;
+                rv.readiness          = states[s];
+                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+                assert(ri.pick_target == -1);
+            }
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

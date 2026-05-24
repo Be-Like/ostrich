@@ -600,7 +600,7 @@ among them.
 
 ### Task 12 - slice D: targets + READY
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 9, 8, 4
 - **User stories covered**: 28, 31, 33, 43
 
@@ -636,17 +636,17 @@ view-model.
 
 #### Acceptance criteria
 
-- [ ] A sweep renders devices and simulators in one labeled list;
+- [x] A sweep renders devices and simulators in one labeled list;
       picking one infers device vs. simulator and the selection
       sticks for the session.
-- [ ] The remembered target is re-selected on connect when in
+- [x] The remembered target is re-selected on connect when in
       range via the single auto-sweep; when absent,
       `// NO TARGETS IN RANGE` (or unselected) renders. The target
       is never written into a preset.
-- [ ] READY lights only when project, scheme, config, bundle id
+- [x] READY lights only when project, scheme, config, bundle id
       are present and a target is selected; otherwise the specific
       missing-field hint shows.
-- [ ] `build/ostrich` builds and `make test` passes.
+- [x] `build/ostrich` builds and `make test` passes.
 - [ ] Manually against a live Mac: sweep, pick a target, complete
       a preset → READY lights; unplug/remove the target and
       reconnect → it is not re-selected and the empty state shows;

@@ -14,6 +14,7 @@
 #define APP_MAX_SCHEMES    64
 #define APP_MAX_CONFIGS    64
 #define APP_MAX_PRESETS    64
+#define APP_MAX_TARGETS    64
 
 struct App {
     Ui       *ui;
@@ -62,6 +63,16 @@ struct App {
     Arena        *presets_arena;  /* 128 KB; reset at each CONN_ONLINE       */
     PresetList    presets;
     int           preset_selected; /* -1 = none                              */
+
+    /* slice D — targets + READY */
+    Arena        *targets_arena;   /* 64 KB; reset at each SWEEP             */
+    Target       *target_items;    /* lives in targets_arena                 */
+    TargetList    targets;
+    bool          sweeping;
+    bool          sweep_done;
+    DiscStatus    sweep_err;
+    int           target_selected;  /* -1 = none; session-sticky             */
+    char          remembered_udid[128]; /* last loaded via target_load       */
 };
 
 AppStatus app_init(Arena *a, AppOptions opts, App **out) {
@@ -114,8 +125,19 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
         return APP_ERR;
     }
 
+    Arena *targets_arena = arena_create(64 * 1024); /* 64 KB for targets */
+    if (!targets_arena) {
+        arena_destroy(presets_arena);
+        arena_destroy(bp_read_arena);
+        arena_destroy(bp_arena);
+        session_close(session);
+        ui_shutdown(ui);
+        return APP_ERR;
+    }
+
     App *app = arena_alloc(a, sizeof(App), _Alignof(App));
     if (!app) {
+        arena_destroy(targets_arena);
         arena_destroy(presets_arena);
         arena_destroy(bp_read_arena);
         arena_destroy(bp_arena);
@@ -130,10 +152,12 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
     app->blueprints_arena         = bp_arena;
     app->bp_read_arena            = bp_read_arena;
     app->presets_arena            = presets_arena;
+    app->targets_arena            = targets_arena;
     app->form.selected_known_host = -1;
     app->phase                    = CONN_DISCONNECTED;
     app->blueprint_selected       = -1;
     app->preset_selected          = -1;
+    app->target_selected          = -1;
     snprintf(app->form.port, sizeof(app->form.port), "22");
 
     /* Load saved connections; non-fatal if the store is missing or empty. */
@@ -170,6 +194,10 @@ bool app_tick(App *app) {
             app->conn_key[0]     = '\0';
             app->presets         = (PresetList){0};
             app->preset_selected = -1;
+            app->sweeping        = false;
+            app->sweep_done      = false;
+            app->targets         = (TargetList){0};
+            app->target_selected = -1;
         }
     }
 
@@ -205,6 +233,27 @@ bool app_tick(App *app) {
                      "%s", p->config);
             snprintf(app->run_cfg.bundle_id, sizeof(app->run_cfg.bundle_id),
                      "%s", p->bundle_id);
+        }
+
+        /* Load remembered target udid for re-validation after the auto-sweep. */
+        RememberedTarget rt = {0};
+        target_load(app->conn_key, &rt);
+        snprintf(app->remembered_udid, sizeof(app->remembered_udid), "%s", rt.udid);
+
+        /* Submit the single unprompted sweep on connect. */
+        arena_reset(app->targets_arena);
+        app->target_items = arena_alloc(app->targets_arena,
+                                        sizeof(Target) * APP_MAX_TARGETS,
+                                        _Alignof(Target));
+        app->targets.items = app->target_items;
+        app->targets.count = 0;
+        app->sweeping      = true;
+        app->sweep_done    = false;
+        app->sweep_err     = DISC_OK;
+        app->target_selected = -1;
+        {
+            SessionDiscCmd dcmd = {.kind = DCMD_SWEEP_TARGETS};
+            session_disc_submit(app->session, &dcmd);
         }
     }
 
@@ -292,6 +341,32 @@ bool app_tick(App *app) {
         case DEV_BUNDLE_ID_FAILED:
             app->resolving_bundle_id = false;
             break;
+        case DEV_TARGET:
+            if (app->target_items && app->targets.count < APP_MAX_TARGETS) {
+                app->target_items[app->targets.count] = dev.target;
+                app->targets.count++;
+            }
+            break;
+        case DEV_SWEEP_COMPLETE:
+            app->sweeping   = false;
+            app->sweep_done = true;
+            app->sweep_err  = DISC_OK;
+            /* Re-validate the remembered target against the fresh list. */
+            if (app->remembered_udid[0] != '\0' && app->target_selected < 0) {
+                for (int i = 0; i < app->targets.count; i++) {
+                    if (strcmp(app->targets.items[i].udid,
+                               app->remembered_udid) == 0) {
+                        app->target_selected = i;
+                        break;
+                    }
+                }
+            }
+            break;
+        case DEV_SWEEP_FAILED:
+            app->sweeping   = false;
+            app->sweep_done = true;
+            app->sweep_err  = dev.disc_status;
+            break;
         default:
             break;
         }
@@ -321,8 +396,13 @@ bool app_tick(App *app) {
     rv.configs               = &app->configs;
     rv.presets               = &app->presets;
     rv.preset_selected       = app->preset_selected;
-    rv.target_selected       = -1;
-    rv.readiness             = disc_readiness(&app->run_cfg, false);
+    rv.sweeping              = app->sweeping;
+    rv.sweep_done            = app->sweep_done;
+    rv.sweep_err             = app->sweep_err;
+    rv.targets               = app->targets.items ? &app->targets : NULL;
+    rv.target_selected       = app->target_selected;
+    rv.readiness             = disc_readiness(&app->run_cfg,
+                                              app->target_selected >= 0);
 
     UiIntents     intents = {0};
     UiReconIntents ri     = {0};
@@ -522,6 +602,35 @@ bool app_tick(App *app) {
     if (ri.bundle_id_edited)
         app->bundle_id_user_edited = true;
 
+    /* ── target intents ─────────────────────────────────────────────── */
+    if (ri.sweep && online && !app->sweeping) {
+        arena_reset(app->targets_arena);
+        app->target_items = arena_alloc(app->targets_arena,
+                                        sizeof(Target) * APP_MAX_TARGETS,
+                                        _Alignof(Target));
+        app->targets.items   = app->target_items;
+        app->targets.count   = 0;
+        app->sweeping        = true;
+        app->sweep_done      = false;
+        app->sweep_err       = DISC_OK;
+        app->target_selected = -1;
+        SessionDiscCmd dcmd  = {.kind = DCMD_SWEEP_TARGETS};
+        session_disc_submit(app->session, &dcmd);
+    }
+    if (ri.pick_target >= 0 && ri.pick_target < app->targets.count) {
+        app->target_selected = ri.pick_target;
+        if (app->conn_key[0] != '\0') {
+            RememberedTarget rt = {0};
+            snprintf(rt.udid, sizeof(rt.udid), "%s",
+                     app->targets.items[ri.pick_target].udid);
+            snprintf(rt.name, sizeof(rt.name), "%s",
+                     app->targets.items[ri.pick_target].name);
+            target_save(app->conn_key, &rt);
+            snprintf(app->remembered_udid, sizeof(app->remembered_udid),
+                     "%s", rt.udid);
+        }
+    }
+
     /* ── preset intents ─────────────────────────────────────────────── */
     if (ri.pick_preset >= 0 && ri.pick_preset < app->presets.count) {
         app->preset_selected          = ri.pick_preset;
@@ -595,4 +704,5 @@ void app_shutdown(App *app) {
     arena_destroy(app->blueprints_arena);
     arena_destroy(app->bp_read_arena);
     arena_destroy(app->presets_arena);
+    arena_destroy(app->targets_arena);
 }
