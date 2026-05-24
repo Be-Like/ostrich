@@ -7,6 +7,8 @@ releasable commit/PR. Tasks 1-7 build the backend libraries bottom-up
 while the app keeps shipping today's resting shell; task 8 widens the
 UI seam with no behavior change; task 9 is the user-facing flip to a
 working connection; tasks 10-15 layer the richer behaviors onto it.
+Tasks 16-18 are post-release visual fixes to the connection overlay
+and bar, each confined to the `ui` library.
 
 1. **libssh2 build** — init the submodule and direct-compile
    `build/liblibssh2.a` (OpenSSL backend) into the plain Make build;
@@ -38,6 +40,12 @@ working connection; tasks 10-15 layer the richer behaviors onto it.
 14. **Keepalive + auto-reconnect** — drop detection,
     `REACQUIRING SIGNAL…` + backoff, `LINK SEVERED`, state preserved.
 15. **Update / close / switch** — connection-bar lifecycle controls.
+16. **REMEMBER PASSKEY checkbox layout** — checkbox left, copy
+    right, so the box no longer overlaps its label.
+17. **Tab between overlay fields** — restore Tab/Shift-Tab field
+    cycling in the BREACH overlay.
+18. **Connection bar top spacing** — breathing room above the bar's
+    status text so it stops hugging the window edge.
 
 ## Task Dependency Relationships
 
@@ -69,6 +77,11 @@ Foundations (no blockers): 2 spsc_ring, 3 lexicon
            └───┬────┘             (15 also needs 11)
                ▼
               13 REMEMBER PASSKEY  (needs 11 + 12)
+
+Post-release visual fixes (foundations already shipped):
+  16 remember-passkey checkbox layout   (on 13)
+  17 overlay tab navigation             (on 9)
+  18 connection-bar top spacing         (on 9)
 ```
 
 ## Detailed Tasks
@@ -725,3 +738,131 @@ map to the `update` / `close` / `select_host` intents (ARD
 - [x] Close disconnects and returns to the resting overlay.
 - [x] Selecting a different KNOWN HOST while connected closes the
       current session first; `make test` stays green.
+
+### Task 16 - REMEMBER PASSKEY checkbox layout
+
+- **Status**: done
+- **Blocked by**: none (builds on the completed Task 13)
+- **User stories covered**: US-8 (the opt-in REMEMBER PASSKEY
+  checkbox), US-50 (the overlay as a clean, legible voice surface).
+
+#### What to build
+
+Fix the REMEMBER PASSKEY row in the BREACH overlay so the checkbox no
+longer paints on top of its copy. Today the checkbox is placed at the
+form's label column, but the "REMEMBER PASSKEY" text is wider than
+that column, so the box lands directly over the words. Render it
+instead as the theme intends — the checkbox left-aligned at the
+form's left margin with the copy to its right (theme.md "Connection
+overlay" mockup: `[ ] REMEMBER PASSKEY`). The off-by-default
+behavior, the connecting-disabled state, and the persistence
+semantics are unchanged.
+
+#### Technical Details
+
+In `draw_breach_overlay` (`src/ui/ui.cpp`) the REMEMBER PASSKEY block
+follows the shared `label → SameLine(lw) → widget` grid used by
+HOST/PORT/USER/AUTH, but the label text overruns the `lw` (60px)
+column, so `SameLine(lw)` drops the checkbox onto the text. Re-order
+this single row to draw the `Checkbox` first, then `SameLine()`, then
+the dim-cyan copy from `lex(LEX_CONN_REMEMBER_PASSKEY)` — it is the
+only row that is a toggle rather than a labelled input, so it
+legitimately breaks the label-column grid. Keep copy sourced from the
+lexicon and the palette/voice discipline (ARD "Interfaces" →
+`include/ui.h`; theme.md palette). No header, app, or store changes;
+this is a render-order fix confined to the C++ UI library behind
+`ui.h`.
+
+#### Acceptance criteria
+
+- [x] The REMEMBER PASSKEY checkbox renders to the left with its copy
+      to the right; the box and text no longer overlap.
+- [x] The checkbox is still off by default, disabled while
+      connecting, and drives the same `form->remember` field (no
+      change to persistence).
+- [x] Copy comes from `lexicon`; palette/voice discipline holds.
+- [x] `make`/`make test` stay green (the headless `ui_test` still
+      skips without a display); the running app is otherwise
+      unchanged.
+
+### Task 17 - Tab navigation between overlay fields
+
+- **Status**: pending
+- **Blocked by**: none (builds on the completed Task 9)
+- **User stories covered**: US-51 (the overlay fully keyboard-
+  drivable — tab between fields, Enter to BREACH, a sane Esc).
+
+#### What to build
+
+Restore Tab / Shift-Tab cycling between the BREACH overlay's entry
+fields (HOST → PORT → USER → PASSKEY). Today pressing Tab does
+nothing because the overlay window suppresses keyboard navigation,
+which breaks the keyboard-driven flow US-51 promises. After the fix,
+Tab advances to the next field and Shift-Tab steps back, while Enter
+still commits BREACH and Esc still aborts/declines.
+
+#### Technical Details
+
+The overlay `Begin` in `draw_breach_overlay` (`src/ui/ui.cpp`) passes
+`ImGuiWindowFlags_NoNav`, which disables ImGui's keyboard navigation
+for the window even though `ImGuiConfigFlags_NavEnableKeyboard` is set
+globally in `ui_init` — so InputText-to-InputText Tab cycling never
+fires. Drop `NoNav` (or narrow it) on the overlay window so field
+tabbing works, and confirm the existing Enter-to-BREACH
+(`EnterReturnsTrue`) and Esc handling still behave and that the
+first-show `SetKeyboardFocusHere` on HOST is preserved. Verify the
+nav cursor does not introduce a stray highlight that breaks the
+palette; tame it via style if needed (theme.md palette). Confined to
+the C++ UI library behind `ui.h`; no header/app changes.
+
+#### Acceptance criteria
+
+- [ ] Tab advances HOST → PORT → USER (→ PASSKEY when shown) and
+      Shift-Tab steps back, within the BREACH overlay.
+- [ ] Enter still commits BREACH on a valid form and Esc still
+      aborts (connecting) / declines (host-key prompt); initial focus
+      still lands on HOST.
+- [ ] No stray nav highlight breaks the palette; the overlay is
+      otherwise visually unchanged.
+- [ ] `make`/`make test` stay green (the headless `ui_test` still
+      skips without a display).
+
+### Task 18 - Connection bar top spacing
+
+- **Status**: pending
+- **Blocked by**: none (builds on the completed Task 9)
+- **User stories covered**: US-28 (the thin connection bar showing
+  `user@host  * ONLINE`); polish toward US-50 (a legible voice
+  surface).
+
+#### What to build
+
+Give the connection bar a little breathing room above its status
+text. Once breached, the bar's `user@host  * ONLINE` content sits
+flush against the top window edge; add top spacing so the text no
+longer hugs the chrome. The bar's content, colors, pulse, and the
+right-aligned UPDATE/CLOSE controls are unchanged — only its vertical
+padding/height.
+
+#### Technical Details
+
+In `draw_conn_bar` (`src/ui/ui.cpp`) the bar is pinned at `y=0` with
+`WindowPadding` vertical set to `FramePadding.y`, so the text presses
+against the top edge. Increase the top padding (and the bar height
+`bar_h` to match, so content is not clipped) to seat the status line
+lower. Keep the bar full-width, opaque `C_BG`, and the REACQUIRING /
+ACCESS GRANTED / `* ONLINE` states and right-aligned controls intact
+(ARD "Interfaces" → `include/ui.h`; theme.md "Connection overlay"
+bar). Confined to the C++ UI library behind `ui.h`; no header/app
+changes.
+
+#### Acceptance criteria
+
+- [ ] After breaching, the bar's `user@host  * ONLINE` text has
+      visible spacing above it and no longer hugs the top window
+      edge.
+- [ ] The bar stays full-width and opaque; the UPDATE/CLOSE controls
+      stay right-aligned and unclipped; the grant stamp → pulse and
+      REACQUIRING states are unchanged.
+- [ ] `make`/`make test` stay green (the headless `ui_test` still
+      skips without a display).

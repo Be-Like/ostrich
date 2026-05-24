@@ -299,15 +299,17 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
                 ImGuiInputTextFlags_EnterReturnsTrue);
     }
 
-    /* REMEMBER PASSKEY checkbox — only visible when auth == SSH_AUTH_PASSWORD */
+    /* REMEMBER PASSKEY — checkbox left, copy right: [ ] REMEMBER PASSKEY.
+       This row breaks the label-column grid (the copy is wider than lw),
+       so we draw the widget first and the label after via SameLine(). */
     if (form->auth == SSH_AUTH_PASSWORD) {
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted(lex(LEX_CONN_REMEMBER_PASSKEY));
-        ImGui::PopStyleColor();
-        ImGui::SameLine(lw);
         if (connecting) ImGui::BeginDisabled();
         ImGui::Checkbox("##remember", &form->remember);
         if (connecting) ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_CONN_REMEMBER_PASSKEY));
+        ImGui::PopStyleColor();
     }
 
     /* KNOWN HOSTS */

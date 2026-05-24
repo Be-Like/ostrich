@@ -123,6 +123,75 @@ int main(void) {
         }
     }
 
+    /* State-based test: REMEMBER PASSKEY checkbox (off) renders without crash
+     * and produces no spurious intents. */
+    {
+        ConnForm pw_form = {0};
+        pw_form.selected_known_host = -1;
+        snprintf(pw_form.host, sizeof(pw_form.host), "example.com");
+        snprintf(pw_form.user, sizeof(pw_form.user), "alice");
+        snprintf(pw_form.port, sizeof(pw_form.port), "22");
+        pw_form.auth     = SSH_AUTH_PASSWORD;
+        snprintf(pw_form.passkey, sizeof(pw_form.passkey), "s3cr3t");
+        pw_form.remember = false;
+
+        UiConnView pw_view = {0};
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &pw_view, &pw_form, &intents);
+            assert(!intents.breach);
+            assert(!intents.save);
+        }
+        assert(!pw_form.remember); /* checkbox state unchanged without interaction */
+    }
+
+    /* State-based test: REMEMBER PASSKEY checkbox (on) renders without crash
+     * and preserves the remembered flag. */
+    {
+        ConnForm pw_form = {0};
+        pw_form.selected_known_host = -1;
+        snprintf(pw_form.host, sizeof(pw_form.host), "example.com");
+        snprintf(pw_form.user, sizeof(pw_form.user), "alice");
+        snprintf(pw_form.port, sizeof(pw_form.port), "22");
+        pw_form.auth     = SSH_AUTH_PASSWORD;
+        snprintf(pw_form.passkey, sizeof(pw_form.passkey), "s3cr3t");
+        pw_form.remember = true;
+
+        UiConnView pw_view = {0};
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &pw_view, &pw_form, &intents);
+            assert(!intents.breach);
+        }
+        assert(pw_form.remember); /* flag must survive frames without interaction */
+    }
+
+    /* State-based test: REMEMBER PASSKEY while connecting is disabled —
+     * the connecting state must not corrupt the remember flag. */
+    {
+        ConnForm pw_form = {0};
+        pw_form.selected_known_host = -1;
+        snprintf(pw_form.host, sizeof(pw_form.host), "example.com");
+        snprintf(pw_form.user, sizeof(pw_form.user), "alice");
+        snprintf(pw_form.port, sizeof(pw_form.port), "22");
+        pw_form.auth     = SSH_AUTH_PASSWORD;
+        snprintf(pw_form.passkey, sizeof(pw_form.passkey), "s3cr3t");
+        pw_form.remember = true;
+
+        UiConnView connecting_view = {0};
+        connecting_view.phase      = CONN_CONNECTING;
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &connecting_view, &pw_form, &intents);
+            assert(!intents.breach);
+            assert(!intents.abort); /* no keyboard Escape was pressed */
+        }
+        assert(pw_form.remember); /* disabled checkbox must not clear the flag */
+    }
+
     /* State-based test: ONLINE view (bar phase) emits no spurious close/update. */
     {
         UiConnView online_view = {0};
