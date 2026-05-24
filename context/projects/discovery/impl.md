@@ -74,7 +74,7 @@ and 4.
 
 ### Task 1 - libdiscovery core
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: 5, 6, 7, 43, 44, 52
 

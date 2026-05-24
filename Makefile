@@ -100,11 +100,15 @@ STORE_OBJS := $(patsubst %.c,$(BUILD)/store/%.o,$(STORE_SRC))
 SESSION_SRC  := session.c
 SESSION_OBJS := $(patsubst %.c,$(BUILD)/session/%.o,$(SESSION_SRC))
 
+# discovery (pure functional core: command builders, curation, readiness)
+DISCOVERY_SRC  := discovery.c
+DISCOVERY_OBJS := $(patsubst %.c,$(BUILD)/discovery/%.o,$(DISCOVERY_SRC))
+
 .PHONY: all clean test ssh_version_smoke ssh_smoke session_smoke
 
 all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
      $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
-     $(BUILD)/libstore.a $(BUILD)/libsession.a
+     $(BUILD)/libstore.a $(BUILD)/libsession.a $(BUILD)/libdiscovery.a
 
 # ── GLFW ──────────────────────────────────────────────────────────────
 $(BUILD)/glfw/%.o: $(GLFW_DIR)/src/%.c | $(BUILD)/glfw
@@ -207,6 +211,13 @@ $(BUILD)/session/%.o: $(SRC)/session/%.c | $(BUILD)/session
 $(BUILD)/libsession.a: $(SESSION_OBJS)
 	ar rcs $@ $^
 
+# ── discovery library (pure functional core) ──────────────────────────
+$(BUILD)/discovery/%.o: $(SRC)/discovery/%.c | $(BUILD)/discovery
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/libdiscovery.a: $(DISCOVERY_OBJS)
+	ar rcs $@ $^
+
 # ── Dev smokes (not part of make test) ───────────────────────────────
 ssh_version_smoke: $(BUILD)/ssh_version_smoke
 	./$(BUILD)/ssh_version_smoke
@@ -284,9 +295,14 @@ $(BUILD)/ui_test: $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
 	    $(BUILD)/ui_lexicon.o $(BUILD)/ui_framestats.o \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
 
+$(BUILD)/discovery_test: $(TESTS)/discovery_test.c $(BUILD)/libdiscovery.a \
+                         $(SRC)/arena.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/discovery_test.c \
+	    $(SRC)/arena.c $(BUILD)/libdiscovery.a
+
 test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
       $(BUILD)/arena_test $(BUILD)/lexicon_test $(BUILD)/framestats_test \
-      $(BUILD)/ui_test $(BUILD)/store_test
+      $(BUILD)/ui_test $(BUILD)/store_test $(BUILD)/discovery_test
 	./$(BUILD)/app_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
@@ -295,6 +311,7 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
 	./$(BUILD)/framestats_test
 	./$(BUILD)/ui_test
 	./$(BUILD)/store_test
+	./$(BUILD)/discovery_test
 
 # ── Build directories ─────────────────────────────────────────────────
 $(BUILD):
@@ -326,6 +343,9 @@ $(BUILD)/store: | $(BUILD)
 
 $(BUILD)/session: | $(BUILD)
 	mkdir -p $(BUILD)/session
+
+$(BUILD)/discovery: | $(BUILD)
+	mkdir -p $(BUILD)/discovery
 
 clean:
 	rm -rf $(BUILD)
