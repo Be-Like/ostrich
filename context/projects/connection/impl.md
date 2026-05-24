@@ -787,7 +787,7 @@ this is a render-order fix confined to the C++ UI library behind
 
 ### Task 17 - Tab navigation between overlay fields
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none (builds on the completed Task 9)
 - **User stories covered**: US-51 (the overlay fully keyboard-
   drivable — tab between fields, Enter to BREACH, a sane Esc).
@@ -817,14 +817,14 @@ the C++ UI library behind `ui.h`; no header/app changes.
 
 #### Acceptance criteria
 
-- [ ] Tab advances HOST → PORT → USER (→ PASSKEY when shown) and
+- [x] Tab advances HOST → PORT → USER (→ PASSKEY when shown) and
       Shift-Tab steps back, within the BREACH overlay.
-- [ ] Enter still commits BREACH on a valid form and Esc still
+- [x] Enter still commits BREACH on a valid form and Esc still
       aborts (connecting) / declines (host-key prompt); initial focus
       still lands on HOST.
-- [ ] No stray nav highlight breaks the palette; the overlay is
+- [x] No stray nav highlight breaks the palette; the overlay is
       otherwise visually unchanged.
-- [ ] `make`/`make test` stay green (the headless `ui_test` still
+- [x] `make`/`make test` stay green (the headless `ui_test` still
       skips without a display).
 
 ### Task 18 - Connection bar top spacing

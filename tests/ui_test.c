@@ -223,6 +223,47 @@ int main(void) {
         }
     }
 
+    /* State-based test: overlay with SSH_AUTH_AGENT (HOST/PORT/USER nav fields)
+     * renders without crash and emits no spurious intents (nav enabled). */
+    {
+        ConnForm agent_form = {0};
+        agent_form.selected_known_host = -1;
+        snprintf(agent_form.host, sizeof(agent_form.host), "mac.local");
+        snprintf(agent_form.user, sizeof(agent_form.user), "bob");
+        snprintf(agent_form.port, sizeof(agent_form.port), "22");
+        agent_form.auth = SSH_AUTH_AGENT;
+
+        UiConnView agent_view = {0};
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &agent_view, &agent_form, &intents);
+            assert(!intents.breach);
+            assert(!intents.abort);
+        }
+    }
+
+    /* State-based test: overlay with SSH_AUTH_PASSWORD (HOST/PORT/USER/PASSKEY nav
+     * fields) renders without crash and emits no spurious intents (nav enabled). */
+    {
+        ConnForm pw_nav_form = {0};
+        pw_nav_form.selected_known_host = -1;
+        snprintf(pw_nav_form.host,    sizeof(pw_nav_form.host),    "mac.local");
+        snprintf(pw_nav_form.user,    sizeof(pw_nav_form.user),    "bob");
+        snprintf(pw_nav_form.port,    sizeof(pw_nav_form.port),    "22");
+        snprintf(pw_nav_form.passkey, sizeof(pw_nav_form.passkey), "hunter2");
+        pw_nav_form.auth = SSH_AUTH_PASSWORD;
+
+        UiConnView pw_nav_view = {0};
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &pw_nav_view, &pw_nav_form, &intents);
+            assert(!intents.breach);
+            assert(!intents.abort);
+        }
+    }
+
     /* State-based test: ONLINE + overlay_open (UPDATE mode) emits no spurious breach. */
     {
         UiConnView update_view = {0};

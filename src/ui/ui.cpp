@@ -211,7 +211,7 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
     ImGui::Begin("##breach_overlay", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav);
+                     ImGuiWindowFlags_NoSavedSettings);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
 
