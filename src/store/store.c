@@ -14,18 +14,22 @@
 #define MAX_LINE  512
 #define PATH_CAP  1024
 
-StoreStatus store_path(char *buf, size_t cap) {
+static StoreStatus ostrich_path(char *buf, size_t cap, const char *name) {
     const char *xdg = getenv("XDG_CONFIG_HOME");
     int n;
     if (xdg && xdg[0] != '\0') {
-        n = snprintf(buf, cap, "%s/ostrich/connections", xdg);
+        n = snprintf(buf, cap, "%s/ostrich/%s", xdg, name);
     } else {
         const char *home = getenv("HOME");
         if (!home || home[0] == '\0') return STORE_ERR_IO;
-        n = snprintf(buf, cap, "%s/.config/ostrich/connections", home);
+        n = snprintf(buf, cap, "%s/.config/ostrich/%s", home, name);
     }
     if (n < 0 || (size_t)n >= cap) return STORE_ERR_IO;
     return STORE_OK;
+}
+
+StoreStatus store_path(char *buf, size_t cap) {
+    return ostrich_path(buf, cap, "connections");
 }
 
 /* Create all directory components of filepath's parent. */
@@ -206,4 +210,421 @@ const char *store_status_str(StoreStatus st) {
     case STORE_ERR_OOM:   return "out of memory";
     default:              return "unknown error";
     }
+}
+
+/* ── recon persistence ────────────────────────────────────────────────── */
+
+#define MAX_PRESETS      64
+#define MAX_RECON_LINE   2048
+#define MAX_RECORD_LINES 16
+
+void store_conn_key(const Conn *c, char *buf, size_t cap) {
+    snprintf(buf, cap, "%s@%s:%d", c->user, c->host, c->port);
+}
+
+/*
+ * Copy every record from `in` to `out` except those where conn==skip_conn.
+ * *first_out tracks whether any record has been written yet (for separator).
+ */
+static StoreStatus copy_records_except(FILE *in, FILE *out,
+                                        const char *skip_conn,
+                                        bool *first_out) {
+    char  line[MAX_RECON_LINE];
+    char  rec[MAX_RECORD_LINES][MAX_RECON_LINE];
+    int   nlines    = 0;
+    char  cur_conn[300] = "";
+    bool  in_record = false;
+
+    while (fgets(line, sizeof(line), in)) {
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+            line[--len] = '\0';
+
+        if (len == 0) {
+            if (in_record) {
+                if (strcmp(cur_conn, skip_conn) != 0 && nlines > 0) {
+                    if (!*first_out && fprintf(out, "\n") < 0)
+                        return STORE_ERR_IO;
+                    for (int i = 0; i < nlines; i++)
+                        if (fprintf(out, "%s\n", rec[i]) < 0)
+                            return STORE_ERR_IO;
+                    *first_out = false;
+                }
+                nlines      = 0;
+                cur_conn[0] = '\0';
+                in_record   = false;
+            }
+            continue;
+        }
+
+        if (line[0] == '#') continue;
+
+        char *eq = strchr(line, '=');
+        if (eq) {
+            char  key[64] = "";
+            size_t klen   = (size_t)(eq - line);
+            if (klen < sizeof(key)) {
+                memcpy(key, line, klen);
+                key[klen] = '\0';
+            }
+            if (strcmp(key, "conn") == 0)
+                strncpy(cur_conn, eq + 1, sizeof(cur_conn) - 1);
+        }
+
+        if (nlines < MAX_RECORD_LINES)
+            strncpy(rec[nlines++], line, MAX_RECON_LINE - 1);
+        in_record = true;
+    }
+
+    /* flush last record (no trailing blank line required) */
+    if (in_record && strcmp(cur_conn, skip_conn) != 0 && nlines > 0) {
+        if (!*first_out && fprintf(out, "\n") < 0)
+            return STORE_ERR_IO;
+        for (int i = 0; i < nlines; i++)
+            if (fprintf(out, "%s\n", rec[i]) < 0)
+                return STORE_ERR_IO;
+        *first_out = false;
+    }
+
+    return STORE_OK;
+}
+
+/* Open a temp file for atomic writing; caller must fclose + rename or unlink. */
+static StoreStatus open_atomic(const char *path, char *tmp_out, size_t tmp_cap,
+                                FILE **f_out) {
+    mkdirs_for(path);
+    int n = snprintf(tmp_out, tmp_cap, "%s.tmp", path);
+    if (n < 0 || (size_t)n >= tmp_cap) return STORE_ERR_IO;
+    int fd = open(tmp_out, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+    if (fd < 0) return STORE_ERR_IO;
+    if (fchmod(fd, 0600) != 0) { close(fd); unlink(tmp_out); return STORE_ERR_PERMS; }
+    FILE *f = fdopen(fd, "w");
+    if (!f) { close(fd); unlink(tmp_out); return STORE_ERR_IO; }
+    *f_out = f;
+    return STORE_OK;
+}
+
+/* ── presets ──────────────────────────────────────────────────────────── */
+
+StoreStatus preset_load(Arena *a, const char *conn_key, PresetList *out) {
+    out->items        = NULL;
+    out->count        = 0;
+    out->active_index = -1;
+
+    char path[PATH_CAP];
+    StoreStatus s = ostrich_path(path, sizeof(path), "presets");
+    if (s != STORE_OK) return s;
+
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        if (errno == ENOENT) return STORE_OK;
+        return STORE_ERR_IO;
+    }
+
+    Preset *items = arena_alloc(a, sizeof(Preset) * MAX_PRESETS, _Alignof(Preset));
+    if (!items) { fclose(f); return STORE_ERR_OOM; }
+
+    int   count    = 0;
+    Preset cur;
+    bool  in_record   = false;
+    bool  cur_active  = false;
+    bool  cur_matches = false;
+    char  line[MAX_RECON_LINE];
+
+    memset(&cur, 0, sizeof(cur));
+
+    while (fgets(line, sizeof(line), f)) {
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+            line[--len] = '\0';
+
+        if (len == 0) {
+            if (in_record && cur_matches && cur.name[0] != '\0') {
+                if (count < MAX_PRESETS) {
+                    items[count] = cur;
+                    if (cur_active) out->active_index = count;
+                    count++;
+                }
+            }
+            memset(&cur, 0, sizeof(cur));
+            cur_active  = false;
+            cur_matches = false;
+            in_record   = false;
+            continue;
+        }
+
+        if (line[0] == '#') continue;
+
+        char *eq = strchr(line, '=');
+        if (!eq) { fclose(f); return STORE_ERR_PARSE; }
+        *eq             = '\0';
+        const char *key = line;
+        const char *val = eq + 1;
+        in_record       = true;
+
+        if (strcmp(key, "conn") == 0) {
+            cur_matches = (strcmp(val, conn_key) == 0);
+        } else if (cur_matches) {
+            if      (strcmp(key, "name")     == 0) strncpy(cur.name,      val, sizeof(cur.name)      - 1);
+            else if (strcmp(key, "project")  == 0) strncpy(cur.project,   val, sizeof(cur.project)   - 1);
+            else if (strcmp(key, "scheme")   == 0) strncpy(cur.scheme,    val, sizeof(cur.scheme)    - 1);
+            else if (strcmp(key, "config")   == 0) strncpy(cur.config,    val, sizeof(cur.config)    - 1);
+            else if (strcmp(key, "bundleid") == 0) strncpy(cur.bundle_id, val, sizeof(cur.bundle_id) - 1);
+            else if (strcmp(key, "active")   == 0) cur_active = (strcmp(val, "1") == 0);
+            /* unknown keys silently ignored */
+        }
+    }
+
+    if (in_record && cur_matches && cur.name[0] != '\0') {
+        if (count < MAX_PRESETS) {
+            items[count] = cur;
+            if (cur_active) out->active_index = count;
+            count++;
+        }
+    }
+
+    fclose(f);
+    out->items = items;
+    out->count = count;
+    return STORE_OK;
+}
+
+static StoreStatus write_preset_rec(FILE *f, const char *conn_key,
+                                     const Preset *p, bool active) {
+    if (fprintf(f, "conn=%s\n",    conn_key)  < 0) return STORE_ERR_IO;
+    if (fprintf(f, "name=%s\n",    p->name)   < 0) return STORE_ERR_IO;
+    if (active)
+        if (fprintf(f, "active=1\n") < 0) return STORE_ERR_IO;
+    if (p->project[0]   && fprintf(f, "project=%s\n",  p->project)   < 0) return STORE_ERR_IO;
+    if (p->scheme[0]    && fprintf(f, "scheme=%s\n",   p->scheme)    < 0) return STORE_ERR_IO;
+    if (p->config[0]    && fprintf(f, "config=%s\n",   p->config)    < 0) return STORE_ERR_IO;
+    if (p->bundle_id[0] && fprintf(f, "bundleid=%s\n", p->bundle_id) < 0) return STORE_ERR_IO;
+    return STORE_OK;
+}
+
+StoreStatus preset_save(const char *conn_key, const PresetList *l) {
+    if (!conn_key || !l) return STORE_ERR_IO;
+
+    char path[PATH_CAP];
+    StoreStatus s = ostrich_path(path, sizeof(path), "presets");
+    if (s != STORE_OK) return s;
+
+    char tmp[PATH_CAP + 4];
+    FILE *out;
+    s = open_atomic(path, tmp, sizeof(tmp), &out);
+    if (s != STORE_OK) return s;
+
+    bool first_out = true;
+
+    FILE *in = fopen(path, "r");
+    if (in) {
+        s = copy_records_except(in, out, conn_key, &first_out);
+        fclose(in);
+        if (s != STORE_OK) { fclose(out); unlink(tmp); return s; }
+    }
+
+    for (int i = 0; i < l->count; i++) {
+        if (!first_out && fprintf(out, "\n") < 0) { fclose(out); unlink(tmp); return STORE_ERR_IO; }
+        s = write_preset_rec(out, conn_key, &l->items[i], i == l->active_index);
+        if (s != STORE_OK) { fclose(out); unlink(tmp); return s; }
+        first_out = false;
+    }
+
+    if (fclose(out) != 0) { unlink(tmp); return STORE_ERR_IO; }
+    if (rename(tmp, path) != 0) { unlink(tmp); return STORE_ERR_IO; }
+    return STORE_OK;
+}
+
+/* ── remembered target ────────────────────────────────────────────────── */
+
+StoreStatus target_load(const char *conn_key, RememberedTarget *out) {
+    if (!conn_key || !out) return STORE_ERR_IO;
+    memset(out, 0, sizeof(*out));
+
+    char path[PATH_CAP];
+    StoreStatus s = ostrich_path(path, sizeof(path), "targets");
+    if (s != STORE_OK) return s;
+
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        if (errno == ENOENT) return STORE_OK;
+        return STORE_ERR_IO;
+    }
+
+    RememberedTarget cur;
+    bool  in_record   = false;
+    bool  cur_matches = false;
+    bool  found       = false;
+    char  line[MAX_RECON_LINE];
+
+    memset(&cur, 0, sizeof(cur));
+
+    while (fgets(line, sizeof(line), f)) {
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+            line[--len] = '\0';
+
+        if (len == 0) {
+            if (in_record && cur_matches && cur.udid[0] != '\0') {
+                *out  = cur;
+                found = true;
+            }
+            memset(&cur, 0, sizeof(cur));
+            cur_matches = false;
+            in_record   = false;
+            if (found) break;
+            continue;
+        }
+
+        if (line[0] == '#') continue;
+
+        char *eq = strchr(line, '=');
+        if (!eq) { fclose(f); return STORE_ERR_PARSE; }
+        *eq             = '\0';
+        const char *key = line;
+        const char *val = eq + 1;
+        in_record       = true;
+
+        if (strcmp(key, "conn") == 0) {
+            cur_matches = (strcmp(val, conn_key) == 0);
+        } else if (cur_matches) {
+            if      (strcmp(key, "udid") == 0) strncpy(cur.udid, val, sizeof(cur.udid) - 1);
+            else if (strcmp(key, "name") == 0) strncpy(cur.name, val, sizeof(cur.name) - 1);
+        }
+    }
+
+    if (in_record && cur_matches && cur.udid[0] != '\0' && !found)
+        *out = cur;
+
+    fclose(f);
+    return STORE_OK;
+}
+
+StoreStatus target_save(const char *conn_key, const RememberedTarget *t) {
+    if (!conn_key || !t) return STORE_ERR_IO;
+
+    char path[PATH_CAP];
+    StoreStatus s = ostrich_path(path, sizeof(path), "targets");
+    if (s != STORE_OK) return s;
+
+    char tmp[PATH_CAP + 4];
+    FILE *out;
+    s = open_atomic(path, tmp, sizeof(tmp), &out);
+    if (s != STORE_OK) return s;
+
+    bool first_out = true;
+
+    FILE *in = fopen(path, "r");
+    if (in) {
+        s = copy_records_except(in, out, conn_key, &first_out);
+        fclose(in);
+        if (s != STORE_OK) { fclose(out); unlink(tmp); return s; }
+    }
+
+    if (t->udid[0] != '\0') {
+        if (!first_out && fprintf(out, "\n") < 0) { fclose(out); unlink(tmp); return STORE_ERR_IO; }
+        if (fprintf(out, "conn=%s\n", conn_key) < 0) { fclose(out); unlink(tmp); return STORE_ERR_IO; }
+        if (fprintf(out, "udid=%s\n", t->udid)  < 0) { fclose(out); unlink(tmp); return STORE_ERR_IO; }
+        if (t->name[0])
+            if (fprintf(out, "name=%s\n", t->name) < 0) { fclose(out); unlink(tmp); return STORE_ERR_IO; }
+    }
+
+    if (fclose(out) != 0) { unlink(tmp); return STORE_ERR_IO; }
+    if (rename(tmp, path) != 0) { unlink(tmp); return STORE_ERR_IO; }
+    return STORE_OK;
+}
+
+/* ── scan root ────────────────────────────────────────────────────────── */
+
+StoreStatus scanroot_load(const char *conn_key, char *root, size_t cap) {
+    if (!conn_key || !root || cap == 0) return STORE_ERR_IO;
+    root[0] = '\0';
+
+    char path[PATH_CAP];
+    StoreStatus s = ostrich_path(path, sizeof(path), "scanroots");
+    if (s != STORE_OK) return s;
+
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        if (errno == ENOENT) return STORE_OK;
+        return STORE_ERR_IO;
+    }
+
+    char  found_root[1024] = "";
+    bool  in_record        = false;
+    bool  cur_matches      = false;
+    bool  found            = false;
+    char  line[MAX_RECON_LINE];
+
+    while (fgets(line, sizeof(line), f)) {
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+            line[--len] = '\0';
+
+        if (len == 0) {
+            if (in_record && cur_matches && found_root[0] != '\0') {
+                snprintf(root, cap, "%s", found_root);
+                found = true;
+            }
+            found_root[0] = '\0';
+            cur_matches   = false;
+            in_record     = false;
+            if (found) break;
+            continue;
+        }
+
+        if (line[0] == '#') continue;
+
+        char *eq = strchr(line, '=');
+        if (!eq) { fclose(f); return STORE_ERR_PARSE; }
+        *eq             = '\0';
+        const char *key = line;
+        const char *val = eq + 1;
+        in_record       = true;
+
+        if (strcmp(key, "conn") == 0) {
+            cur_matches = (strcmp(val, conn_key) == 0);
+        } else if (cur_matches) {
+            if (strcmp(key, "root") == 0)
+                strncpy(found_root, val, sizeof(found_root) - 1);
+        }
+    }
+
+    if (in_record && cur_matches && found_root[0] != '\0' && !found)
+        snprintf(root, cap, "%s", found_root);
+
+    fclose(f);
+    return STORE_OK;
+}
+
+StoreStatus scanroot_save(const char *conn_key, const char *root) {
+    if (!conn_key || !root) return STORE_ERR_IO;
+
+    char path[PATH_CAP];
+    StoreStatus s = ostrich_path(path, sizeof(path), "scanroots");
+    if (s != STORE_OK) return s;
+
+    char tmp[PATH_CAP + 4];
+    FILE *out;
+    s = open_atomic(path, tmp, sizeof(tmp), &out);
+    if (s != STORE_OK) return s;
+
+    bool first_out = true;
+
+    FILE *in = fopen(path, "r");
+    if (in) {
+        s = copy_records_except(in, out, conn_key, &first_out);
+        fclose(in);
+        if (s != STORE_OK) { fclose(out); unlink(tmp); return s; }
+    }
+
+    if (root[0] != '\0') {
+        if (!first_out && fprintf(out, "\n") < 0) { fclose(out); unlink(tmp); return STORE_ERR_IO; }
+        if (fprintf(out, "conn=%s\n", conn_key) < 0) { fclose(out); unlink(tmp); return STORE_ERR_IO; }
+        if (fprintf(out, "root=%s\n", root)     < 0) { fclose(out); unlink(tmp); return STORE_ERR_IO; }
+    }
+
+    if (fclose(out) != 0) { unlink(tmp); return STORE_ERR_IO; }
+    if (rename(tmp, path) != 0) { unlink(tmp); return STORE_ERR_IO; }
+    return STORE_OK;
 }

@@ -216,7 +216,7 @@ extending a `tools/*_smoke.c` against a live Mac.
 
 ### Task 4 - libstore presets + target + scanroot
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: 3, 21, 22, 23, 24, 30, 32
 
