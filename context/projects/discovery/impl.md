@@ -269,7 +269,7 @@ to a temp dir as the existing tests do.
 
 ### Task 5 - lexicon recon keys
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: 45, 46
 

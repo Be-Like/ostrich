@@ -47,6 +47,24 @@ static const char *s_table[LEX__COUNT] = {
 
     /* LEX_CONN_UPDATE   */ "UPDATE",
     /* LEX_CONN_CLOSE    */ "CLOSE",
+
+    /* LEX_REC_SCAN_HOST      */ "\xe2\x8c\x96 SCAN HOST",
+    /* LEX_REC_ABORT_SCAN     */ "\xe2\x96\xa0 ABORT SCAN",
+    /* LEX_REC_BLUEPRINTS     */ "BLUEPRINTS RECOVERED",
+    /* LEX_REC_NO_BLUEPRINTS  */ "// NO BLUEPRINTS",
+    /* LEX_REC_SWEEP          */ "\xe2\x86\xbb SWEEP FOR TARGETS",
+    /* LEX_REC_TARGETS        */ "TARGETS IN RANGE",
+    /* LEX_REC_NO_TARGETS     */ "// NO TARGETS IN RANGE",
+    /* LEX_REC_NO_OP          */ "// NO OPERATION CONFIGURED",
+    /* LEX_REC_READY          */ "READY",
+    /* LEX_REC_ERR_XCODE      */ "XCODE NOT FOUND",
+    /* LEX_REC_ERR_INVENTORY  */ "COULD NOT READ INVENTORY",
+
+    /* LEX_REC_FIELD_SCAN_ROOT */ "SCAN ROOT",
+    /* LEX_REC_FIELD_SCHEME    */ "SCHEME",
+    /* LEX_REC_FIELD_CONFIG    */ "CONFIG",
+    /* LEX_REC_FIELD_BUNDLE_ID */ "BUNDLE ID",
+    /* LEX_REC_FIELD_PRESET    */ "PRESET",
 };
 
 const char *lex(LexKey key) {

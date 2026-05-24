@@ -168,9 +168,51 @@ static int test_conn_bar_control_keys(void) {
     return 0;
 }
 
+static int test_recon_action_keys(void) {
+    ASSERT("scan_host exact",
+           strcmp(lex(LEX_REC_SCAN_HOST), "\xe2\x8c\x96 SCAN HOST") == 0);
+    ASSERT("abort_scan exact",
+           strcmp(lex(LEX_REC_ABORT_SCAN), "\xe2\x96\xa0 ABORT SCAN") == 0);
+    ASSERT("blueprints exact",
+           strcmp(lex(LEX_REC_BLUEPRINTS), "BLUEPRINTS RECOVERED") == 0);
+    ASSERT("no_blueprints exact",
+           strcmp(lex(LEX_REC_NO_BLUEPRINTS), "// NO BLUEPRINTS") == 0);
+    ASSERT("sweep exact",
+           strcmp(lex(LEX_REC_SWEEP), "\xe2\x86\xbb SWEEP FOR TARGETS") == 0);
+    ASSERT("targets exact",
+           strcmp(lex(LEX_REC_TARGETS), "TARGETS IN RANGE") == 0);
+    ASSERT("no_targets exact",
+           strcmp(lex(LEX_REC_NO_TARGETS), "// NO TARGETS IN RANGE") == 0);
+    ASSERT("no_op exact",
+           strcmp(lex(LEX_REC_NO_OP), "// NO OPERATION CONFIGURED") == 0);
+    ASSERT("ready exact",
+           strcmp(lex(LEX_REC_READY), "READY") == 0);
+    ASSERT("err_xcode exact",
+           strcmp(lex(LEX_REC_ERR_XCODE), "XCODE NOT FOUND") == 0);
+    ASSERT("err_inventory exact",
+           strcmp(lex(LEX_REC_ERR_INVENTORY), "COULD NOT READ INVENTORY") == 0);
+    PASS("recon_action_keys");
+    return 0;
+}
+
+static int test_recon_field_keys(void) {
+    ASSERT("field_scan_root exact",
+           strcmp(lex(LEX_REC_FIELD_SCAN_ROOT), "SCAN ROOT") == 0);
+    ASSERT("field_scheme exact",
+           strcmp(lex(LEX_REC_FIELD_SCHEME), "SCHEME") == 0);
+    ASSERT("field_config exact",
+           strcmp(lex(LEX_REC_FIELD_CONFIG), "CONFIG") == 0);
+    ASSERT("field_bundle_id exact",
+           strcmp(lex(LEX_REC_FIELD_BUNDLE_ID), "BUNDLE ID") == 0);
+    ASSERT("field_preset exact",
+           strcmp(lex(LEX_REC_FIELD_PRESET), "PRESET") == 0);
+    PASS("recon_field_keys");
+    return 0;
+}
+
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
-    ASSERT("LEX__COUNT is 35", LEX__COUNT == 35);
+    ASSERT("LEX__COUNT is 51", LEX__COUNT == 51);
     PASS("lex_count_consistency");
     return 0;
 }
@@ -190,6 +232,8 @@ int main(void) {
     failures += test_conn_field_keys();
     failures += test_conn_hostkey_action_keys();
     failures += test_conn_bar_control_keys();
+    failures += test_recon_action_keys();
+    failures += test_recon_field_keys();
     failures += test_lex_count_consistency();
 
     if (failures == 0) {
