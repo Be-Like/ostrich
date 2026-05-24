@@ -109,6 +109,7 @@ typedef struct {
     bool preset_rename;
     bool preset_delete;
     int  pick_preset;     /* -1 = no pick                                  */
+    char preset_name[64]; /* name for new/renamed preset                   */
 
     /* slice D (stubs) */
     bool sweep;

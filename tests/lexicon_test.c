@@ -210,9 +210,20 @@ static int test_recon_field_keys(void) {
     return 0;
 }
 
+static int test_preset_action_keys(void) {
+    ASSERT("preset_new exact",
+           strcmp(lex(LEX_REC_PRESET_NEW), "NEW PRESET") == 0);
+    ASSERT("preset_rename exact",
+           strcmp(lex(LEX_REC_PRESET_RENAME), "RENAME") == 0);
+    ASSERT("preset_delete exact",
+           strcmp(lex(LEX_REC_PRESET_DELETE), "DELETE") == 0);
+    PASS("preset_action_keys");
+    return 0;
+}
+
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
-    ASSERT("LEX__COUNT is 51", LEX__COUNT == 51);
+    ASSERT("LEX__COUNT is 54", LEX__COUNT == 54);
     PASS("lex_count_consistency");
     return 0;
 }
@@ -234,6 +245,7 @@ int main(void) {
     failures += test_conn_bar_control_keys();
     failures += test_recon_action_keys();
     failures += test_recon_field_keys();
+    failures += test_preset_action_keys();
     failures += test_lex_count_consistency();
 
     if (failures == 0) {

@@ -76,6 +76,11 @@ typedef enum {
     LEX_REC_FIELD_BUNDLE_ID, /* "BUNDLE ID" */
     LEX_REC_FIELD_PRESET,    /* "PRESET"    */
 
+    /* ── preset actions ────────────────────────────────────────────────── */
+    LEX_REC_PRESET_NEW,    /* "NEW PRESET" */
+    LEX_REC_PRESET_RENAME, /* "RENAME"     */
+    LEX_REC_PRESET_DELETE, /* "DELETE"     */
+
     LEX__COUNT
 } LexKey;
 

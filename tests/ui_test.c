@@ -671,6 +671,149 @@ int main(void) {
         }
     }
 
+    /* ── Slice C state-based tests ──────────────────────────────────── */
+
+    /* State-based test: ONLINE + empty preset list renders // NO OPERATION
+     * CONFIGURED without crash and emits no spurious preset intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        PresetList empty_presets = {0};
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host    = -1;
+            rv.presets             = &empty_presets;
+            rv.preset_selected     = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.preset_new);
+            assert(!ri.preset_rename);
+            assert(!ri.preset_delete);
+            assert(ri.pick_preset == -1);
+        }
+    }
+
+    /* State-based test: ONLINE + NULL presets pointer renders without crash
+     * and emits no spurious preset intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host    = -1;
+            rv.presets             = NULL;
+            rv.preset_selected     = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.preset_new);
+            assert(!ri.preset_rename);
+            assert(!ri.preset_delete);
+            assert(ri.pick_preset == -1);
+        }
+    }
+
+    /* State-based test: ONLINE + populated preset list renders without crash
+     * and emits no spurious picks or actions. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Preset preset_arr[2];
+        memset(preset_arr, 0, sizeof(preset_arr));
+        snprintf(preset_arr[0].name,      sizeof(preset_arr[0].name),      "debug");
+        snprintf(preset_arr[0].project,   sizeof(preset_arr[0].project),   "/Users/alice/App.xcworkspace");
+        snprintf(preset_arr[0].scheme,    sizeof(preset_arr[0].scheme),    "App");
+        snprintf(preset_arr[0].config,    sizeof(preset_arr[0].config),    "Debug");
+        snprintf(preset_arr[0].bundle_id, sizeof(preset_arr[0].bundle_id), "com.acme.app");
+        snprintf(preset_arr[1].name,      sizeof(preset_arr[1].name),      "release");
+        snprintf(preset_arr[1].project,   sizeof(preset_arr[1].project),   "/Users/alice/App.xcworkspace");
+        snprintf(preset_arr[1].scheme,    sizeof(preset_arr[1].scheme),    "App");
+        snprintf(preset_arr[1].config,    sizeof(preset_arr[1].config),    "Release");
+        snprintf(preset_arr[1].bundle_id, sizeof(preset_arr[1].bundle_id), "com.acme.app");
+        PresetList presets = { .items = preset_arr, .count = 2, .active_index = 0 };
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host    = -1;
+            rv.presets             = &presets;
+            rv.preset_selected     = 0;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.preset_new);
+            assert(!ri.preset_rename);
+            assert(!ri.preset_delete);
+            assert(ri.pick_preset == -1);
+        }
+    }
+
+    /* State-based test: ONLINE + preset list with preset_selected=-1 (none
+     * selected) renders without crash; RENAME and DELETE must not fire. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Preset preset_arr[1];
+        memset(preset_arr, 0, sizeof(preset_arr));
+        snprintf(preset_arr[0].name, sizeof(preset_arr[0].name), "app");
+        PresetList presets = { .items = preset_arr, .count = 1, .active_index = -1 };
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host    = -1;
+            rv.presets             = &presets;
+            rv.preset_selected     = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(!ri.preset_rename);
+            assert(!ri.preset_delete);
+            assert(ri.pick_preset == -1);
+        }
+    }
+
+    /* State-based test: preset list preserves preset names across frames
+     * without corruption. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Preset preset_arr[1];
+        memset(preset_arr, 0, sizeof(preset_arr));
+        snprintf(preset_arr[0].name,      sizeof(preset_arr[0].name),      "staging");
+        snprintf(preset_arr[0].project,   sizeof(preset_arr[0].project),   "/Users/alice/App.xcworkspace");
+        snprintf(preset_arr[0].scheme,    sizeof(preset_arr[0].scheme),    "Staging");
+        snprintf(preset_arr[0].config,    sizeof(preset_arr[0].config),    "Release");
+        snprintf(preset_arr[0].bundle_id, sizeof(preset_arr[0].bundle_id), "com.acme.staging");
+        PresetList presets = { .items = preset_arr, .count = 1, .active_index = 0 };
+
+        UiReconView rv = make_recon_view();
+        rv.presets         = &presets;
+        rv.preset_selected = 0;
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri);
+            assert(strcmp(preset_arr[0].name, "staging") == 0);
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

@@ -560,7 +560,7 @@ locked dropdowns); discovered sets are shown only as hints.
 
 ### Task 11 - slice C: presets
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 9, 4
 - **User stories covered**: 25
 
@@ -588,13 +588,13 @@ among them.
 
 #### Acceptance criteria
 
-- [ ] New/rename/delete/choose all work and persist via `store`;
+- [x] New/rename/delete/choose all work and persist via `store`;
       switching presets repopulates the four fields.
-- [ ] The last-active preset is restored and applied on connect;
+- [x] The last-active preset is restored and applied on connect;
       `// NO OPERATION CONFIGURED` renders when none exists.
-- [ ] Presets are connection-scoped — a second connection shows
+- [x] Presets are connection-scoped — a second connection shows
       its own set, not the first's.
-- [ ] `build/ostrich` builds and `make test` passes.
+- [x] `build/ostrich` builds and `make test` passes.
 - [ ] Manually: assemble a config, save it, relaunch/reconnect,
       and confirm it is restored without re-scanning.
 

@@ -65,6 +65,10 @@ static const char *s_table[LEX__COUNT] = {
     /* LEX_REC_FIELD_CONFIG    */ "CONFIG",
     /* LEX_REC_FIELD_BUNDLE_ID */ "BUNDLE ID",
     /* LEX_REC_FIELD_PRESET    */ "PRESET",
+
+    /* LEX_REC_PRESET_NEW    */ "NEW PRESET",
+    /* LEX_REC_PRESET_RENAME */ "RENAME",
+    /* LEX_REC_PRESET_DELETE */ "DELETE",
 };
 
 const char *lex(LexKey key) {

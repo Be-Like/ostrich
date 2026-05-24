@@ -13,6 +13,7 @@
 #define APP_MAX_BLUEPRINTS 256
 #define APP_MAX_SCHEMES    64
 #define APP_MAX_CONFIGS    64
+#define APP_MAX_PRESETS    64
 
 struct App {
     Ui       *ui;
@@ -56,6 +57,11 @@ struct App {
     char        (*config_items)[256]; /* lives in bp_read_arena              */
     StrList       schemes;
     StrList       configs;
+
+    /* slice C — presets */
+    Arena        *presets_arena;  /* 128 KB; reset at each CONN_ONLINE       */
+    PresetList    presets;
+    int           preset_selected; /* -1 = none                              */
 };
 
 AppStatus app_init(Arena *a, AppOptions opts, App **out) {
@@ -99,8 +105,18 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
         return APP_ERR;
     }
 
+    Arena *presets_arena = arena_create(128 * 1024); /* 128 KB for presets */
+    if (!presets_arena) {
+        arena_destroy(bp_read_arena);
+        arena_destroy(bp_arena);
+        session_close(session);
+        ui_shutdown(ui);
+        return APP_ERR;
+    }
+
     App *app = arena_alloc(a, sizeof(App), _Alignof(App));
     if (!app) {
+        arena_destroy(presets_arena);
         arena_destroy(bp_read_arena);
         arena_destroy(bp_arena);
         session_close(session);
@@ -113,9 +129,11 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
     app->arena                    = a;
     app->blueprints_arena         = bp_arena;
     app->bp_read_arena            = bp_read_arena;
+    app->presets_arena            = presets_arena;
     app->form.selected_known_host = -1;
     app->phase                    = CONN_DISCONNECTED;
     app->blueprint_selected       = -1;
+    app->preset_selected          = -1;
     snprintf(app->form.port, sizeof(app->form.port), "22");
 
     /* Load saved connections; non-fatal if the store is missing or empty. */
@@ -146,14 +164,16 @@ bool app_tick(App *app) {
         if (ev.fingerprint[0])
             memcpy(app->fingerprint, ev.fingerprint, sizeof(app->fingerprint));
         if (ev.phase == CONN_DISCONNECTED || ev.phase == CONN_SEVERED) {
-            app->user_host[0] = '\0';
-            app->overlay_open = false;
-            app->scanning     = false;
-            app->conn_key[0]  = '\0';
+            app->user_host[0]    = '\0';
+            app->overlay_open    = false;
+            app->scanning        = false;
+            app->conn_key[0]     = '\0';
+            app->presets         = (PresetList){0};
+            app->preset_selected = -1;
         }
     }
 
-    /* CONN_ONLINE transition: build conn_key and restore scan root. */
+    /* CONN_ONLINE transition: build conn_key and restore scan root + presets. */
     if (app->phase == CONN_ONLINE && prev_phase != CONN_ONLINE) {
         Conn tmp = {0};
         snprintf(tmp.host, sizeof(tmp.host), "%s", app->live_cfg.host);
@@ -162,6 +182,30 @@ bool app_tick(App *app) {
         store_conn_key(&tmp, app->conn_key, sizeof(app->conn_key));
         scanroot_load(app->conn_key, app->run_cfg.scan_root,
                       sizeof(app->run_cfg.scan_root));
+
+        /* Load presets for this connection. */
+        arena_reset(app->presets_arena);
+        app->presets      = (PresetList){0};
+        preset_load(app->presets_arena, app->conn_key, &app->presets);
+        /* Ensure items array is allocated even when the store file is missing. */
+        if (!app->presets.items)
+            app->presets.items = arena_alloc(app->presets_arena,
+                                             sizeof(Preset) * APP_MAX_PRESETS,
+                                             _Alignof(Preset));
+        app->preset_selected = app->presets.active_index;
+        /* Apply the last-active preset to the working run config. */
+        if (app->preset_selected >= 0 &&
+            app->preset_selected < app->presets.count) {
+            const Preset *p = &app->presets.items[app->preset_selected];
+            snprintf(app->run_cfg.project,   sizeof(app->run_cfg.project),
+                     "%s", p->project);
+            snprintf(app->run_cfg.scheme,    sizeof(app->run_cfg.scheme),
+                     "%s", p->scheme);
+            snprintf(app->run_cfg.config,    sizeof(app->run_cfg.config),
+                     "%s", p->config);
+            snprintf(app->run_cfg.bundle_id, sizeof(app->run_cfg.bundle_id),
+                     "%s", p->bundle_id);
+        }
     }
 
     /* Drain discovery events. */
@@ -275,7 +319,8 @@ bool app_tick(App *app) {
     rv.blueprint_err         = app->blueprint_err;
     rv.schemes               = &app->schemes;
     rv.configs               = &app->configs;
-    rv.preset_selected       = -1;
+    rv.presets               = &app->presets;
+    rv.preset_selected       = app->preset_selected;
     rv.target_selected       = -1;
     rv.readiness             = disc_readiness(&app->run_cfg, false);
 
@@ -477,6 +522,70 @@ bool app_tick(App *app) {
     if (ri.bundle_id_edited)
         app->bundle_id_user_edited = true;
 
+    /* ── preset intents ─────────────────────────────────────────────── */
+    if (ri.pick_preset >= 0 && ri.pick_preset < app->presets.count) {
+        app->preset_selected          = ri.pick_preset;
+        app->presets.active_index     = ri.pick_preset;
+        const Preset *p               = &app->presets.items[ri.pick_preset];
+        snprintf(app->run_cfg.project,   sizeof(app->run_cfg.project),
+                 "%s", p->project);
+        snprintf(app->run_cfg.scheme,    sizeof(app->run_cfg.scheme),
+                 "%s", p->scheme);
+        snprintf(app->run_cfg.config,    sizeof(app->run_cfg.config),
+                 "%s", p->config);
+        snprintf(app->run_cfg.bundle_id, sizeof(app->run_cfg.bundle_id),
+                 "%s", p->bundle_id);
+        app->scheme_user_edited    = false;
+        app->config_user_edited    = false;
+        app->bundle_id_user_edited = false;
+        if (app->conn_key[0] != '\0')
+            preset_save(app->conn_key, &app->presets);
+    }
+    if (ri.preset_new && ri.preset_name[0] != '\0' &&
+        app->presets.items && app->presets.count < APP_MAX_PRESETS) {
+        int     idx = app->presets.count;
+        Preset *p   = &app->presets.items[idx];
+        memset(p, 0, sizeof(*p));
+        snprintf(p->name,      sizeof(p->name),      "%s", ri.preset_name);
+        snprintf(p->project,   sizeof(p->project),   "%s", app->run_cfg.project);
+        snprintf(p->scheme,    sizeof(p->scheme),    "%s", app->run_cfg.scheme);
+        snprintf(p->config,    sizeof(p->config),    "%s", app->run_cfg.config);
+        snprintf(p->bundle_id, sizeof(p->bundle_id), "%s", app->run_cfg.bundle_id);
+        app->presets.count++;
+        app->presets.active_index = idx;
+        app->preset_selected      = idx;
+        if (app->conn_key[0] != '\0')
+            preset_save(app->conn_key, &app->presets);
+    }
+    if (ri.preset_rename && ri.preset_name[0] != '\0' &&
+        app->presets.items &&
+        app->preset_selected >= 0 && app->preset_selected < app->presets.count) {
+        snprintf(app->presets.items[app->preset_selected].name,
+                 sizeof(app->presets.items[app->preset_selected].name),
+                 "%s", ri.preset_name);
+        if (app->conn_key[0] != '\0')
+            preset_save(app->conn_key, &app->presets);
+    }
+    if (ri.preset_delete && app->presets.items &&
+        app->preset_selected >= 0 && app->preset_selected < app->presets.count) {
+        int del = app->preset_selected;
+        int n   = app->presets.count;
+        for (int i = del; i < n - 1; i++)
+            app->presets.items[i] = app->presets.items[i + 1];
+        app->presets.count--;
+        if (app->presets.count == 0) {
+            app->preset_selected      = -1;
+            app->presets.active_index = -1;
+        } else {
+            int new_sel               = (del < app->presets.count) ? del
+                                                                    : app->presets.count - 1;
+            app->preset_selected      = new_sel;
+            app->presets.active_index = new_sel;
+        }
+        if (app->conn_key[0] != '\0')
+            preset_save(app->conn_key, &app->presets);
+    }
+
     return keep_going;
 }
 
@@ -485,4 +594,5 @@ void app_shutdown(App *app) {
     ui_shutdown(app->ui);
     arena_destroy(app->blueprints_arena);
     arena_destroy(app->bp_read_arena);
+    arena_destroy(app->presets_arena);
 }

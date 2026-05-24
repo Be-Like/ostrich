@@ -598,6 +598,91 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
     if (ImGui::IsItemEdited())
         ri->bundle_id_edited = true;
 
+    /* ── Slice C: PRESETS ─────────────────────────────────────────────── */
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_REC_FIELD_PRESET));
+    ImGui::PopStyleColor();
+
+    bool has_presets = (rv->presets && rv->presets->count > 0);
+    bool has_sel     = has_presets &&
+                       rv->preset_selected >= 0 &&
+                       rv->preset_selected < rv->presets->count;
+
+    if (!has_presets) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_REC_NO_OP));
+        ImGui::PopStyleColor();
+    } else {
+        int   vis    = rv->presets->count < 4 ? rv->presets->count : 4;
+        float list_h = ImGui::GetTextLineHeightWithSpacing() * (float)vis;
+        ImGui::BeginChild("##presets", {0.0f, list_h}, false);
+        for (int i = 0; i < rv->presets->count; i++) {
+            const Preset *p  = &rv->presets->items[i];
+            bool          sel = (rv->preset_selected == i);
+            ImGui::PushStyleColor(ImGuiCol_Text, sel ? C_CYAN : C_TEXT);
+            if (ImGui::Selectable(p->name, sel))
+                ri->pick_preset = i;
+            ImGui::PopStyleColor();
+        }
+        ImGui::EndChild();
+    }
+
+    static char s_new_name[64];
+    static char s_rename_buf[64];
+
+    if (ImGui::Button(lex(LEX_REC_PRESET_NEW))) {
+        memset(s_new_name, 0, sizeof(s_new_name));
+        ImGui::OpenPopup("##preset_new");
+    }
+
+    if (ImGui::BeginPopup("##preset_new")) {
+        ImGui::SetNextItemWidth(200.0f);
+        bool enter = ImGui::InputText("##pname", s_new_name, sizeof(s_new_name),
+                                      ImGuiInputTextFlags_EnterReturnsTrue);
+        bool ok = ImGui::Button("OK") || enter;
+        if (ok && s_new_name[0] != '\0') {
+            snprintf(ri->preset_name, sizeof(ri->preset_name), "%s", s_new_name);
+            ri->preset_new = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
+
+    if (!has_sel) ImGui::BeginDisabled();
+    if (ImGui::Button(lex(LEX_REC_PRESET_RENAME))) {
+        if (has_sel)
+            snprintf(s_rename_buf, sizeof(s_rename_buf), "%s",
+                     rv->presets->items[rv->preset_selected].name);
+        ImGui::OpenPopup("##preset_rename");
+    }
+    if (!has_sel) ImGui::EndDisabled();
+
+    if (ImGui::BeginPopup("##preset_rename")) {
+        ImGui::SetNextItemWidth(200.0f);
+        bool enter = ImGui::InputText("##prename", s_rename_buf, sizeof(s_rename_buf),
+                                      ImGuiInputTextFlags_EnterReturnsTrue);
+        bool ok = ImGui::Button("OK") || enter;
+        if (ok && s_rename_buf[0] != '\0') {
+            snprintf(ri->preset_name, sizeof(ri->preset_name), "%s", s_rename_buf);
+            ri->preset_rename = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
+
+    if (!has_sel) ImGui::BeginDisabled();
+    if (ImGui::Button(lex(LEX_REC_PRESET_DELETE)))
+        ri->preset_delete = true;
+    if (!has_sel) ImGui::EndDisabled();
+
     ImGui::End();
 }
 
