@@ -40,27 +40,41 @@ typedef struct {
 
 typedef enum {
     DCMD_SCAN_HOST,
-    DCMD_ABORT_SCAN
+    DCMD_ABORT_SCAN,
+    DCMD_READ_BLUEPRINT,    /* xcodebuild -list for a chosen project    */
+    DCMD_RESOLVE_BUNDLE_ID  /* xcodebuild -showBuildSettings for bundle */
 } SessionDiscCmdKind;
 
 typedef struct {
     SessionDiscCmdKind kind;
-    char               root[1024]; /* DCMD_SCAN_HOST: directory to scan */
-    int                max_depth;  /* DCMD_SCAN_HOST: depth cap (0 → 8) */
+    char               root[1024];    /* DCMD_SCAN_HOST: directory to scan          */
+    int                max_depth;     /* DCMD_SCAN_HOST: depth cap (0 → 8)          */
+    char               project[1024]; /* DCMD_READ_BLUEPRINT / DCMD_RESOLVE_BUNDLE_ID */
+    char               scheme[256];   /* DCMD_RESOLVE_BUNDLE_ID                     */
+    char               config[128];   /* DCMD_RESOLVE_BUNDLE_ID                     */
 } SessionDiscCmd;
 
 typedef enum {
-    DEV_BLUEPRINT,      /* one curated project path                */
-    DEV_SCAN_COMPLETE,  /* scan ended cleanly; count = total found */
-    DEV_SCAN_FAILED     /* scan ended with error; disc_status set  */
+    DEV_BLUEPRINT,              /* one curated project path                      */
+    DEV_SCAN_COMPLETE,          /* scan ended cleanly; count = total found        */
+    DEV_SCAN_FAILED,            /* scan ended with error; disc_status set         */
+    DEV_SCHEME,                 /* one scheme string from xcodebuild -list        */
+    DEV_CONFIG,                 /* one config string from xcodebuild -list        */
+    DEV_BLUEPRINT_READ_COMPLETE,/* -list job succeeded; count = schemes+configs   */
+    DEV_BLUEPRINT_FAILED,       /* -list job failed; disc_status set              */
+    DEV_BUNDLE_ID,              /* resolved PRODUCT_BUNDLE_IDENTIFIER             */
+    DEV_BUNDLE_ID_FAILED        /* bundle id resolve failed; disc_status set      */
 } SessionDiscEventKind;
 
 typedef struct {
     SessionDiscEventKind kind;
     union {
-        Blueprint  blueprint;   /* DEV_BLUEPRINT                   */
-        int        count;       /* DEV_SCAN_COMPLETE: total count  */
-        DiscStatus disc_status; /* DEV_SCAN_FAILED: reason         */
+        Blueprint  blueprint;      /* DEV_BLUEPRINT                               */
+        int        count;          /* DEV_SCAN_COMPLETE / DEV_BLUEPRINT_READ_COMPLETE */
+        DiscStatus disc_status;    /* DEV_SCAN_FAILED / DEV_BLUEPRINT_FAILED / DEV_BUNDLE_ID_FAILED */
+        char       scheme[256];    /* DEV_SCHEME                                  */
+        char       config[128];    /* DEV_CONFIG                                  */
+        char       bundle_id[256]; /* DEV_BUNDLE_ID                               */
     };
 } SessionDiscEvent;
 

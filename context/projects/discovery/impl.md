@@ -375,7 +375,7 @@ mirroring `tools/session_smoke.c`. No automated test binary
 
 ### Task 7 - session 5b: READ_BLUEPRINT + RESOLVE_BUNDLE_ID
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 6, 2
 - **User stories covered**: 12, 13, 16, 17, 38, 39, 40
 

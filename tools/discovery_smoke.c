@@ -1,6 +1,8 @@
-/* Dev-only smoke: connect → SCAN HOST → print blueprints → close.
+/* Dev-only smoke: connect → SCAN HOST → print blueprints → optionally
+   READ_BLUEPRINT → RESOLVE_BUNDLE_ID → close.
    Usage: discovery_smoke <host> <user> <scan_root> [port] [depth] [--abort]
-   Not part of `make test`. Pass --abort to abort after the first blueprint. */
+                          [--blueprint <path>]
+   Not part of `make test`. */
 #define _DEFAULT_SOURCE
 #include "session.h"
 #include "connstate.h"
@@ -21,20 +23,23 @@ int main(int argc, char **argv)
 {
     if (argc < 4) {
         fprintf(stderr, "usage: discovery_smoke <host> <user> <scan_root>"
-                        " [port] [depth] [--abort]\n");
+                        " [port] [depth] [--abort] [--blueprint <path>]\n");
         return 1;
     }
 
-    const char *host      = argv[1];
-    const char *user      = argv[2];
-    const char *scan_root = argv[3];
-    int         port      = 22;
-    int         max_depth = 0;  /* 0 → engine default (8) */
-    bool        do_abort  = false;
+    const char *host       = argv[1];
+    const char *user       = argv[2];
+    const char *scan_root  = argv[3];
+    int         port       = 22;
+    int         max_depth  = 0;  /* 0 → engine default (8) */
+    bool        do_abort   = false;
+    const char *blueprint  = NULL;  /* --blueprint <path> */
 
     for (int i = 4; i < argc; i++) {
         if (strcmp(argv[i], "--abort") == 0) {
             do_abort = true;
+        } else if (strcmp(argv[i], "--blueprint") == 0 && i + 1 < argc) {
+            blueprint = argv[++i];
         } else {
             int v = atoi(argv[i]);
             if (v > 0 && v <= 65535 && port == 22 && v != 22)
@@ -108,7 +113,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* poll disc events */
+    /* poll disc events until scan completes */
     bool abort_sent = false;
     for (;;) {
         SessionDiscEvent dev;
@@ -129,10 +134,89 @@ int main(int argc, char **argv)
                 break;
             case DEV_SCAN_COMPLETE:
                 printf("SCAN_COMPLETE: %d blueprint(s) found\n", dev.count);
-                goto done;
+                goto scan_done;
             case DEV_SCAN_FAILED:
                 printf("SCAN_FAILED: %s\n", disc_status_str(dev.disc_status));
+                goto scan_done;
+            default:
+                break;
+            }
+        } else {
+            sleep_ms(10);
+        }
+    }
+scan_done:
+
+    /* optionally drive READ_BLUEPRINT + RESOLVE_BUNDLE_ID */
+    if (!blueprint) goto done;
+
+    printf("\nREAD_BLUEPRINT: '%s'\n", blueprint);
+    memset(&dcmd, 0, sizeof(dcmd));
+    dcmd.kind = DCMD_READ_BLUEPRINT;
+    snprintf(dcmd.project, sizeof(dcmd.project), "%s", blueprint);
+
+    if (!session_disc_submit(s, &dcmd)) {
+        fprintf(stderr, "session_disc_submit(READ_BLUEPRINT): ring full\n");
+        goto done;
+    }
+
+    char first_scheme[256] = {0};
+    for (;;) {
+        SessionDiscEvent dev;
+        if (session_disc_poll(s, &dev)) {
+            switch (dev.kind) {
+            case DEV_SCHEME:
+                printf("  SCHEME: %s\n", dev.scheme);
+                if (first_scheme[0] == '\0')
+                    snprintf(first_scheme, sizeof(first_scheme), "%s", dev.scheme);
+                break;
+            case DEV_CONFIG:
+                printf("  CONFIG: %s\n", dev.config);
+                break;
+            case DEV_BLUEPRINT_READ_COMPLETE:
+                printf("BLUEPRINT_READ_COMPLETE: %d items\n", dev.count);
+                goto read_done;
+            case DEV_BLUEPRINT_FAILED:
+                printf("BLUEPRINT_FAILED: %s\n", disc_status_str(dev.disc_status));
                 goto done;
+            default:
+                break;
+            }
+        } else {
+            sleep_ms(10);
+        }
+    }
+read_done:
+
+    if (first_scheme[0] == '\0') {
+        printf("No schemes found; skipping RESOLVE_BUNDLE_ID\n");
+        goto done;
+    }
+
+    printf("\nRESOLVE_BUNDLE_ID: scheme='%s' config='Debug'\n", first_scheme);
+    memset(&dcmd, 0, sizeof(dcmd));
+    dcmd.kind = DCMD_RESOLVE_BUNDLE_ID;
+    snprintf(dcmd.project, sizeof(dcmd.project), "%s", blueprint);
+    snprintf(dcmd.scheme,  sizeof(dcmd.scheme),  "%s", first_scheme);
+    snprintf(dcmd.config,  sizeof(dcmd.config),  "Debug");
+
+    if (!session_disc_submit(s, &dcmd)) {
+        fprintf(stderr, "session_disc_submit(RESOLVE_BUNDLE_ID): ring full\n");
+        goto done;
+    }
+
+    for (;;) {
+        SessionDiscEvent dev;
+        if (session_disc_poll(s, &dev)) {
+            switch (dev.kind) {
+            case DEV_BUNDLE_ID:
+                printf("BUNDLE_ID: %s\n", dev.bundle_id);
+                goto done;
+            case DEV_BUNDLE_ID_FAILED:
+                printf("BUNDLE_ID_FAILED: %s\n", disc_status_str(dev.disc_status));
+                goto done;
+            default:
+                break;
             }
         } else {
             sleep_ms(10);
