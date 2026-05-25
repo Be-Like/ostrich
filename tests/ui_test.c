@@ -1245,6 +1245,127 @@ int main(void) {
         }
     }
 
+    /* State-based test: NULL device_log renders Device Log section without crash
+     * and emits no spurious device_log_copy/clear. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.readiness       = READY_OK;
+            run_rv.device_log      = NULL;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+    }
+
+    /* State-based test: RUNNING + populated device_log renders LIVE FEED header
+     * and content without crash, emits no spurious device_log intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Arena *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        logbuf_append(dev_log, "app output line 1\n", 18);
+        logbuf_append(dev_log, "app output line 2\n", 18);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_RUNNING;
+            run_rv.readiness       = READY_OK;
+            run_rv.device_log      = dev_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* State-based test: IDLE + populated device_log (history from prior run)
+     * renders dim header and content without crash. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Arena *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        logbuf_mark(dev_log, "> \xe2\x94\x80\xe2\x94\x80 NEW PAYLOAD \xe2\x94\x80\xe2\x94\x80");
+        logbuf_append(dev_log, "prior run output\n", 17);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.device_log      = dev_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* State-based test: RUNNING + stale=true + device_log renders stale indicator
+     * and device log content without crash. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase     = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Arena *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        logbuf_append(dev_log, "live app output\n", 16);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_RUNNING;
+            run_rv.stale           = true;
+            run_rv.readiness       = READY_OK;
+            run_rv.device_log      = dev_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.execute);
+            assert(!run_ri.abort_run);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

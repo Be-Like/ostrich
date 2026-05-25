@@ -653,7 +653,7 @@ DevConsole, but no Device Log panel renders yet (deferred to T9).
 
 ### Task 9 - UI slice B: Device Log + stale indicator
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 8, 7
 - **User stories covered**: 31, 33, 34, 35, 36, 37, 38, 39, 41, 42,
   43, 55
@@ -693,20 +693,20 @@ palette discipline holds. `ui_test.c` keeps passing headless.
 
 #### Acceptance criteria
 
-- [ ] The Device Log panel renders `REV_DEVICE_LOG` lines live,
+- [x] The Device Log panel renders `REV_DEVICE_LOG` lines live,
       bounded (oldest dropped past the cap), with copy + clear and
       auto-scroll/scroll-up pause matching the Build Log.
-- [ ] A new launch inserts the `> ── NEW PAYLOAD ──` demarcation at
+- [x] A new launch inserts the `> ── NEW PAYLOAD ──` demarcation at
       the launch→running edge while preserving prior-run lines; the
       panel shows the LIVE FEED header when streaming and the themed
       empty state before any output.
-- [ ] The Device Log is rendered raw and never recolored; it behaves
+- [x] The Device Log is rendered raw and never recolored; it behaves
       identically for a device and a simulator target.
-- [ ] The stale indicator appears when the mirrored stale flag is
+- [x] The stale indicator appears when the mirrored stale flag is
       set (after a COMPILE-while-running) and clears on a redeploy;
       the COMPILE-while-running case shows both logs streaming at
       once.
-- [ ] `build/ostrich` builds clean on Linux and macOS and
+- [x] `build/ostrich` builds clean on Linux and macOS and
       `make test` passes (`ui_test` headless still green).
 - [ ] Manually against a live Mac: a launched app's output streams
       in the Device Log on both a device and a simulator; iterating

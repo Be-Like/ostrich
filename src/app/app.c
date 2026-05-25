@@ -417,6 +417,8 @@ bool app_tick(App *app) {
         case REV_PHASE:
             if (rev.phase == RUN_BUILDING)
                 logbuf_clear(app->build_log);
+            if (rev.phase == RUN_RUNNING)
+                logbuf_mark(app->device_log, lex(LEX_RUN_NEW_PAYLOAD));
             app->run_phase = rev.phase;
             break;
         case REV_BUILD_LOG:

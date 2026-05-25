@@ -947,8 +947,10 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
     }
 
     /* ── Build Log scrollable content ─────────────────────────────────── */
-    float log_h = ImGui::GetContentRegionAvail().y;
-    ImGui::BeginChild("##build_log", {0.0f, log_h}, false,
+    /* Give Build Log ~40% of available height; Device Log gets the rest. */
+    float total_log_h = ImGui::GetContentRegionAvail().y;
+    float build_log_h = total_log_h * 0.40f;
+    ImGui::BeginChild("##build_log", {0.0f, build_log_h}, false,
                       ImGuiWindowFlags_HorizontalScrollbar);
 
     static bool s_build_auto_scroll = true;
@@ -983,6 +985,81 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
         s_build_auto_scroll = true;
 
     if (s_build_auto_scroll)
+        ImGui::SetScrollHereY(1.0f);
+
+    ImGui::EndChild();
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    /* ── Device Log header + controls ─────────────────────────────────── */
+    ImGui::PushStyleColor(ImGuiCol_Text, running ? C_OK : C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_RUN_LIVE_FEED));
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine();
+
+    {
+        const float btn_pad = ImGui::GetStyle().FramePadding.x * 2.0f;
+        const float spc     = ImGui::GetStyle().ItemSpacing.x;
+        float       copy_w  = ImGui::CalcTextSize("COPY").x + btn_pad;
+        float       clr_w   = ImGui::CalcTextSize("CLR").x + btn_pad;
+        float       btns_w  = copy_w + spc + clr_w;
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - btns_w);
+
+        ImGui::PushStyleColor(ImGuiCol_Button, C_CYAN_DIM);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, C_CYAN);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, C_CYAN);
+        ImGui::PushStyleColor(ImGuiCol_Text, C_BG);
+        if (ImGui::SmallButton("COPY##dev")) {
+            ri->device_log_copy = true;
+            if (rv->device_log) {
+                size_t needed = logbuf_copy_all(rv->device_log, nullptr, 0);
+                if (needed > 0) {
+                    char *tmp = new char[needed + 1];
+                    logbuf_copy_all(rv->device_log, tmp, needed + 1);
+                    tmp[needed] = '\0';
+                    ImGui::SetClipboardText(tmp);
+                    delete[] tmp;
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("CLR##dev"))
+            ri->device_log_clear = true;
+        ImGui::PopStyleColor(4);
+    }
+
+    /* ── Device Log scrollable content ────────────────────────────────── */
+    float dev_log_h = ImGui::GetContentRegionAvail().y;
+    ImGui::BeginChild("##device_log", {0.0f, dev_log_h}, false,
+                      ImGuiWindowFlags_HorizontalScrollbar);
+
+    static bool s_device_auto_scroll = true;
+
+    int dev_count = rv->device_log ? logbuf_count(rv->device_log) : 0;
+    if (dev_count == 0) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_RUN_DEVICE_EMPTY));
+        ImGui::PopStyleColor();
+    } else {
+        for (int i = 0; i < dev_count; i++) {
+            size_t     len = 0;
+            const char *ln = logbuf_line(rv->device_log, i, &len);
+            ImGui::TextUnformatted(ln, ln + len);
+        }
+    }
+
+    /* Detect upward scroll → pause auto-scroll */
+    float dev_scroll_y   = ImGui::GetScrollY();
+    float dev_scroll_max = ImGui::GetScrollMaxY();
+    if (dev_scroll_max > 0.0f && dev_scroll_y < dev_scroll_max - 4.0f)
+        s_device_auto_scroll = false;
+    else
+        s_device_auto_scroll = true;
+
+    if (s_device_auto_scroll)
         ImGui::SetScrollHereY(1.0f);
 
     ImGui::EndChild();
