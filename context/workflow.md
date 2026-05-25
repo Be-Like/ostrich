@@ -31,9 +31,13 @@ Three ideas frame everything below:
   than advancing through pages.
 - **Concurrency means parallel streams, not parallel targets.** The
   one thing that genuinely runs in parallel is *output*: the Device
-  Log keeps streaming continuously — including across rebuilds — while
-  the Build Log streams in parallel. This is the core payoff and the
-  reason the log panels are never torn down.
+  Log streams the running app continuously while the Build Log
+  streams in parallel. The clean simultaneous case is a build-only
+  **Build/COMPILE** — it never redeploys, so the running app's
+  Device Log stays live while a fresh build streams. A full Play
+  rebuild instead **cuts the Device Log over** to the new instance
+  (terminate-first) for clean per-build output. The log panels are
+  never torn down either way.
 
 ## Layout
 
@@ -73,8 +77,8 @@ CONNECTED (overlay dismissed):
   |               * READY     |  build>inst>launch|
   +---------------------------+------------------+
   | Build Log         | Device Log               |
-  |  (xcodebuild...)  |  (device log, live       |
-  |                   |   across rebuilds)       |
+  |  (xcodebuild...)  |  (app output, live;     |
+  |                   |   demarcated history)   |
   |  ...fills vert... |  ...fills vert...        |
   +----------------------------------------------+
   | ostrich  *  60 FPS                           |  <- slim footer
@@ -169,25 +173,45 @@ Advanced inputs (launch arguments, environment variables, extra
 - **Readiness** — when the active preset is complete (project, scheme,
   config, bundle id) and a target is selected, ostrich shows the
   configuration is **ready** to Play.
-- **Play** — runs the full chain `build → install → launch`. While a
-  run is in progress, Play becomes **Stop** (abort).
+- **Play** — runs the full chain `build → install → launch`; it
+  requires a complete preset and a locked target. A not-booted
+  simulator is auto-booted as part of the chain (headless — observed
+  via the Device Log). While a run is in progress, Play becomes
+  **Stop** (abort); **Stop also terminates a running app**, back to
+  idle.
 - **Build** — build-only; compiles without installing or launching
-  (also abortable).
+  (also abortable). It **needs no target** (it builds for a generic
+  destination when none is locked) and **leaves a running app
+  alive**, so the Device Log keeps streaming while the build streams
+  in parallel. Because it produces a build newer than what is
+  deployed, ostrich then flags the running app as **stale** (behind
+  the latest build) until the next Play.
 - **Run-state indicator** — shows the current phase (see below) and a
   `build ▷ install ▷ launch` progression.
 
 ### Build Log
 
-Raw `xcodebuild` output (no error parsing in MVP). **Cleared at the
-start of each build.** Auto-scrolls to the bottom, **pausing when the
-user scrolls up**. Provides clear/copy affordances.
+The build/deploy operation's raw tooling output — `xcodebuild` as it
+compiles, then the install and launch commands (`devicectl` /
+`simctl`) — with no error parsing in MVP. **Cleared at the start of
+each build.** Auto-scrolls to the bottom, **pausing when the user
+scrolls up**. Provides clear/copy affordances. A build failure and a
+deploy (install/launch) failure surface as *distinct* states (see
+the run-state machine); both render their output here.
 
 ### Device Log
 
-Live device log that **stays streaming continuously, including across
-rebuilds**. Defaults to **filtered to the launched app's process**,
-with a **toggle to the full system firehose**. (The *filtering
-mechanism* is design-deferred; only the UX intent is fixed here.)
+The launched app's own output (stdout/stderr), captured by running
+the app attached (`devicectl … process launch --console` on a
+device, `simctl launch --console` on a simulator), so it is
+inherently scoped to the app. It streams continuously while the app
+runs. A full Play rebuild is **terminate-first**: the old instance
+is killed before the build, so the Device Log goes briefly dark
+during the rebuild and then resumes on the new instance — by design,
+so each build's output is unambiguous and never cross-poisoned.
+History is **preserved with a run demarcation** (`> ── NEW PAYLOAD
+── `) at each launch rather than cleared, within a **bounded buffer**
+so a long session never bloats memory. The panel is never torn down.
 Auto-scroll behaves like the Build Log.
 
 ### Footer
@@ -200,20 +224,30 @@ distinct from build/device output.
 ```
 idle ──Play──> building ──> installing ──> launching ──> running
   ^                                                         |
-  |                                                  re-Play (rebuild loop)
+  |                                          re-Play: terminate, build
   |                                                         v
-  +<── failed (build error; errors shown in Build Log)   building ...
+  +<── failed (build or deploy; shown in the Build Log)  building ...
   +<── aborted (Stop pressed, or SSH drop mid-run)
 ```
 
-- **Play** from `idle` (or while `running`) drives the full chain.
-- **re-Play while running** terminates the current app instance and
-  starts a fresh `build → install → launch`. The **Device Log stays
-  live across this** while the new build streams into the Build Log —
-  the core concurrency behavior.
-- **Build** runs `idle → building → idle` without install/launch.
-- **failed** is terminal for the run; the Build Log holds the output.
-- **aborted** results from Stop or an unexpected disconnect mid-run.
+- **Play** from `idle` (or while `running`) drives the full chain;
+  it requires a complete preset and a locked target.
+- **re-Play while running** is **terminate-first**: it kills the
+  current app instance *before* rebuilding, so the **Device Log goes
+  briefly dark during the build** and then resumes on the fresh
+  instance (with a `NEW PAYLOAD` demarcation) — keeping each build's
+  device output unambiguous. The simultaneous build+device streaming
+  payoff instead lives in a build-only **Build** (see below).
+- **Build** runs `idle → building → idle` without install/launch;
+  while `running` it builds *without* terminating the app, so the
+  Device Log keeps streaming the running instance while the build
+  streams in parallel — and the running app is flagged **stale**
+  afterward.
+- **failed** is terminal for the run: a **build** failure reads
+  `EXPLOIT FAILED`, a **deploy** (install/launch) failure reads a
+  distinct `DEPLOYMENT FAILED`, both with output in the Build Log.
+- **aborted** results from Stop or an unexpected disconnect mid-run;
+  Stop while `running` terminates the app back to `idle`.
 
 ## Happy paths
 
@@ -244,9 +278,16 @@ idle ──Play──> building ──> installing ──> launching ──> run
 
 1. Edit source in Neovim (outside ostrich; ostrich never edits code).
 2. In ostrich, press **Play** again.
-3. The running app is terminated; rebuild streams into the Build Log;
-   reinstall; relaunch.
-4. The **Device Log stays live throughout** — no stream is torn down.
+3. **Terminate-first**: the running app is killed, then the rebuild
+   streams into the Build Log, reinstall, relaunch. The Device Log
+   goes briefly dark during the build and resumes on the new
+   instance with a `NEW PAYLOAD` demarcation — so its output is
+   never cross-poisoned between builds.
+4. For a quick check *without losing the running app*, press
+   **Build** (build-only) instead: it leaves the app running, so the
+   **Device Log keeps streaming live while the Build Log streams the
+   compile in parallel** — and ostrich flags the running app as
+   **stale** until the next Play.
 
 ### 4. Build-only
 
@@ -290,8 +331,11 @@ per-project ARD/impl.
 Recorded so downstream docs can pick them up; intentionally **out of
 MVP scope**:
 
-- **Device-log filtering mechanism** (how the app-process filter is
-  implemented; firehose vs filtered) — `design.md`-deferred.
+- **Unified-system-log firehose.** The Device Log is the app's own
+  process console (inherently app-scoped); the full-system firehose
+  toggle is **dropped** for MVP and recorded as a future item (it
+  would likely be simulator-only or need non-Xcode tooling on a
+  device).
 - **Build-error parsing** (structured errors / jump-to) — raw output
   only in MVP.
 - **Keychain-backed password storage** (macOS Keychain / libsecret) as
@@ -333,3 +377,38 @@ resolved in that project's PRD/ARD:
 
 See `context/projects/discovery/prd.md` and `ard.md` for the full
 flow and the mechanism behind it.
+
+## Note on the xcode-project-build-and-deploy revision
+
+This document was revised when the
+**xcode-project-build-and-deploy** project (the Play/Observe core
+loop) resolved how the build → install → launch chain and the two
+logs actually behave. The revision records:
+
+1. **The Device Log source is the launched app's process console**
+   (`devicectl … process launch --console` / `simctl launch
+   --console`) — the app's own stdout/stderr, inherently app-scoped.
+2. **Re-Play is terminate-first.** The running app is killed before
+   a rebuild, so the Device Log goes dark during the build (then
+   resumes on the new instance with a `NEW PAYLOAD` demarcation),
+   trading a moment of silence for clean, un-cross-poisoned per-build
+   output. This **amends `design.md` #7**: device logs do *not* stay
+   live across a Play rebuild.
+3. **The genuine simultaneous-streams concurrency** lives in the
+   running phase and in a **build-only Build/COMPILE**, which leaves
+   the running app alive (no redeploy) so the Device Log keeps
+   streaming while the build streams in parallel.
+4. **A stale-build indicator** marks the running app as behind the
+   latest build (e.g. after a build-only) until the next Play.
+5. **The full-system firehose toggle is dropped**; the Device Log
+   keeps history with a run demarcation (not cleared) within a
+   bounded buffer.
+6. **The Build Log carries the whole chain's tooling output**
+   (xcodebuild, then install/launch), not xcodebuild alone, and
+   build vs deploy failures are distinct states.
+7. **Build/COMPILE needs no target** (generic destination when none
+   is locked); Play requires a target. A not-booted simulator is
+   auto-booted (headless; observed via the Device Log).
+
+See `context/projects/xcode-project-build-and-deploy/prd.md` for
+the full rationale.

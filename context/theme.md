@@ -69,6 +69,12 @@ as deliberate):
   `BLUEPRINTS RECOVERED`, sweep → `↻ SWEEP FOR TARGETS`, target
   results → `TARGETS IN RANGE` (themes `workflow.md`'s neutral
   discovery flow).
+- Build/deploy wording: deploy failure →
+  `DEPLOYMENT FAILED // PAYLOAD REJECTED`, simulator boot →
+  `PRIMING TARGET…`, running-app-behind-build →
+  `PAYLOAD STALE // NEW EXPLOIT READY`, and the Device Log run
+  separator `> ── NEW PAYLOAD ──` (themes the build/deploy chain
+  and its logs).
 - All colors, typography, FX, and ostrich's voice.
 
 **It MAY NOT touch STRUCTURE:**
@@ -255,10 +261,12 @@ passkey).
 | --- | --- |
 | idle | `STANDBY` |
 | building | `COMPILING EXPLOIT…` |
+| simulator boot (if needed) | `PRIMING TARGET…` |
 | installing | `DEPLOYING PAYLOAD…` |
 | launching | `EXECUTING PAYLOAD…` |
 | running | `TARGET ACQUIRED // LIVE` |
 | failed (build error) | `EXPLOIT FAILED` (→ see Build Log) |
+| failed (install / launch) | `DEPLOYMENT FAILED // PAYLOAD REJECTED` (→ see Build Log) |
 | aborted (Stop / mid-run drop) | `OPERATION ABORTED` |
 
 **Actions** (buttons)
@@ -271,6 +279,15 @@ passkey).
 | Stop | `■ ABORT` | consistent with `OPERATION ABORTED` |
 
 **Device Log header (while streaming):** `LIVE FEED // INTERCEPTING`
+
+**Device Log run separator (each new launch):**
+`> ── NEW PAYLOAD // <time> ──` — preserves history while marking
+where a fresh instance's output begins (the Device Log is not
+cleared on re-Play; it is demarcated).
+
+**Stale-build indicator** (the running app is behind the latest
+build, e.g. after a build-only COMPILE): `PAYLOAD STALE // NEW
+EXPLOIT READY`, in the `>` voice, cleared by the next EXECUTE.
 
 **Discovery / recon** (querying the HOST for build inputs). Recon
 copy lives only on ostrich's own surfaces in the `>`/magenta voice

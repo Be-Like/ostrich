@@ -45,11 +45,15 @@ ever opening the macOS GUI or Xcode.
 6. **Stream device logs** live, in real time, while interacting with
    the running app. Physical devices are the primary target;
    simulators are also supported.
-7. **Concurrency is a core goal.** ostrich shows multiple live
-   streams at once — device logs stay live continuously, including
-   across rebuilds, while build output streams in parallel. This is
-   achieved with concurrent SSH channels and a non-blocking worker
-   model, designed in from the start rather than bolted on later.
+7. **Concurrency is a core goal.** ostrich uses concurrent SSH
+   channels over a single session and a non-blocking worker model —
+   designed in from the start rather than bolted on later — so the
+   window never freezes and multiple streams can be live at once:
+   the device log streams the running app continuously, alongside
+   build output. (Whether the device log survives a redeploy or is
+   cut over for clean per-build output is product flow, resolved in
+   `workflow.md` and the xcode-project-build-and-deploy project —
+   the device log is *not* kept live across a full rebuild.)
 
 ## Platform and audience
 
