@@ -43,7 +43,8 @@ Three ideas frame everything below:
 
 ostrich is a **single window** built on the ImGui docking branch. All
 containers are **locked to their docked locations** (no free-floating
-or user-rearranged panels in MVP).
+or user-rearranged panels in MVP), with one deliberate exception: the
+**Build Log / Live Feed divider is user-resizable** (see below).
 
 On launch the user is met with a **connection overlay** (modal). Once
 connected, the overlay is dismissed and the connection collapses into
@@ -66,20 +67,19 @@ LAUNCH (overlay, modal):
 CONNECTED (overlay dismissed):
   +----------------------------------------------+
   | user@mac  * connected      [update] [close]  |  <- thin top bar
-  +---------------------------+------------------+
-  | Run Configuration         | Control / Status |
-  |  preset: [ my-app v] +/-  |  target:         |
-  |  [scan host]              |   [ iPhone 15 v] |
-  |  project [ App.xcwsp v] + |   [sweep]        |
-  |  scheme  ___   (hint)     |    > Play        |
-  |  config  ___   (hint)     |    > Build       |
-  |  bundle  ___   (hint)     |  state: idle     |
-  |               * READY     |  build>inst>launch|
-  +---------------------------+------------------+
-  | Build Log         | Device Log               |
-  |  (xcodebuild...)  |  (app output, live;     |
-  |                   |   demarcated history)   |
-  |  ...fills vert... |  ...fills vert...        |
+  +----------------------------------------------+
+  | XCODE PROJECT CONFIGURATION                  |
+  |  project [App.xcwsp             v]+          |
+  |  preset  [my-app v]+/-  scheme ___           |
+  |  target  [iPhone 15 v]↻   config ___         |
+  |  bundle ___             * READY              |
+  |  ▶ EXECUTE  COMPILE  ■ ABORT                 |
+  |  BUILD ▷ INSTALL ▷ LAUNCH   PAYLOAD STALE    |
+  +------------------------+---------------------+
+  | Build Log              |  Live Feed          |  <- resizable split
+  |  (xcodebuild, full-    |  (launched app      |
+  |   chain output)        |   stdout/stderr;    |
+  |  ...fills vert...      |   demarcated hist)  |
   +----------------------------------------------+
   | ostrich  *  60 FPS                           |  <- slim footer
   +----------------------------------------------+
@@ -89,14 +89,15 @@ Containers, top to bottom:
 
 - **Connection bar** (thin, full width, top) — connection identity and
   live status, plus controls to update or close the connection.
-- **Run Configuration** (upper-left) — preset selector, the scan
-  action, and the discovery-fed run configuration form.
-- **Control / Status strip** (upper-right, beside Run Configuration) —
-  the target selector, the Play / Build / Stop actions, and the
-  run-state and readiness indicators.
-- **Build Log** (lower-left) and **Device Log** (lower-right) — split
-  the full width below and **fill the vertical space** between the
-  configuration row and the footer.
+- **XCODE PROJECT CONFIGURATION** (full-width, directly below the
+  connection bar) — one merged container: the run-config form
+  (project, preset, scheme, config, bundle id; target picker) on its
+  left/center, and the run-control cluster (EXECUTE / COMPILE / ABORT,
+  phase, progression, READY, PAYLOAD STALE) on its right.
+- **Build Log** (lower-left) and **Live Feed** (lower-right) — split
+  the full width below the config band and **fill the vertical space**
+  between it and the footer; the divider is **user-resizable**
+  (default 50/50) — a deliberate exception to the locked-panels rule.
 - **Footer** (slim, full width, bottom) — ostrich-related info such as
   FPS and app status (not target/run output).
 
@@ -121,73 +122,67 @@ shows `user@host`, live status (`connected / reconnecting… /
 disconnected`), and controls to **update** (re-open the overlay) or
 **close** the connection.
 
-### Run Configuration
+### XCODE PROJECT CONFIGURATION
 
-A **preset selector** sits at the top (choose / new / rename /
-delete). Run configurations are **named presets bound to a
+This container merges the former **Run Configuration** form and
+**Control / Status** cluster into one full-width band directly below
+the connection bar.
+
+**Run configuration form (left/center)**
+
+A **preset selector** dropdown (choose / new / rename / delete) sits
+at the top. Run configurations are **named presets bound to a
 connection**; the active preset drives Play. A preset holds **four
 essential fields**:
 
-1. **Project/workspace path** — absolute path on the Mac
-   (`.xcodeproj` vs `.xcworkspace` inferred from the extension).
-2. **Scheme**
-3. **Build configuration** (default `Debug`)
-4. **Bundle ID** — used for install/launch.
+1. **Project/workspace path** — a hand-editable path field with a
+   **`[v]` picker button** that opens a popup containing the scan
+   root, the `⌖ SCAN HOST` / `■ ABORT SCAN` button, and the scanned
+   blueprints (with `BLUEPRINTS RECOVERED`, `// NO BLUEPRINTS`,
+   `XCODE NOT FOUND`, and `COULD NOT READ INVENTORY` states).
+   Selecting a blueprint prefills the path (and triggers the
+   scheme/config/bundle read). Typing a path by hand remains fully
+   supported and is never silently re-corrected — the hand-typed path
+   is the escape hatch when scanning does not surface the project.
+2. **Scheme** — a prefilled editable input with a discovered-set hint.
+3. **Build configuration** (default `Debug`) — a prefilled editable
+   input with a discovered-set hint.
+4. **Bundle ID** — a prefilled editable input with a discovered-set
+   hint.
 
-These four fields are filled by **discovery**, with manual entry
-always available:
+The **target selector** is a **dropdown picker** fed by a `↻ SWEEP`
+action, listing all devices and simulators in range in one unified set
+(each labeled device vs. simulator, with booted state for simulators).
+The selection is **session-sticky** and remembered separately from any
+preset; the last target is silently re-selected on connect when still
+in range. An empty or stale result shows a clear "no targets in range"
+state. The target is **not** part of the saved configuration.
 
-- A **scan** action sweeps a pointed-at root on the Mac (defaulting
-  to the home directory, remembered per connection) for buildable
-  projects and lists the curated results. The **project** is chosen
-  from that list via a **dropdown**, or its path typed by hand when
-  the scan does not surface it.
-- Picking a project reads it and **prefills** the scheme, the build
-  configuration (defaulting to `Debug`), and a best-effort bundle id.
-  These three are **prefilled editable inputs**, not locked
-  dropdowns: each shows its full discovered set beside the field as a
-  non-blocking hint, so the operator can accept the prefill, type a
-  different value, or override entirely. A manual edit is never
-  silently re-corrected.
+The `.app` output path needed for install is resolved by ostrich and
+is **not** a user-facing field. Advanced inputs (launch arguments,
+environment variables, extra `xcodebuild` flags) are deferred.
 
-The **target** is **not** part of this form — it lives with the run
-controls (see below), because devices come and go and a saved
-configuration should not rot when one is unplugged.
+**Control / Status cluster (right region)**
 
-The `.app` output path needed for install is resolved by ostrich
-(e.g. from build settings) and is **not** a user-facing field.
-Advanced inputs (launch arguments, environment variables, extra
-`xcodebuild` flags) are deferred.
-
-### Control / Status strip
-
-- **Target selector** — a **sweep** action lists the physical devices
-  and simulators currently in range in **one unified set** (each
-  labeled device vs. simulator, with booted state for simulators).
-  The operator picks one; ostrich infers device-vs-simulator from the
-  choice — there is no separate "target type" switch. The selection
-  is **session-sticky** and remembered separately from any preset;
-  the last target is silently re-selected on connect when it is still
-  in range. An empty or stale result shows a clear "no targets in
-  range" state, prompting a re-sweep.
 - **Readiness** — when the active preset is complete (project, scheme,
   config, bundle id) and a target is selected, ostrich shows the
   configuration is **ready** to Play.
-- **Play** — runs the full chain `build → install → launch`; it
+- **▶ EXECUTE** — runs the full chain `build → install → launch`;
   requires a complete preset and a locked target. A not-booted
   simulator is auto-booted as part of the chain (headless — observed
-  via the Device Log). While a run is in progress, Play becomes
-  **Stop** (abort); **Stop also terminates a running app**, back to
-  idle.
-- **Build** — build-only; compiles without installing or launching
-  (also abortable). It **needs no target** (it builds for a generic
-  destination when none is locked) and **leaves a running app
-  alive**, so the Device Log keeps streaming while the build streams
-  in parallel. Because it produces a build newer than what is
-  deployed, ostrich then flags the running app as **stale** (behind
-  the latest build) until the next Play.
-- **Run-state indicator** — shows the current phase (see below) and a
-  `build ▷ install ▷ launch` progression.
+  via the Live Feed). While a run is in progress, becomes **■ ABORT**
+  (abort run and terminate running app, back to idle).
+- **COMPILE** — build-only; compiles without installing or launching
+  (also abortable). **Needs no target** (builds for a generic
+  destination when none is locked) and **leaves a running app alive**,
+  so the Live Feed keeps streaming while the build streams in parallel.
+  Because it produces a build newer than what is deployed, ostrich
+  then flags the running app as **stale** (behind the latest build)
+  until the next Play.
+- **Phase / progression** — shows the current phase and a
+  `BUILD ▷ INSTALL ▷ LAUNCH` progression.
+- **PAYLOAD STALE** — flag shown when the running app is behind the
+  latest build; cleared on the next Play.
 
 ### Build Log
 
@@ -199,20 +194,34 @@ scrolls up**. Provides clear/copy affordances. A build failure and a
 deploy (install/launch) failure surface as *distinct* states (see
 the run-state machine); both render their output here.
 
-### Device Log
+When the panel has no content it shows the centered ostrich wordmark
+with the `// NO PAYLOAD COMPILED` empty-state caption; the art
+disappears the instant any content arrives.
+
+### Live Feed
 
 The launched app's own output (stdout/stderr), captured by running
 the app attached (`devicectl … process launch --console` on a
 device, `simctl launch --console` on a simulator), so it is
 inherently scoped to the app. It streams continuously while the app
 runs. A full Play rebuild is **terminate-first**: the old instance
-is killed before the build, so the Device Log goes briefly dark
+is killed before the build, so the Live Feed goes briefly dark
 during the rebuild and then resumes on the new instance — by design,
 so each build's output is unambiguous and never cross-poisoned.
 History is **preserved with a run demarcation** (`> ── NEW PAYLOAD
 ── `) at each launch rather than cleared, within a **bounded buffer**
 so a long session never bloats memory. The panel is never torn down.
 Auto-scroll behaves like the Build Log.
+
+When the panel has no content it shows the centered ostrich wordmark
+with the `// NO SIGNAL — TARGET DARK` empty-state caption; the art
+disappears the instant any content arrives.
+
+The vertical divider between Build Log and Live Feed is
+**user-resizable** (default 50/50, session-only, clamped to a sane
+minimum for each panel). This is a deliberate soft exception to the
+"no user rearrange in MVP" rule; all other panel boundaries remain
+locked.
 
 ### Footer
 
@@ -385,22 +394,22 @@ This document was revised when the
 loop) resolved how the build → install → launch chain and the two
 logs actually behave. The revision records:
 
-1. **The Device Log source is the launched app's process console**
+1. **The Live Feed source is the launched app's process console**
    (`devicectl … process launch --console` / `simctl launch
    --console`) — the app's own stdout/stderr, inherently app-scoped.
 2. **Re-Play is terminate-first.** The running app is killed before
-   a rebuild, so the Device Log goes dark during the build (then
+   a rebuild, so the Live Feed goes dark during the build (then
    resumes on the new instance with a `NEW PAYLOAD` demarcation),
    trading a moment of silence for clean, un-cross-poisoned per-build
-   output. This **amends `design.md` #7**: device logs do *not* stay
-   live across a Play rebuild.
+   output. This **amends `design.md` #7**: the live feed does *not*
+   stay live across a Play rebuild.
 3. **The genuine simultaneous-streams concurrency** lives in the
    running phase and in a **build-only Build/COMPILE**, which leaves
-   the running app alive (no redeploy) so the Device Log keeps
+   the running app alive (no redeploy) so the Live Feed keeps
    streaming while the build streams in parallel.
 4. **A stale-build indicator** marks the running app as behind the
    latest build (e.g. after a build-only) until the next Play.
-5. **The full-system firehose toggle is dropped**; the Device Log
+5. **The full-system firehose toggle is dropped**; the Live Feed
    keeps history with a run demarcation (not cleared) within a
    bounded buffer.
 6. **The Build Log carries the whole chain's tooling output**
@@ -408,7 +417,33 @@ logs actually behave. The revision records:
    build vs deploy failures are distinct states.
 7. **Build/COMPILE needs no target** (generic destination when none
    is locked); Play requires a target. A not-booted simulator is
-   auto-booted (headless; observed via the Device Log).
+   auto-booted (headless; observed via the Live Feed).
 
 See `context/projects/xcode-project-build-and-deploy/prd.md` for
 the full rationale.
+
+## Note on the ui-layout revision
+
+This document was revised when the **ui-layout** project reorganized
+the ONLINE working area into a cleaner four-band layout. The revision
+records:
+
+1. The **Run Configuration form and Control / Status cluster** are
+   merged into a single full-width **XCODE PROJECT CONFIGURATION**
+   band directly below the connection bar, replacing the former
+   side-by-side upper panels.
+2. **Project, preset, and target** are now **dropdown pickers**:
+   project keeps a hand-editable path field with a `[v]` picker
+   popup as the manual escape hatch (honoring the manual-fallback
+   value); scheme, config, and bundle id remain prefilled editable
+   inputs.
+3. **"Device Log"** is renamed to **"Live Feed"** throughout, to
+   reflect its role as the streaming live output panel.
+4. Each log panel shows the centered ostrich wordmark plus its
+   empty-state caption (`// NO PAYLOAD COMPILED` for Build Log,
+   `// NO SIGNAL — TARGET DARK` for Live Feed) when it has no
+   content.
+5. The vertical **Build Log / Live Feed divider is user-resizable**
+   (default 50/50, session-only) — a deliberate soft exception to
+   the "no user rearrange in MVP" rule; all other panel boundaries
+   remain locked.

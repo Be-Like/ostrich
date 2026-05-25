@@ -52,7 +52,7 @@ another (any order once T2 lands).
 
 ### Task 1 - Ratify layout in workflow.md
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: n/a (no PRD; design ratification)
 
