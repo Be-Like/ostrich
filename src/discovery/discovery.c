@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "discovery.h"
+#include "log.h"
 
 #define JSMN_STATIC
 #include "jsmn.h"
@@ -391,6 +392,8 @@ DiscStatus disc_parse_list(Arena *a, Str json, StrList *schemes, StrList *config
         DiscStatus s = extract_strlist(a, json.data, toks, configs_arr, n, configs);
         if (s != DISC_OK) return s;
     }
+    LOG_INFO(LG_DISC, "parse-list schemes=%d configs=%d",
+             schemes->count, configs->count);
     return DISC_OK;
 }
 
@@ -439,6 +442,7 @@ DiscStatus disc_parse_bundle_id(Str json, char *out, size_t cap) {
                 if (jstr_eq(json.data, &toks[ki], "PRODUCT_BUNDLE_IDENTIFIER") && ki + 1 < n &&
                     toks[ki + 1].type == JSMN_STRING) {
                     jstr_copy(json.data, &toks[ki + 1], out, cap);
+                    LOG_DEBUG(LG_DISC, "parse-bundle-id bundle_id=%s", out);
                     return DISC_OK;
                 }
                 ki += tok_tree_size(toks, ki);
@@ -520,6 +524,7 @@ DiscStatus disc_parse_simctl(Arena *a, Str json, TargetList *out) {
 
     out->items = items;
     out->count = count;
+    LOG_INFO(LG_DISC, "parse-simctl targets=%d", count);
     return DISC_OK;
 }
 
@@ -611,5 +616,6 @@ DiscStatus disc_parse_devicectl(Arena *a, Str json, TargetList *out) {
 
     out->items = items;
     out->count = count;
+    LOG_INFO(LG_DISC, "parse-devicectl targets=%d", count);
     return DISC_OK;
 }

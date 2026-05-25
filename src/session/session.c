@@ -406,7 +406,13 @@ static void drive_disc_job(WorkerCtx *ctx, int i)
                     ds = DISC_ERR_COMMAND_FAILED;
                     break;
                 }
-                if (ds != DISC_OK) { fail_disc_job(ctx, i, ds); return; }
+                if (ds != DISC_OK) {
+                    LOG_WARN(LG_DISC, "parse-fail job=%d kind=%s status=%s",
+                             i, djob_kind_str(j->kind), disc_status_str(ds));
+                    LOG_BLOB(LOG_WARN, LG_DISC, "raw-output", j->buf, j->buf_len);
+                    fail_disc_job(ctx, i, ds);
+                    return;
+                }
             }
             j->state    = DJOB_EMIT;
             j->emit_idx = 0;

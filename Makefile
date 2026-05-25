@@ -356,10 +356,31 @@ $(BUILD)/session_exec_test: $(TESTS)/session_exec_test.c \
 	    $(BUILD)/libdiscovery.a $(BUILD)/libconnstate.a \
 	    -lpthread -lm
 
+# session_disc_parse_test compiles discovery.c and session.c directly with
+# OSTRICH_DEBUG so parse-success and parse-failure LOG_* calls are active.
+# ssh_stub_disc.c provides a configurable stub so tests can set custom output.
+$(BUILD)/session_disc_parse_test: $(TESTS)/session_disc_parse_test.c \
+                                  $(TESTS)/ssh_stub_disc.c \
+                                  $(SRC)/session/session.c \
+                                  $(SRC)/discovery/discovery.c \
+                                  $(SRC)/log.c \
+                                  $(BUILD)/libconnstate.a \
+                                  $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) -I$(JSMN_DIR) \
+	    -o $@ $(TESTS)/session_disc_parse_test.c \
+	    $(TESTS)/ssh_stub_disc.c \
+	    $(SRC)/session/session.c \
+	    $(SRC)/discovery/discovery.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(SRC)/log.c \
+	    $(BUILD)/libconnstate.a \
+	    -lpthread -lm
+
 test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
       $(BUILD)/arena_test $(BUILD)/lexicon_test $(BUILD)/framestats_test \
       $(BUILD)/ui_test $(BUILD)/store_test $(BUILD)/discovery_test \
-      $(BUILD)/log_test $(BUILD)/session_test $(BUILD)/session_exec_test
+      $(BUILD)/log_test $(BUILD)/session_test $(BUILD)/session_exec_test \
+      $(BUILD)/session_disc_parse_test
 	./$(BUILD)/app_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
@@ -372,6 +393,7 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
 	./$(BUILD)/log_test
 	./$(BUILD)/session_test
 	./$(BUILD)/session_exec_test
+	./$(BUILD)/session_disc_parse_test
 
 debug:
 	$(MAKE) CFLAGS="$(CFLAGS) -DOSTRICH_DEBUG -g -O0" all

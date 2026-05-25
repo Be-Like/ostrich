@@ -409,7 +409,7 @@ output without a real Mac. The stub provides every symbol from
 
 ### Task 5 - Discovery parsing + parse-failure capture
 
-- **Status**: pending
+- **Status**: complete
 - **Blocked by**: Task 4
 - **User stories covered**: n/a
 
@@ -432,10 +432,10 @@ typical discovery JSON). Additive only.
 
 #### Acceptance criteria
 
-- [ ] Successful parses log a result-count summary (INFO/DEBUG).
-- [ ] A parse failure logs the `DiscStatus` and a raw output slice
+- [x] Successful parses log a result-count summary (INFO/DEBUG).
+- [x] A parse failure logs the `DiscStatus` and a raw output slice
       (WARN) via `LOG_BLOB`.
-- [ ] The logged slice is bounded but large enough to diagnose
+- [x] The logged slice is bounded but large enough to diagnose
       typical discovery JSON.
 - [ ] Manual: feeding malformed / unexpected output (or an
       Xcode-version mismatch) surfaces the raw bytes in the log.
