@@ -432,15 +432,9 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
 /* ── connection bar ─────────────────────────────────────────────────── */
 /* ── recon panel (ONLINE / REACQUIRING, slice A) ────────────────────── */
 static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
-                             UiReconIntents *ri) {
-    const ImGuiIO &io    = ImGui::GetIO();
-    const float    pad   = ImGui::GetStyle().FramePadding.y;
-    const float    v_pad = pad * 2.0f;
-    const float    bar_h = ImGui::GetTextLineHeight() + v_pad * 2.0f;
-    const float    cx    = io.DisplaySize.x * 0.5f;
-
-    ImGui::SetNextWindowPos({cx, bar_h + 12.0f}, ImGuiCond_Always, {0.5f, 0.0f});
-    ImGui::SetNextWindowSize({460.0f, 0.0f}, ImGuiCond_Always);
+                             UiReconIntents *ri, ImVec2 pos, ImVec2 sz) {
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
     ImGui::PushStyleColor(ImGuiCol_Border, C_CYAN_DIM);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
@@ -785,32 +779,20 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
     ImGui::End();
 }
 
-/* ── run panel: controls + Build Log ─────────────────────────────────── */
-static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
-    const ImGuiIO &io     = ImGui::GetIO();
-    const float    pad    = ImGui::GetStyle().FramePadding.y;
-    const float    v_pad  = pad * 2.0f;
-    const float    bar_h  = ImGui::GetTextLineHeight() + v_pad * 2.0f;
-    const float    foot_h = ImGui::GetTextLineHeight() + pad * 2.0f;
-    const float    avail_w = io.DisplaySize.x;
-    const float    avail_h = io.DisplaySize.y;
-    const float    panel_w = 400.0f;
-    const float    panel_x = avail_w - panel_w - 8.0f;
-    const float    panel_y = bar_h + 12.0f;
-    const float    panel_h = avail_h - panel_y - foot_h - 8.0f;
-
-    ImGui::SetNextWindowPos({panel_x, panel_y}, ImGuiCond_Always);
-    ImGui::SetNextWindowSize({panel_w, panel_h}, ImGuiCond_Always);
+/* ── run controls (config band — right region) ───────────────────────── */
+static void draw_run_controls(const UiRunView *rv, UiRunIntents *ri,
+                              ImVec2 pos, ImVec2 sz) {
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
     ImGui::PushStyleColor(ImGuiCol_Border, C_CYAN_DIM);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
-    ImGui::Begin("##run_panel", nullptr,
+    ImGui::Begin("##run_controls", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoSavedSettings);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
 
-    /* ── Phase label ──────────────────────────────────────────────────── */
     bool in_chain = (rv->phase == RUN_BUILDING || rv->phase == RUN_PRIMING ||
                      rv->phase == RUN_INSTALLING || rv->phase == RUN_LAUNCHING);
     bool running  = (rv->phase == RUN_RUNNING);
@@ -829,7 +811,7 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
     ImGui::TextUnformatted(lex(runstate_phase_lex(rv->phase)));
     ImGui::PopStyleColor();
 
-    /* ── Progression indicator: BUILD ▷ INSTALL ▷ LAUNCH ─────────────── */
+    /* BUILD ▷ INSTALL ▷ LAUNCH progression */
     {
         struct {
             const char *label;
@@ -869,13 +851,11 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    /* ── Action buttons ───────────────────────────────────────────────── */
     bool can_execute = (rv->readiness == READY_OK) && !in_chain;
     bool can_compile =
         (rv->readiness == READY_OK || rv->readiness == READY_NO_TARGET) && !in_chain;
 
     if (in_chain) {
-        /* ABORT replaces EXECUTE during the chain */
         if (ImGui::Button(lex(LEX_RUN_ABORT)))
             ri->abort_run = true;
     } else {
@@ -896,7 +876,6 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
     if (!can_compile)
         ImGui::EndDisabled();
 
-    /* Stale indicator */
     if (rv->stale) {
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
@@ -904,16 +883,28 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
         ImGui::PopStyleColor();
     }
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
+    ImGui::End();
+}
 
-    /* ── Build Log header + controls ──────────────────────────────────── */
+/* ── build log panel (bottom-left) ──────────────────────────────────── */
+static void draw_build_log(const UiRunView *rv, UiRunIntents *ri,
+                           ImVec2 pos, ImVec2 sz) {
+    bool failed = (rv->phase == RUN_BUILD_FAILED || rv->phase == RUN_DEPLOY_FAILED);
+
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
+    ImGui::PushStyleColor(ImGuiCol_Border, C_CYAN_DIM);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
+    ImGui::Begin("##build_log_panel", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+
     ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
     ImGui::TextUnformatted("BUILD LOG");
     ImGui::PopStyleColor();
-
-    ImGui::SameLine();
 
     {
         const float btn_pad = ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -946,12 +937,8 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
         ImGui::PopStyleColor(4);
     }
 
-    /* ── Build Log scrollable content ─────────────────────────────────── */
-    /* Give Build Log ~40% of available height; Device Log gets the rest. */
-    float total_log_h = ImGui::GetContentRegionAvail().y;
-    float build_log_h = total_log_h * 0.40f;
-    ImGui::BeginChild("##build_log", {0.0f, build_log_h}, false,
-                      ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::BeginChild("##build_log_content", {0.0f, ImGui::GetContentRegionAvail().y},
+                      false, ImGuiWindowFlags_HorizontalScrollbar);
 
     static bool s_build_auto_scroll = true;
 
@@ -961,44 +948,50 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
         ImGui::TextUnformatted(lex(LEX_RUN_BUILD_EMPTY));
         ImGui::PopStyleColor();
     } else {
-        /* Failure header in semantic color */
         if (failed) {
-            ImVec4 fail_col = C_FAIL;
-            ImGui::PushStyleColor(ImGuiCol_Text, fail_col);
+            ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
             ImGui::TextUnformatted(lex(runstate_phase_lex(rv->phase)));
             ImGui::PopStyleColor();
         }
-
         for (int i = 0; i < count; i++) {
-            size_t     len  = 0;
-            const char *ln  = logbuf_line(rv->build_log, i, &len);
+            size_t     len = 0;
+            const char *ln = logbuf_line(rv->build_log, i, &len);
             ImGui::TextUnformatted(ln, ln + len);
         }
     }
 
-    /* Detect upward scroll → pause auto-scroll */
     float scroll_y   = ImGui::GetScrollY();
     float scroll_max = ImGui::GetScrollMaxY();
     if (scroll_max > 0.0f && scroll_y < scroll_max - 4.0f)
         s_build_auto_scroll = false;
     else
         s_build_auto_scroll = true;
-
     if (s_build_auto_scroll)
         ImGui::SetScrollHereY(1.0f);
 
     ImGui::EndChild();
+    ImGui::End();
+}
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
+/* ── live feed panel (bottom-right) ─────────────────────────────────── */
+static void draw_live_feed(const UiRunView *rv, UiRunIntents *ri,
+                           ImVec2 pos, ImVec2 sz) {
+    bool running = (rv->phase == RUN_RUNNING);
 
-    /* ── Device Log header + controls ─────────────────────────────────── */
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
+    ImGui::PushStyleColor(ImGuiCol_Border, C_CYAN_DIM);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
+    ImGui::Begin("##live_feed_panel", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+
     ImGui::PushStyleColor(ImGuiCol_Text, running ? C_OK : C_CYAN_DIM);
     ImGui::TextUnformatted(lex(LEX_RUN_LIVE_FEED));
     ImGui::PopStyleColor();
-
-    ImGui::SameLine();
 
     {
         const float btn_pad = ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -1031,10 +1024,8 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
         ImGui::PopStyleColor(4);
     }
 
-    /* ── Device Log scrollable content ────────────────────────────────── */
-    float dev_log_h = ImGui::GetContentRegionAvail().y;
-    ImGui::BeginChild("##device_log", {0.0f, dev_log_h}, false,
-                      ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::BeginChild("##live_feed_content", {0.0f, ImGui::GetContentRegionAvail().y},
+                      false, ImGuiWindowFlags_HorizontalScrollbar);
 
     static bool s_device_auto_scroll = true;
 
@@ -1051,14 +1042,12 @@ static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
         }
     }
 
-    /* Detect upward scroll → pause auto-scroll */
     float dev_scroll_y   = ImGui::GetScrollY();
     float dev_scroll_max = ImGui::GetScrollMaxY();
     if (dev_scroll_max > 0.0f && dev_scroll_y < dev_scroll_max - 4.0f)
         s_device_auto_scroll = false;
     else
         s_device_auto_scroll = true;
-
     if (s_device_auto_scroll)
         ImGui::SetScrollHereY(1.0f);
 
@@ -1293,6 +1282,21 @@ bool ui_frame(Ui *ui,
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+    /* ── Four-band geometry (computed once per frame) ──────────────────── */
+    const ImGuiIO &io      = ImGui::GetIO();
+    const float    avail_w = io.DisplaySize.x;
+    const float    avail_h = io.DisplaySize.y;
+    const float    g_pad   = ImGui::GetStyle().FramePadding.y;
+    const float    g_hdr_h = ImGui::GetTextLineHeight() + g_pad * 4.0f;
+    const float    g_ftr_h = ImGui::GetTextLineHeight() + g_pad * 2.0f;
+    const float    g_cfg_h = 340.0f;
+    const float    g_log_y = g_hdr_h + g_cfg_h;
+    const float    g_log_h_raw = avail_h - g_log_y - g_ftr_h;
+    const float    g_log_h = g_log_h_raw > 0.0f ? g_log_h_raw : 0.0f;
+    const float    g_log_w = avail_w * 0.5f;
+    const float    g_rcn_w = avail_w * 0.60f;
+    const float    g_ctl_w = avail_w - g_rcn_w;
+
     draw_overlay();
 
     ImGui::DockSpaceOverViewport(0, nullptr,
@@ -1300,10 +1304,6 @@ bool ui_frame(Ui *ui,
 
     /* ── resting view: wordmark + identity ──────────────────────────── */
     {
-        const ImGuiIO &io      = ImGui::GetIO();
-        const float    avail_w = io.DisplaySize.x;
-        const float    avail_h = io.DisplaySize.y;
-
         const char  *wordmark = lex(LEX_WORDMARK);
         const char  *identity = lex(LEX_IDENTITY);
         const ImVec2 wm_sz    = ImGui::CalcTextSize(wordmark);
@@ -1344,13 +1344,17 @@ bool ui_frame(Ui *ui,
     if (bar_phase)
         draw_conn_bar(view, ui->online_since, out);
 
-    /* ── recon panel (ONLINE / REACQUIRING, no overlay) ─────────────── */
+    /* ── config band: recon (left) + run controls (right) ───────────── */
     if (bar_phase && !view->overlay_open && rv != nullptr && rf != nullptr && ri != nullptr)
-        draw_recon_panel(rv, rf, ri);
-
-    /* ── run panel: controls + Build Log (ONLINE / REACQUIRING, no overlay) ── */
+        draw_recon_panel(rv, rf, ri, {0.0f, g_hdr_h}, {g_rcn_w, g_cfg_h});
     if (bar_phase && !view->overlay_open && rrv != nullptr && rri != nullptr)
-        draw_run_panel(rrv, rri);
+        draw_run_controls(rrv, rri, {g_rcn_w, g_hdr_h}, {g_ctl_w, g_cfg_h});
+
+    /* ── log panels: Build Log (left) + Live Feed (right) ───────────── */
+    if (bar_phase && !view->overlay_open && rrv != nullptr && rri != nullptr) {
+        draw_build_log(rrv, rri, {0.0f, g_log_y}, {g_log_w, g_log_h});
+        draw_live_feed(rrv, rri, {g_log_w, g_log_y}, {g_log_w, g_log_h});
+    }
 
     /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY /
           SEVERED — SEVERED shows reason + BREACH to re-connect;
@@ -1365,22 +1369,16 @@ bool ui_frame(Ui *ui,
 
     /* ── diagnostics footer ──────────────────────────────────────────── */
     {
-        const ImGuiIO &io      = ImGui::GetIO();
-        const float    avail_w = io.DisplaySize.x;
-        const float    avail_h = io.DisplaySize.y;
-        const float    pad     = ImGui::GetStyle().FramePadding.y;
-        const float    foot_h  = ImGui::GetTextLineHeight() + pad * 2.0f;
-
         char buf[128];
         snprintf(buf, sizeof(buf), "%s // %d FPS // %s",
                  lex(LEX_FOOTER_NAME), fps, lex(LEX_FOOTER_ONLINE));
 
-        ImGui::SetNextWindowPos({0.0f, avail_h - foot_h});
-        ImGui::SetNextWindowSize({avail_w, foot_h});
+        ImGui::SetNextWindowPos({0.0f, avail_h - g_ftr_h});
+        ImGui::SetNextWindowSize({avail_w, g_ftr_h});
         ImGui::SetNextWindowBgAlpha(1.0f);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, C_BG);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                            ImVec2{pad * 2.0f, pad});
+                            ImVec2{g_pad * 2.0f, g_pad});
         ImGui::Begin("##footer", nullptr,
                      ImGuiWindowFlags_NoDecoration |
                          ImGuiWindowFlags_NoResize |

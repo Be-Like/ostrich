@@ -108,7 +108,7 @@ is `workflow.md`'s alone.
 
 ### Task 2 - Relayout skeleton (four-band geometry)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: T1
 - **User stories covered**: n/a; realizes `workflow.md` Layout
 

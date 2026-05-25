@@ -1366,6 +1366,139 @@ int main(void) {
         arena_destroy(test_arena);
     }
 
+    /* T2: four-band layout — ONLINE idle; config band renders recon (left) and
+     * controls (right); both log panels render side-by-side; no spurious
+     * intents from either side. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_NO_PROJECT;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.execute);
+            assert(!run_ri.compile);
+            assert(!run_ri.abort_run);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+            assert(!ri.scan);
+            assert(ri.pick_blueprint == -1);
+            assert(ri.pick_preset == -1);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* T2: four-band layout — BUILDING phase; controls show ABORT in the config
+     * band; build log panel receives content; live feed panel is empty;
+     * no spurious execute or abort intents (headless doesn't click). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        logbuf_append(build_log, "Compiling source files...\n", 26);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_BUILDING;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.execute);
+            assert(!run_ri.compile);
+            assert(!run_ri.abort_run);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.device_log_copy);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T2: four-band layout — RUNNING with both log panels populated; build log
+     * panel (left) and live feed panel (right) each render their content
+     * independently; no spurious copy/clear intents from either panel. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        logbuf_append(build_log, "Build succeeded\n", 16);
+        logbuf_append(dev_log, "App output line 1\n", 18);
+        logbuf_append(dev_log, "App output line 2\n", 18);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_RUNNING;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.device_log      = dev_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.execute);
+            assert(!run_ri.abort_run);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T2: four-band layout — REACQUIRING phase; config band and log panels
+     * still render; no spurious intents. */
+    {
+        UiConnView reacq_view = {0};
+        reacq_view.phase      = CONN_REACQUIRING;
+        reacq_view.user_host  = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.readiness       = READY_OK;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.execute);
+            assert(!run_ri.compile);
+            assert(!run_ri.abort_run);
+            assert(!ri.scan);
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");
