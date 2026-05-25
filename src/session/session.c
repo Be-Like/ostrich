@@ -33,6 +33,7 @@
 #define DISC_JOB_BUF_CAP   (512 * 1024)   /* 512 KB output buffer */
 #define DISC_READ_CHUNK    4096
 #define DISC_SCAN_DEPTH_DEFAULT 8
+#define DISC_JOB_TIMEOUT_SEC    60.0      /* fail a stuck remote command */
 
 /* ── Session control block (flagged malloc) ──────────────────────── */
 
@@ -73,6 +74,9 @@ typedef struct {
     Arena        *arena;       /* from disc_arenas pool; reset on done */
     char         *buf;         /* output accumulation (arena-alloc'd) */
     size_t        buf_len;
+    /* per-job watchdog: fail if the remote command never finishes */
+    struct timespec deadline;
+    bool          has_deadline;
     char          cmd[2048];   /* remote command string                */
     /* scan-specific */
     int           scan_depth;
@@ -116,6 +120,7 @@ typedef struct {
     /* discovery job engine */
     DiscJob          disc_jobs[DISC_MAX_JOBS];
     Arena           *disc_arenas[DISC_MAX_JOBS];
+    int              open_owner; /* job index holding the channel-open seam; -1 = free */
     /* sweep group tracking (one sweep at a time) */
     int              sweep_group_remaining; /* sweep jobs still in flight */
     bool             sweep_group_failed;    /* SWEEP_FAILED already emitted */
@@ -209,6 +214,7 @@ static SessionDiscEventKind failure_event_for(DiscJobKind kind)
 static void fail_disc_job(WorkerCtx *ctx, int i, DiscStatus st)
 {
     DiscJob *j = &ctx->disc_jobs[i];
+    if (ctx->open_owner == i) ctx->open_owner = -1;
     if (j->ch) { ssh_channel_close(j->ch); j->ch = NULL; }
     arena_reset(ctx->disc_arenas[i]);
 
@@ -279,9 +285,17 @@ static void drive_disc_job(WorkerCtx *ctx, int i)
 
         switch (j->state) {
         case DJOB_OPEN: {
+            /* libssh2 tracks channel-open progress on the *session*, so two
+               opens in flight at once clobber each other and wedge a channel
+               (it never reaches EOF). Serialize: a job may drive its open
+               only while no other job holds the open seam. Reads after the
+               open still run concurrently across channels. */
+            if (ctx->open_owner != -1 && ctx->open_owner != i) return;
+            ctx->open_owner = i;
             SshStatus st = ssh_channel_open(ctx->ssh, &j->ch);
-            if (st == SSH_AGAIN) return;
+            if (st == SSH_AGAIN) return;            /* keep holding the seam */
             if (st != SSH_OK) { fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED); return; }
+            ctx->open_owner = -1;                   /* seam released */
             j->state = DJOB_EXEC;
             again    = true;
             break;
@@ -462,7 +476,17 @@ static void drive_disc_job(WorkerCtx *ctx, int i)
 static void drive_disc_jobs(WorkerCtx *ctx)
 {
     for (int i = 0; i < DISC_MAX_JOBS; i++) {
-        if (ctx->disc_jobs[i].kind == DJOB_KIND_NONE) continue;
+        DiscJob *j = &ctx->disc_jobs[i];
+        if (j->kind == DJOB_KIND_NONE) continue;
+        /* Arm the watchdog on first sight; fail a job that overruns it. */
+        if (!j->has_deadline) {
+            j->deadline     = deadline_in(DISC_JOB_TIMEOUT_SEC);
+            j->has_deadline = true;
+        }
+        if (deadline_past(&j->deadline)) {
+            fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED);
+            continue;
+        }
         drive_disc_job(ctx, i);
     }
 }
@@ -677,6 +701,7 @@ static void drain_disc_cmds(WorkerCtx *ctx)
 static void disconnect_ssh(WorkerCtx *ctx)
 {
     fail_all_disc_jobs(ctx);
+    ctx->open_owner = -1;
     if (ctx->ssh) {
         ssh_disconnect(ctx->ssh);
         ctx->ssh = NULL;
@@ -952,6 +977,7 @@ static void *worker_fn(void *arg)
     ctx.ssh_fd         = -1;
     ctx.sub            = SUB_IDLE;
     ctx.keepalive_next = KEEPALIVE_INTERVAL_SEC;
+    ctx.open_owner     = -1;
     ctx.arena          = arena_create(WORKER_ARENA_SZ);
     if (!ctx.arena) {
         atomic_store(&s->running, 0);

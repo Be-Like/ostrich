@@ -65,9 +65,20 @@ int main(int argc, char **argv)
     memset(&cmd, 0, sizeof(cmd));
     cmd.kind     = CMD_BREACH;
     cmd.cfg.port = port;
-    cmd.cfg.auth = SSH_AUTH_AGENT;
     snprintf(cmd.cfg.host, sizeof(cmd.cfg.host), "%s", host);
     snprintf(cmd.cfg.user, sizeof(cmd.cfg.user), "%s", user);
+
+    /* Auth: password from OSTRICH_PASS env when set, else ssh-agent.
+       Reading from the env keeps the secret out of argv and shell history. */
+    const char *pass = getenv("OSTRICH_PASS");
+    if (pass && pass[0]) {
+        cmd.cfg.auth = SSH_AUTH_PASSWORD;
+        snprintf(cmd.cfg.passkey, sizeof(cmd.cfg.passkey), "%s", pass);
+        printf("Auth: password (OSTRICH_PASS)\n");
+    } else {
+        cmd.cfg.auth = SSH_AUTH_AGENT;
+        printf("Auth: ssh-agent\n");
+    }
 
     if (!session_submit(s, &cmd)) {
         fprintf(stderr, "session_submit: ring full\n");

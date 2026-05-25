@@ -117,7 +117,16 @@ DiscStatus disc_simctl_cmd(char *buf, size_t cap) {
 }
 
 DiscStatus disc_devicectl_cmd(char *buf, size_t cap) {
-    int n = snprintf(buf, cap, "xcrun devicectl list devices --json-output -");
+    /* devicectl deadlocks when told to stream JSON to stdout
+       (`--json-output -`) over a non-interactive SSH exec, and it also
+       prints a human-readable table to stdout even with --json-output set.
+       So: write JSON to a temp file, discard devicectl's own stdout/stderr,
+       cat the file (the only thing the worker reads), then propagate the
+       exit code so the 127 / non-zero mapping still applies. */
+    int n = snprintf(buf, cap,
+        "f=$(mktemp /tmp/ostrich-devicectl.XXXXXX); "
+        "xcrun devicectl list devices --json-output \"$f\" >/dev/null 2>&1; "
+        "rc=$?; cat \"$f\"; rm -f \"$f\"; exit $rc");
     if (n < 0 || (size_t)n >= cap) return DISC_ERR_OOM;
     return DISC_OK;
 }
