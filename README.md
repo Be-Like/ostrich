@@ -39,11 +39,23 @@ model, and [`context/theme.md`](context/theme.md) for the visual identity.
 - OpenSSL development headers (libssh2 is built against the OpenSSL backend)
 
 Dear ImGui, GLFW, and libssh2 are vendored as submodules and built from source,
-so you do **not** need system packages for them. On Linux you do need the X11
-and OpenGL development libraries that GLFW links against:
+so you do **not** need system packages for them. On Linux, GLFW is built with
+**both the X11 and Wayland backends** and selects one at runtime (based on
+`XDG_SESSION_TYPE` / `WAYLAND_DISPLAY` / `DISPLAY`), so the build needs the
+development headers for both display stacks:
 
-- **Linux:** OpenSSL, OpenGL (Mesa), and X11 dev packages — `libX11`,
-  `libXcursor`, `libXi`, `libXinerama`, `libXrandr`, `libXfixes`.
+- **Linux:** OpenSSL and OpenGL (Mesa) dev packages, plus:
+  - **X11 backend** — `libX11`, `libXcursor`, `libXi`, `libXinerama`,
+    `libXrandr`, `libXfixes` dev packages.
+  - **Wayland backend** — `wayland` (provides the `wayland-client` headers and
+    the `wayland-scanner` codegen tool) and `libxkbcommon` dev packages. The
+    Wayland protocol XML is vendored inside GLFW, so `wayland-protocols` is
+    **not** required.
+
+  GLFW `dlopen()`s the X11/Wayland/GL client libraries at runtime rather than
+  linking them, so they only need to be installed on the machine that *runs*
+  ostrich. If you only have one display stack on a given machine, narrow the
+  build with `make GLFW_BACKENDS=x11` or `make GLFW_BACKENDS=wayland`.
 - **macOS:** the Cocoa/IOKit/OpenGL frameworks ship with the system. Install
   OpenSSL and pkg-config via Homebrew (`brew install openssl pkg-config`); the
   build falls back to the Homebrew prefix automatically if pkg-config can't
