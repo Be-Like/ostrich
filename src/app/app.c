@@ -1,5 +1,6 @@
 #include "app.h"
 #include "arena.h"
+#include "log.h"
 #include "ui.h"
 #include "session.h"
 #include "connstate.h"
@@ -90,6 +91,7 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
     UiStatus st = ui_init(a, ui_opts, &ui);
     if (st != UI_OK) {
         fprintf(stderr, "ostrich: %s\n", ui_status_str(st));
+        LOG_ERROR(LG_APP, "ui init failed: %s", ui_status_str(st));
         return APP_ERR;
     }
 
@@ -97,6 +99,7 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
     SshStatus ss      = session_open(&session);
     if (ss != SSH_OK) {
         fprintf(stderr, "ostrich: failed to open session\n");
+        LOG_ERROR(LG_APP, "session open failed");
         ui_shutdown(ui);
         return APP_ERR;
     }

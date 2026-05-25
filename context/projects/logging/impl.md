@@ -288,7 +288,7 @@ test binary, and every smoke tool.
 
 ### Task 2 - Stand up + mirror startup errors
 
-- **Status**: pending
+- **Status**: complete
 - **Blocked by**: Task 1
 - **User stories covered**: n/a
 
@@ -314,13 +314,13 @@ behavior is the unchanged stderr messages.
 
 #### Acceptance criteria
 
-- [ ] `log_init()` runs before `session_open()`; `log_shutdown()`
+- [x] `log_init()` runs before `session_open()`; `log_shutdown()`
       runs at exit.
-- [ ] In a debug build, a successful launch writes a startup banner
+- [x] In a debug build, a successful launch writes a startup banner
       and rotates the prior run's file.
-- [ ] The two fatal startup errors appear in the debug log
+- [x] The two fatal startup errors appear in the debug log
       (`LOG_ERROR`) while still printing to stderr in all builds.
-- [ ] Default (release) build behavior is unchanged: no file, no
+- [x] Default (release) build behavior is unchanged: no file, no
       records, only the existing stderr fatal messages.
 
 ### Task 3 - Connection lifecycle instrumentation

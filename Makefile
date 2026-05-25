@@ -169,9 +169,13 @@ $(BUILD)/app_framestats.o: $(SRC)/framestats.c | $(BUILD)
 $(BUILD)/app_spsc_ring.o: $(SRC)/spsc_ring.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
 
+$(BUILD)/app_log.o: $(SRC)/log.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
 APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_app.o $(BUILD)/app_form.o \
             $(BUILD)/app_arena.o $(BUILD)/app_lexicon.o \
-            $(BUILD)/app_framestats.o $(BUILD)/app_spsc_ring.o
+            $(BUILD)/app_framestats.o $(BUILD)/app_spsc_ring.o \
+            $(BUILD)/app_log.o
 
 $(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a \
                   $(BUILD)/libsession.a $(BUILD)/libssh.a \
