@@ -165,7 +165,7 @@ only (coding_standards "Testing").
 
 ### Task 2 - libbuilddeploy
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: 4, 5, 6, 7, 8, 9, 11, 30, 54
 

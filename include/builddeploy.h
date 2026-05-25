@@ -10,16 +10,39 @@ extern "C" {
 
 typedef enum {
     BD_OK = 0,
-    BD_ERR_XCODE_MISSING, /* exit 127                           */
-    BD_ERR_BUILD,         /* xcodebuild non-zero → build fail   */
-    BD_ERR_BOOT,          /* boot/bootstatus     → deploy fail  */
-    BD_ERR_INSTALL,       /* install non-zero    → deploy fail  */
-    BD_ERR_LAUNCH,        /* launch non-zero     → deploy fail  */
-    BD_ERR_PARSE,         /* settings did not parse             */
+    BD_ERR_XCODE_MISSING, /* exit 127                            */
+    BD_ERR_BUILD,         /* xcodebuild non-zero  → build fail   */
+    BD_ERR_BOOT,          /* boot/bootstatus      → deploy fail  */
+    BD_ERR_INSTALL,       /* install non-zero     → deploy fail  */
+    BD_ERR_LAUNCH,        /* launch non-zero      → deploy fail  */
+    BD_ERR_PARSE,         /* settings did not parse              */
     BD_ERR_OOM
 } BdStatus;
 
-/* Full command-construction and parse interface is added in libbuilddeploy (T2). */
+/* command construction (shell-safe; single-quote-escaped) */
+BdStatus bd_settings_cmd  (const RunConfig *, const Target *,
+                           bool has_target, char *, size_t);
+BdStatus bd_build_cmd     (const RunConfig *, const Target *,
+                           bool has_target, char *, size_t);
+BdStatus bd_boot_cmd      (const Target *, char *, size_t);
+BdStatus bd_bootstatus_cmd(const Target *, char *, size_t);
+BdStatus bd_install_cmd   (const Target *, const char *app_path,
+                           char *, size_t);
+BdStatus bd_launch_cmd    (const Target *, const char *bundle_id,
+                           char *, size_t); /* --console, setsid, PID marker */
+BdStatus bd_terminate_cmd (const Target *, const char *bundle_id,
+                           char *, size_t);
+BdStatus bd_kill_cmd      (long pgid, char *, size_t);
+BdStatus bd_destination   (const Target *, bool has_target,
+                           char *, size_t);
+
+/* parse (raw bytes → values) */
+BdStatus bd_parse_product_path(Str settings_json, char *out, size_t cap);
+bool     bd_parse_pid_marker  (Str chunk, long *out_pgid);
+
+/* classification */
+LexKey      bd_reason_lex (BdStatus st);
+const char *bd_status_str (BdStatus st);
 
 #ifdef __cplusplus
 }
