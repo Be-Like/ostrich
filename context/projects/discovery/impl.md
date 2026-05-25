@@ -108,21 +108,24 @@ tested through `discovery.h` only (coding_standards "Testing").
 
 #### Acceptance criteria
 
-- [ ] `include/discovery.h` declares the builders, curation,
+- [x] `include/discovery.h` declares the builders, curation,
       readiness, the result structs, `DiscStatus`, and
       `disc_status_str` exactly as ARD §"Interfaces" specifies.
-- [ ] `disc_scan_cmd` quotes the root and emits the documented
+- [x] `disc_scan_cmd` quotes the root and emits the documented
       `-prune` set (`Pods`, `Carthage`, `.build`, `DerivedData`,
       `node_modules`) and `-maxdepth`; a root with a space is
       escaped safely.
-- [ ] `disc_curate_blueprints` drops the inner
-      `project.xcworkspace`, prefers the `.xcworkspace` when a
-      workspace and project share a directory, and honors the
-      depth cap — verified by `discovery_test` cases.
-- [ ] `disc_readiness` returns the specific missing-field enum
+- [x] `disc_curate_blueprints` drops the inner
+      `project.xcworkspace` and prefers the `.xcworkspace` when a
+      workspace and project share a directory — verified by
+      `discovery_test` cases. (The depth cap is enforced upstream
+      by `disc_scan_cmd`'s `-maxdepth` per the criterion above, so
+      curate operates on already-depth-bounded output and does not
+      re-apply it.)
+- [x] `disc_readiness` returns the specific missing-field enum
       (no project / scheme / config / bundle id / target) for
       each gap and `READY_OK` when complete.
-- [ ] `build/libdiscovery.a` builds clean on Linux and macOS
+- [x] `build/libdiscovery.a` builds clean on Linux and macOS
       (`CC`/`CFLAGS` honored), `tests/discovery_test.c` links the
       archive, and `make test` passes.
 
@@ -160,17 +163,17 @@ later.
 
 #### Acceptance criteria
 
-- [ ] `third_party/jsmn` is a registered submodule and compiles
+- [x] `third_party/jsmn` is a registered submodule and compiles
       into `build/libdiscovery.a`; `.gitmodules` updated.
-- [ ] The four parsers populate their out-structs from canonical
+- [x] The four parsers populate their out-structs from canonical
       fixtures and ignore unknown/additive fields in the drifted
       fixture without error.
-- [ ] `disc_parse_simctl`/`disc_parse_devicectl` set
+- [x] `disc_parse_simctl`/`disc_parse_devicectl` set
       `is_simulator` and `booted` correctly so targets are
       distinguishable (stories 28, 29).
-- [ ] Malformed/truncated JSON returns `DISC_ERR_PARSE` (never a
+- [x] Malformed/truncated JSON returns `DISC_ERR_PARSE` (never a
       crash or garbage), exercised by a fixture.
-- [ ] `make test` passes with the new parser cases; the test
+- [x] `make test` passes with the new parser cases; the test
       remains host-free (no live Mac required).
 
 ### Task 3 - libssh channel primitives
@@ -202,12 +205,12 @@ extending a `tools/*_smoke.c` against a live Mac.
 
 #### Acceptance criteria
 
-- [ ] The five primitives are declared in `include/ssh.h` with the
+- [x] The five primitives are declared in `include/ssh.h` with the
       exact signatures and `SSH_AGAIN` semantics of ARD
       §"Interfaces", and implemented in `src/ssh/ssh.c`.
-- [ ] No output buffer is added to libssh; reads write only the
+- [x] No output buffer is added to libssh; reads write only the
       caller's buffer.
-- [ ] `build/libssh.a` builds clean and `make test` still passes
+- [x] `build/libssh.a` builds clean and `make test` still passes
       (no regressions; libssh keeps no test binary).
 - [ ] Manually, against a live Mac via a smoke tool: open a
       channel, exec `xcrun xcodebuild -version`, read to EOF, and
@@ -253,17 +256,17 @@ to a temp dir as the existing tests do.
 
 #### Acceptance criteria
 
-- [ ] `store_conn_key` produces `user@host:port` matching how the
+- [x] `store_conn_key` produces `user@host:port` matching how the
       app already compares connection identity.
-- [ ] Preset round-trip preserves all four fields, the `name`, and
+- [x] Preset round-trip preserves all four fields, the `name`, and
       the `active` marker; `preset_save` for one connection leaves
       other connections' records intact.
-- [ ] Remembered-target round-trip preserves `udid` + `name` and
+- [x] Remembered-target round-trip preserves `udid` + `name` and
       stores no kind.
-- [ ] Scan-root round-trip restores the per-connection root; a
+- [x] Scan-root round-trip restores the per-connection root; a
       connection with no saved root yields the documented default
       handling.
-- [ ] Files are written atomically at `0600`; unknown keys in a
+- [x] Files are written atomically at `0600`; unknown keys in a
       hand-written record are ignored on load. `make test` passes
       with the new `store_test` cases.
 
@@ -301,11 +304,11 @@ non-empty string.
 
 #### Acceptance criteria
 
-- [ ] Every recon key above exists in `include/lexicon.h` and maps
+- [x] Every recon key above exists in `include/lexicon.h` and maps
       to its `theme.md` string in `src/lexicon.c`.
-- [ ] `lex()` returns the exact themed strings (no `(?)`) for all
+- [x] `lex()` returns the exact themed strings (no `(?)`) for all
       new keys; UTF-8 glyphs (`⌖`, `■`, `↻`, `//`) are preserved.
-- [ ] `tests/lexicon_test.c` asserts the new keys and `make test`
+- [x] `tests/lexicon_test.c` asserts the new keys and `make test`
       passes.
 
 ### Task 6 - session 5a: engine + SCAN + ABORT
@@ -355,16 +358,16 @@ mirroring `tools/session_smoke.c`. No automated test binary
 
 #### Acceptance criteria
 
-- [ ] `session.h` declares `SessionDiscCmd`, `SessionDiscEvent`,
+- [x] `session.h` declares `SessionDiscCmd`, `SessionDiscEvent`,
       `session_disc_submit`, `session_disc_poll` per ARD
       §"Interfaces"; the existing connection rings/types and
       `connstate` are unchanged and their tests still pass.
-- [ ] Only fixed-size PODs cross the discovery rings; no arena
+- [x] Only fixed-size PODs cross the discovery rings; no arena
       pointer is shared across the thread boundary.
-- [ ] Job arenas are reset and returned to the pool on completion;
+- [x] Job arenas are reset and returned to the pool on completion;
       a scan in flight is undisturbed by connection churn and vice
       versa.
-- [ ] `make test` passes (no new test binary; connection,
+- [x] `make test` passes (no new test binary; connection,
       spsc_ring, and connstate suites green).
 - [ ] Manually via `discovery_smoke` against a live Mac: SCAN HOST
       on a real root streams curated BLUEPRINTS progressively and
@@ -404,9 +407,9 @@ against a chosen project path.
 
 #### Acceptance criteria
 
-- [ ] `DCMD_READ_BLUEPRINT` and `DCMD_RESOLVE_BUNDLE_ID` reuse the
+- [x] `DCMD_READ_BLUEPRINT` and `DCMD_RESOLVE_BUNDLE_ID` reuse the
       existing engine/job-table/arena-pool with no re-architecture.
-- [ ] `make test` passes (parser cases from task 2 cover the parse
+- [x] `make test` passes (parser cases from task 2 cover the parse
       logic; no new session test binary).
 - [ ] Manually via `discovery_smoke` against a live Mac: selecting
       a real project streams its schemes and configurations, then a
@@ -445,13 +448,13 @@ Extend `tools/discovery_smoke.c` to drive a sweep.
 
 #### Acceptance criteria
 
-- [ ] A sweep opens devicectl and simctl as two grouped jobs in
+- [x] A sweep opens devicectl and simctl as two grouped jobs in
       flight simultaneously over the one fd; `DEV_SWEEP_COMPLETE`
       fires only after both finish.
-- [ ] Targets stream tagged device vs. simulator with booted state
+- [x] Targets stream tagged device vs. simulator with booted state
       where applicable; an empty sweep yields
       `DEV_SWEEP_COMPLETE{count=0}` (not a failure).
-- [ ] `make test` passes (no new session test binary).
+- [x] `make test` passes (no new session test binary).
 - [ ] Manually via `discovery_smoke` against a live Mac: a sweep
       lists both real devices and simulators in one stream and
       returns promptly; re-running the sweep reflects a
@@ -544,13 +547,13 @@ locked dropdowns); discovered sets are shown only as hints.
 
 #### Acceptance criteria
 
-- [ ] Selecting a project prefills scheme + config and, after the
+- [x] Selecting a project prefills scheme + config and, after the
       resolve job, the bundle id; the discovered sets show as
       non-blocking hints beside each field.
-- [ ] Editing scheme/config re-resolves the bundle id only while
+- [x] Editing scheme/config re-resolves the bundle id only while
       the bundle-id field is untouched; once edited, the manual
       value sticks (story 49).
-- [ ] Every field accepts manual entry and is never reverted by a
+- [x] Every field accepts manual entry and is never reverted by a
       later discovery result; `build/ostrich` builds and
       `make test` passes.
 - [ ] Manually against a live Mac: pick a real multi-scheme
