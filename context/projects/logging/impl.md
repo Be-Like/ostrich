@@ -325,7 +325,7 @@ behavior is the unchanged stderr messages.
 
 ### Task 3 - Connection lifecycle instrumentation
 
-- **Status**: pending
+- **Status**: complete
 - **Blocked by**: Task 2
 - **User stories covered**: n/a
 
@@ -351,13 +351,13 @@ logging; no behavior change.
 
 #### Acceptance criteria
 
-- [ ] Worker thread records carry the `[wkr]` tag.
-- [ ] Each connstate phase transition is logged with phase names
+- [x] Worker thread records carry the `[wkr]` tag.
+- [x] Each connstate phase transition is logged with phase names
       (INFO).
-- [ ] On an SSH failure, the log carries the underlying libssh2
+- [x] On an SSH failure, the log carries the underlying libssh2
       code + string (auth / handshake / DNS / etc.), not just the
       `SshStatus` enum.
-- [ ] `ssh.h` is unchanged.
+- [x] `ssh.h` is unchanged.
 - [ ] Manual: a deliberate bad-host / bad-auth connect shows the
       real cause in the log while the UI still shows the campy line.
 

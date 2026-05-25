@@ -4,6 +4,7 @@
 #include "arena.h"
 #include "connstate.h"
 #include "discovery.h"
+#include "log.h"
 #include "spsc_ring.h"
 #include "ssh.h"
 
@@ -181,6 +182,12 @@ static void emit_ev(WorkerCtx *ctx, ConnPhase phase, SshStatus reason,
     if (hk_unknown || hk_mismatch)
         memcpy(ev.fingerprint, ctx->fingerprint, sizeof(ev.fingerprint));
     spsc_push(ctx->s->event_ring, &ev);
+
+    LOG_INFO(LG_CONN, "phase → %s%s%s reason=%s",
+             connstate_phase_str(phase),
+             hk_unknown  ? " [unknown-hostkey]"  : "",
+             hk_mismatch ? " [hostkey-mismatch]" : "",
+             ssh_status_str(reason));
 }
 
 /* Push a disc event; spin briefly until space (UI drains each frame). */
@@ -745,6 +752,8 @@ static void handle_breach(WorkerCtx *ctx, const SshConfig *cfg)
     connstate_init(&ctx->cs);
 
     ctx->cfg = *cfg;
+    LOG_INFO(LG_CONN, "breach: connecting to %s@%s:%d",
+             cfg->user, cfg->host, cfg->port);
 
     SshStatus st = ssh_connect_start(ctx->arena, ctx->cfg,
                                      &ctx->ssh, &ctx->ssh_fd);
@@ -888,6 +897,7 @@ static void drive_sub(WorkerCtx *ctx)
             }
             connstate_step(&ctx->cs, EV_HOSTKEY_OK);
             ctx->sub = SUB_AUTH;
+            LOG_INFO(LG_CONN, "handshake ok host=%s → AUTH", ctx->cfg.host);
         }
         return;
 
@@ -904,6 +914,7 @@ static void drive_sub(WorkerCtx *ctx)
         }
         connstate_step(&ctx->cs, EV_AUTH_OK);
         ctx->sub = SUB_PROBE;
+        LOG_INFO(LG_CONN, "auth ok → PROBE");
         return;
 
     case SUB_PROBE:
@@ -970,6 +981,9 @@ static int compute_timeout_ms(const WorkerCtx *ctx)
 static void *worker_fn(void *arg)
 {
     Session *s = arg;
+
+    log_set_thread_tag("wkr");
+    LOG_INFO(LG_SESS, "worker started");
 
     WorkerCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
@@ -1044,6 +1058,8 @@ static void *worker_fn(void *arg)
         if (ctx.sub == SUB_ONLINE && ctx.ssh)
             drive_disc_jobs(&ctx);
     }
+
+    LOG_INFO(LG_SESS, "worker stopped");
 
     if (ctx.ssh) ssh_disconnect(ctx.ssh);
     for (int i = 0; i < DISC_MAX_JOBS; i++) {

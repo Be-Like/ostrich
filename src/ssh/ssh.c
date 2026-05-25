@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "ssh.h"
+#include "log.h"
 
 #include <libssh2.h>
 
@@ -176,16 +177,33 @@ SshStatus ssh_handshake_step(Ssh *s)
         socklen_t len = sizeof(err);
         getsockopt(s->sock_fd, SOL_SOCKET, SO_ERROR, &err, &len);
 
-        if (err == ECONNREFUSED) return SSH_ERR_REFUSED;
-        if (err == ETIMEDOUT)    return SSH_ERR_TIMEOUT;
-        if (err != 0)            return SSH_ERR_IO;
+        if (err == ECONNREFUSED) {
+            LOG_WARN(LG_SSH, "TCP connect refused %s:%d", s->cfg.host, s->cfg.port);
+            return SSH_ERR_REFUSED;
+        }
+        if (err == ETIMEDOUT) {
+            LOG_WARN(LG_SSH, "TCP connect timed out %s:%d", s->cfg.host, s->cfg.port);
+            return SSH_ERR_TIMEOUT;
+        }
+        if (err != 0) {
+            LOG_WARN(LG_SSH, "TCP socket error %d %s:%d", err, s->cfg.host, s->cfg.port);
+            return SSH_ERR_IO;
+        }
 
         s->tcp_connected = 1;
     }
 
     int rc = libssh2_session_handshake(s->session, s->sock_fd);
     if (rc == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
-    if (rc < 0)                     return SSH_ERR_HANDSHAKE;
+    if (rc < 0) {
+#ifdef OSTRICH_DEBUG
+        char *errmsg = NULL;
+        int lssh_err = libssh2_session_last_error(s->session, &errmsg, NULL, 0);
+        LOG_WARN(LG_SSH, "SSH handshake failed: err=%d %s",
+                 lssh_err, errmsg ? errmsg : "");
+#endif
+        return SSH_ERR_HANDSHAKE;
+    }
     return SSH_OK;
 }
 
@@ -270,7 +288,15 @@ SshStatus ssh_auth_step(Ssh *s)
         int rc = libssh2_userauth_password(s->session,
                                            s->cfg.user, s->cfg.passkey);
         if (rc == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
-        if (rc < 0)                     return SSH_ERR_AUTH;
+        if (rc < 0) {
+#ifdef OSTRICH_DEBUG
+            char *errmsg = NULL;
+            int lssh_err = libssh2_session_last_error(s->session, &errmsg, NULL, 0);
+            LOG_WARN(LG_SSH, "password auth failed user=%s: err=%d %s",
+                     s->cfg.user, lssh_err, errmsg ? errmsg : "");
+#endif
+            return SSH_ERR_AUTH;
+        }
         return SSH_OK;
     }
 
@@ -283,14 +309,30 @@ SshStatus ssh_auth_step(Ssh *s)
     if (!s->agent_connected) {
         int rc = libssh2_agent_connect(s->agent);
         if (rc == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
-        if (rc < 0)                     return SSH_ERR_AUTH;
+        if (rc < 0) {
+#ifdef OSTRICH_DEBUG
+            char *errmsg = NULL;
+            int lssh_err = libssh2_session_last_error(s->session, &errmsg, NULL, 0);
+            LOG_WARN(LG_SSH, "agent connect failed: err=%d %s",
+                     lssh_err, errmsg ? errmsg : "");
+#endif
+            return SSH_ERR_AUTH;
+        }
         s->agent_connected = 1;
     }
 
     if (!s->agent_listed) {
         int rc = libssh2_agent_list_identities(s->agent);
         if (rc == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
-        if (rc < 0)                     return SSH_ERR_AUTH;
+        if (rc < 0) {
+#ifdef OSTRICH_DEBUG
+            char *errmsg = NULL;
+            int lssh_err = libssh2_session_last_error(s->session, &errmsg, NULL, 0);
+            LOG_WARN(LG_SSH, "agent list identities failed: err=%d %s",
+                     lssh_err, errmsg ? errmsg : "");
+#endif
+            return SSH_ERR_AUTH;
+        }
         s->agent_listed = 1;
     }
 
@@ -300,7 +342,11 @@ SshStatus ssh_auth_step(Ssh *s)
             int rc = libssh2_agent_get_identity(s->agent,
                                                 &s->agent_identity,
                                                 s->agent_prev);
-            if (rc == 1) return SSH_ERR_AUTH; /* no more identities */
+            if (rc == 1) {
+                LOG_WARN(LG_SSH, "agent auth: no identity accepted for user=%s",
+                         s->cfg.user);
+                return SSH_ERR_AUTH; /* no more identities */
+            }
             if (rc < 0)  return SSH_ERR_AUTH;
         }
 
@@ -323,6 +369,7 @@ SshStatus ssh_probe_step(Ssh *s, int *exit_code)
         if (!s->probe_channel) {
             if (libssh2_session_last_errno(s->session) == LIBSSH2_ERROR_EAGAIN)
                 return SSH_AGAIN;
+            LOG_WARN(LG_SSH, "probe: channel open failed");
             return SSH_ERR_NO_SHELL;
         }
         s->probe_state = PROBE_EXEC;
@@ -333,6 +380,7 @@ SshStatus ssh_probe_step(Ssh *s, int *exit_code)
         int rc = libssh2_channel_exec(s->probe_channel, "true");
         if (rc == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
         if (rc < 0) {
+            LOG_WARN(LG_SSH, "probe: exec 'true' failed");
             libssh2_channel_free(s->probe_channel);
             s->probe_channel = NULL;
             s->probe_state   = PROBE_OPEN;
@@ -349,6 +397,7 @@ SshStatus ssh_probe_step(Ssh *s, int *exit_code)
                                              buf, sizeof(buf));
             if (n == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
             if (n < 0) {
+                LOG_WARN(LG_SSH, "probe: read failed");
                 libssh2_channel_free(s->probe_channel);
                 s->probe_channel = NULL;
                 s->probe_state   = PROBE_OPEN;
@@ -368,6 +417,8 @@ SshStatus ssh_probe_step(Ssh *s, int *exit_code)
         s->probe_channel = NULL;
         s->probe_state   = PROBE_OPEN;
 
+        if (*exit_code != 0)
+            LOG_WARN(LG_SSH, "probe: 'true' exited %d", *exit_code);
         return (*exit_code == 0) ? SSH_OK : SSH_ERR_NO_SHELL;
     }
 

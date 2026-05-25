@@ -322,10 +322,26 @@ $(BUILD)/log_test: $(TESTS)/log_test.c $(SRC)/log.c | $(BUILD)
 	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) -o $@ \
 	    $(TESTS)/log_test.c $(SRC)/log.c
 
+# session_test compiles session.c directly with OSTRICH_DEBUG so LOG_* calls
+# inside the worker are active, letting us assert on log output.
+$(BUILD)/session_test: $(TESTS)/session_test.c $(SRC)/session/session.c \
+                       $(SRC)/log.c \
+                       $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+                       $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+                       $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) $(SSH_CFLAGS) \
+	    -o $@ $(TESTS)/session_test.c \
+	    $(SRC)/session/session.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(SRC)/log.c \
+	    $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+	    $(OPENSSL_LIBS) -lpthread -lm
+
 test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
       $(BUILD)/arena_test $(BUILD)/lexicon_test $(BUILD)/framestats_test \
       $(BUILD)/ui_test $(BUILD)/store_test $(BUILD)/discovery_test \
-      $(BUILD)/log_test
+      $(BUILD)/log_test $(BUILD)/session_test
 	./$(BUILD)/app_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
@@ -336,6 +352,7 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
 	./$(BUILD)/store_test
 	./$(BUILD)/discovery_test
 	./$(BUILD)/log_test
+	./$(BUILD)/session_test
 
 debug:
 	$(MAKE) CFLAGS="$(CFLAGS) -DOSTRICH_DEBUG -g -O0" all
