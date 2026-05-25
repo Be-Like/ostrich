@@ -338,10 +338,28 @@ $(BUILD)/session_test: $(TESTS)/session_test.c $(SRC)/session/session.c \
 	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
 	    $(OPENSSL_LIBS) -lpthread -lm
 
+# session_exec_test uses a stub SSH library instead of the real libssh.a so the
+# full exec lifecycle (channel open → exec → read → exit) can be driven without
+# a real Mac, letting us assert on LOG_* output from drive_disc_job.
+$(BUILD)/session_exec_test: $(TESTS)/session_exec_test.c \
+                            $(TESTS)/ssh_stub.c \
+                            $(SRC)/session/session.c \
+                            $(SRC)/log.c \
+                            $(BUILD)/libdiscovery.a $(BUILD)/libconnstate.a \
+                            $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) \
+	    -o $@ $(TESTS)/session_exec_test.c \
+	    $(TESTS)/ssh_stub.c \
+	    $(SRC)/session/session.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(SRC)/log.c \
+	    $(BUILD)/libdiscovery.a $(BUILD)/libconnstate.a \
+	    -lpthread -lm
+
 test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
       $(BUILD)/arena_test $(BUILD)/lexicon_test $(BUILD)/framestats_test \
       $(BUILD)/ui_test $(BUILD)/store_test $(BUILD)/discovery_test \
-      $(BUILD)/log_test $(BUILD)/session_test
+      $(BUILD)/log_test $(BUILD)/session_test $(BUILD)/session_exec_test
 	./$(BUILD)/app_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
@@ -353,6 +371,7 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
 	./$(BUILD)/discovery_test
 	./$(BUILD)/log_test
 	./$(BUILD)/session_test
+	./$(BUILD)/session_exec_test
 
 debug:
 	$(MAKE) CFLAGS="$(CFLAGS) -DOSTRICH_DEBUG -g -O0" all

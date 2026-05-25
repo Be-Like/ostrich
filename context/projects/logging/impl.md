@@ -363,7 +363,7 @@ logging; no behavior change.
 
 ### Task 4 - Command exec lifecycle (ops-first core)
 
-- **Status**: pending
+- **Status**: complete
 - **Blocked by**: Task 2 (Task 3 recommended first)
 - **User stories covered**: n/a
 
@@ -385,15 +385,25 @@ from `ssh.h`). Start and completion records share a job/channel id
 so they correlate in an interleaved log. The DEBUG body reuses the
 `log_blob` cap from Task 1. Additive only.
 
+`djob_kind_str()` and the timing locals are gated by `#ifdef
+OSTRICH_DEBUG` to suppress unused-symbol warnings in release builds
+(per the no-op macro caveat in `coding_standards.md`).
+
+A stub SSH library (`tests/ssh_stub.c`) simulates a full connect →
+exec → read → exit cycle so `session_exec_test` can assert on log
+output without a real Mac. The stub provides every symbol from
+`ssh.h`; the test binary links `session.c` + stub, skipping
+`libssh.a`/`liblibssh2.a`.
+
 #### Acceptance criteria
 
-- [ ] Each remote command logs an exec-start record with the full
+- [x] Each remote command logs an exec-start record with the full
       command string and a job/channel id.
-- [ ] Each completion logs exit code, duration (ms), and total byte
+- [x] Each completion logs exit code, duration (ms), and total byte
       count.
-- [ ] At DEBUG, the captured output body is logged via `LOG_BLOB`,
+- [x] At DEBUG, the captured output body is logged via `LOG_BLOB`,
       capped with an elision marker for large output.
-- [ ] Start and completion records share the job/channel id.
+- [x] Start and completion records share the job/channel id.
 - [ ] Manual on a live Mac: a SCAN / READ / SWEEP run produces a
       readable command timeline in the log.
 

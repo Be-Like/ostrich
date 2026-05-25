@@ -78,6 +78,9 @@ typedef struct {
     /* per-job watchdog: fail if the remote command never finishes */
     struct timespec deadline;
     bool          has_deadline;
+#ifdef OSTRICH_DEBUG
+    struct timespec exec_start; /* wall-clock when DJOB_EXEC succeeded  */
+#endif
     char          cmd[2048];   /* remote command string                */
     /* scan-specific */
     int           scan_depth;
@@ -280,6 +283,20 @@ static void fail_all_disc_jobs(WorkerCtx *ctx)
     }
 }
 
+#ifdef OSTRICH_DEBUG
+static const char *djob_kind_str(DiscJobKind k)
+{
+    switch (k) {
+    case DJOB_KIND_SCAN:              return "scan";
+    case DJOB_KIND_READ_BLUEPRINT:    return "read-blueprint";
+    case DJOB_KIND_RESOLVE_BUNDLE_ID: return "resolve-bundle-id";
+    case DJOB_KIND_SWEEP_DEVICECTL:   return "sweep-devicectl";
+    case DJOB_KIND_SWEEP_SIMCTL:      return "sweep-simctl";
+    default:                          return "none";
+    }
+}
+#endif
+
 /* Drive a single disc job through its state machine.
    Returns without blocking; re-called each worker iteration. */
 static void drive_disc_job(WorkerCtx *ctx, int i)
@@ -311,6 +328,11 @@ static void drive_disc_job(WorkerCtx *ctx, int i)
             SshStatus st = ssh_channel_exec(j->ch, j->cmd);
             if (st == SSH_AGAIN) return;
             if (st != SSH_OK) { fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED); return; }
+#ifdef OSTRICH_DEBUG
+            j->exec_start = mono_now();
+#endif
+            LOG_INFO(LG_DISC, "exec job=%d kind=%s cmd=\"%s\"",
+                     i, djob_kind_str(j->kind), j->cmd);
             j->state = DJOB_READ;
             again    = true;
             break;
@@ -347,6 +369,16 @@ static void drive_disc_job(WorkerCtx *ctx, int i)
             ssh_channel_close(j->ch);
             j->ch = NULL;
             if (st != SSH_OK) { fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED); return; }
+#ifdef OSTRICH_DEBUG
+            {
+                struct timespec now = mono_now();
+                long ms = (now.tv_sec  - j->exec_start.tv_sec)  * 1000L
+                        + (now.tv_nsec - j->exec_start.tv_nsec) / 1000000L;
+                LOG_INFO(LG_DISC, "done job=%d exit=%d ms=%ldms bytes=%zu",
+                         i, exit_code, ms, j->buf_len);
+                LOG_BLOB(LOG_DEBUG, LG_DISC, "output", j->buf, j->buf_len);
+            }
+#endif
             if (exit_code == 127) { fail_disc_job(ctx, i, DISC_ERR_XCODE_MISSING); return; }
             if (exit_code != 0)   { fail_disc_job(ctx, i, DISC_ERR_COMMAND_FAILED); return; }
             {
