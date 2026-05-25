@@ -100,7 +100,7 @@ T5 → T6 → T7 → T8 → T9.
 
 ### Task 1 - librunstate
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: 13, 16, 17, 18, 19, 20, 42, 45, 54
 
@@ -142,24 +142,24 @@ only (coding_standards "Testing").
 
 #### Acceptance criteria
 
-- [ ] `include/runstate.h` declares `RunPhase`, `RunEvent`,
+- [x] `include/runstate.h` declares `RunPhase`, `RunEvent`,
       `RunAction`, `RunState`, and the seven functions exactly as
       ARD §"Interfaces (`runstate.h`)" specifies.
-- [ ] Every documented transition is covered by `runstate_test`,
+- [x] Every documented transition is covered by `runstate_test`,
       including terminate-first re-EXECUTE (running + EXECUTE →
       terminate-first action → building), COMPILE-while-running
       (running + COMPILE → build on, phase stays running), all
       failure edges (build/prime/install/launch), `CONSOLE_EOF` →
       idle, and `DROP` → aborted.
-- [ ] The build-generation stale rule is exercised: a successful
+- [x] The build-generation stale rule is exercised: a successful
       build bumps `built_gen`; a Play launch sets `deployed_gen`;
       `runstate_stale` is true only while running with
       `built_gen > deployed_gen`, and a COMPILE-while-running makes
       it true.
-- [ ] `runstate_phase_lex` and `runstate_reason_lex` return the
+- [x] `runstate_phase_lex` and `runstate_reason_lex` return the
       correct `LexKey` for each phase and each failure status (no
       stray `(?)`).
-- [ ] `build/librunstate.a` builds clean on Linux and macOS
+- [x] `build/librunstate.a` builds clean on Linux and macOS
       (`CC`/`CFLAGS` honored), `tests/runstate_test.c` links the
       archive, and `make test` passes.
 

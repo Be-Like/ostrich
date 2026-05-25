@@ -223,7 +223,7 @@ static int test_preset_action_keys(void) {
 
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
-    ASSERT("LEX__COUNT is 54", LEX__COUNT == 54);
+    ASSERT("LEX__COUNT is 71", LEX__COUNT == 71);
     PASS("lex_count_consistency");
     return 0;
 }

@@ -69,6 +69,27 @@ static const char *s_table[LEX__COUNT] = {
     /* LEX_REC_PRESET_NEW    */ "NEW PRESET",
     /* LEX_REC_PRESET_RENAME */ "RENAME",
     /* LEX_REC_PRESET_DELETE */ "DELETE",
+
+    /* LEX_RUN_EXECUTE       */ "\xe2\x96\xb6 EXECUTE",
+    /* LEX_RUN_COMPILE       */ "COMPILE",
+    /* LEX_RUN_ABORT         */ "\xe2\x96\xa0 ABORT",
+
+    /* LEX_RUN_STANDBY       */ "STANDBY",
+    /* LEX_RUN_BUILDING      */ "COMPILING EXPLOIT\xe2\x80\xa6",
+    /* LEX_RUN_PRIMING       */ "PRIMING TARGET\xe2\x80\xa6",
+    /* LEX_RUN_INSTALLING    */ "DEPLOYING PAYLOAD\xe2\x80\xa6",
+    /* LEX_RUN_LAUNCHING     */ "EXECUTING PAYLOAD\xe2\x80\xa6",
+    /* LEX_RUN_RUNNING       */ "TARGET ACQUIRED // LIVE",
+    /* LEX_RUN_BUILD_FAILED  */ "EXPLOIT FAILED",
+    /* LEX_RUN_DEPLOY_FAILED */ "DEPLOYMENT FAILED // PAYLOAD REJECTED",
+    /* LEX_RUN_ABORTED       */ "OPERATION ABORTED",
+
+    /* LEX_RUN_LIVE_FEED     */ "LIVE FEED // INTERCEPTING",
+    /* LEX_RUN_NEW_PAYLOAD   */ "> \xe2\x94\x80\xe2\x94\x80 NEW PAYLOAD \xe2\x94\x80\xe2\x94\x80",
+    /* LEX_RUN_STALE         */ "PAYLOAD STALE // NEW EXPLOIT READY",
+
+    /* LEX_RUN_BUILD_EMPTY   */ "// NO PAYLOAD COMPILED",
+    /* LEX_RUN_DEVICE_EMPTY  */ "// NO SIGNAL \xe2\x80\x94 TARGET DARK",
 };
 
 const char *lex(LexKey key) {
