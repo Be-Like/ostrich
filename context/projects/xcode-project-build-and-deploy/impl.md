@@ -294,7 +294,7 @@ through `logbuf.h` only.
 
 ### Task 4 - lexicon Build/deploy keys
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: 48
 
@@ -325,14 +325,14 @@ task 5 used.
 
 #### Acceptance criteria
 
-- [ ] Every Build/deploy key above exists in `include/lexicon.h`
+- [x] Every Build/deploy key above exists in `include/lexicon.h`
       and maps to its `theme.md` string in `src/lexicon.c`.
-- [ ] `lex()` returns the exact themed strings (no `(?)`) for all
+- [x] `lex()` returns the exact themed strings (no `(?)`) for all
       new keys; UTF-8 glyphs and the `//` separators are preserved.
-- [ ] `runstate_phase_lex`/`runstate_reason_lex` and `bd_reason_lex`
+- [x] `runstate_phase_lex`/`runstate_reason_lex` and `bd_reason_lex`
       resolve through these keys end-to-end (the key set is
       complete — no phase or failure status lacks a string).
-- [ ] `tests/lexicon_test.c` asserts the new keys and `make test`
+- [x] `tests/lexicon_test.c` asserts the new keys and `make test`
       passes.
 
 ### Task 5 - worker: forward chain + DevConsole + watchdog

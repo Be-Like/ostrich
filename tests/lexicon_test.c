@@ -221,6 +221,73 @@ static int test_preset_action_keys(void) {
     return 0;
 }
 
+static int test_run_control_keys(void) {
+    ASSERT("execute exact",
+           strcmp(lex(LEX_RUN_EXECUTE), "\xe2\x96\xb6 EXECUTE") == 0);
+    ASSERT("compile exact",
+           strcmp(lex(LEX_RUN_COMPILE), "COMPILE") == 0);
+    ASSERT("run_abort exact",
+           strcmp(lex(LEX_RUN_ABORT), "\xe2\x96\xa0 ABORT") == 0);
+    PASS("run_control_keys");
+    return 0;
+}
+
+static int test_run_state_label_keys(void) {
+    ASSERT("standby exact",
+           strcmp(lex(LEX_RUN_STANDBY), "STANDBY") == 0);
+    ASSERT("building exact",
+           strcmp(lex(LEX_RUN_BUILDING),
+                  "COMPILING EXPLOIT\xe2\x80\xa6") == 0);
+    ASSERT("priming exact",
+           strcmp(lex(LEX_RUN_PRIMING),
+                  "PRIMING TARGET\xe2\x80\xa6") == 0);
+    ASSERT("installing exact",
+           strcmp(lex(LEX_RUN_INSTALLING),
+                  "DEPLOYING PAYLOAD\xe2\x80\xa6") == 0);
+    ASSERT("launching exact",
+           strcmp(lex(LEX_RUN_LAUNCHING),
+                  "EXECUTING PAYLOAD\xe2\x80\xa6") == 0);
+    ASSERT("running exact",
+           strcmp(lex(LEX_RUN_RUNNING), "TARGET ACQUIRED // LIVE") == 0);
+    ASSERT("build_failed exact",
+           strcmp(lex(LEX_RUN_BUILD_FAILED), "EXPLOIT FAILED") == 0);
+    ASSERT("deploy_failed exact",
+           strcmp(lex(LEX_RUN_DEPLOY_FAILED),
+                  "DEPLOYMENT FAILED // PAYLOAD REJECTED") == 0);
+    ASSERT("aborted exact",
+           strcmp(lex(LEX_RUN_ABORTED), "OPERATION ABORTED") == 0);
+    /* build and deploy failures must be distinct strings */
+    ASSERT("build_failed != deploy_failed",
+           strcmp(lex(LEX_RUN_BUILD_FAILED),
+                  lex(LEX_RUN_DEPLOY_FAILED)) != 0);
+    PASS("run_state_label_keys");
+    return 0;
+}
+
+static int test_run_device_log_keys(void) {
+    ASSERT("live_feed exact",
+           strcmp(lex(LEX_RUN_LIVE_FEED), "LIVE FEED // INTERCEPTING") == 0);
+    ASSERT("new_payload exact",
+           strcmp(lex(LEX_RUN_NEW_PAYLOAD),
+                  "> \xe2\x94\x80\xe2\x94\x80 NEW PAYLOAD"
+                  " \xe2\x94\x80\xe2\x94\x80") == 0);
+    ASSERT("stale exact",
+           strcmp(lex(LEX_RUN_STALE),
+                  "PAYLOAD STALE // NEW EXPLOIT READY") == 0);
+    PASS("run_device_log_keys");
+    return 0;
+}
+
+static int test_run_log_empty_keys(void) {
+    ASSERT("build_empty exact",
+           strcmp(lex(LEX_RUN_BUILD_EMPTY), "// NO PAYLOAD COMPILED") == 0);
+    ASSERT("device_empty exact",
+           strcmp(lex(LEX_RUN_DEVICE_EMPTY),
+                  "// NO SIGNAL \xe2\x80\x94 TARGET DARK") == 0);
+    PASS("run_log_empty_keys");
+    return 0;
+}
+
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
     ASSERT("LEX__COUNT is 71", LEX__COUNT == 71);
@@ -246,6 +313,10 @@ int main(void) {
     failures += test_recon_action_keys();
     failures += test_recon_field_keys();
     failures += test_preset_action_keys();
+    failures += test_run_control_keys();
+    failures += test_run_state_label_keys();
+    failures += test_run_device_log_keys();
+    failures += test_run_log_empty_keys();
     failures += test_lex_count_consistency();
 
     if (failures == 0) {
