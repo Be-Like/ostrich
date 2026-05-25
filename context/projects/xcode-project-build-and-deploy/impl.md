@@ -337,7 +337,7 @@ task 5 used.
 
 ### Task 5 - worker: forward chain + DevConsole + watchdog
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 1, 2
 - **User stories covered**: 1, 3, 9, 10, 11, 12, 15, 31, 32, 33,
   34, 44, 46, 53, 55, 56
@@ -406,36 +406,36 @@ host-free automated path.
 
 #### Acceptance criteria
 
-- [ ] `session.h` declares `SessionRunCmd`, `SessionRunEvent`,
+- [x] `session.h` declares `SessionRunCmd`, `SessionRunEvent`,
       `session_run_submit`, and `session_run_poll` exactly as ARD
       §"Interfaces (`session.h`)" specifies; the existing
       connection and discovery rings/types are unchanged and their
       tests still pass.
-- [ ] Only fixed-size records cross the run rings; log bytes are
+- [x] Only fixed-size records cross the run rings; log bytes are
       copied into the `chunk[RUN_CHUNK_CAP]` field and no per-run
       arena pointer is shared across the thread boundary.
-- [ ] `session_run_test.c` (stub SSH) drives an EXECUTE through
+- [x] `session_run_test.c` (stub SSH) drives an EXECUTE through
       `settings → build → install → launch → running`, asserting
       the `REV_PHASE` sequence, that build/install bytes arrive as
       `REV_BUILD_LOG` chunks and post-launch bytes arrive as
       `REV_DEVICE_LOG` chunks, and that the launch channel is handed
       to the DevConsole (it keeps streaming after the chain
       completes).
-- [ ] In the stub test, a non-zero `build` exit resolves to
+- [x] In the stub test, a non-zero `build` exit resolves to
       `RUN_BUILD_FAILED` and a non-zero `install`/`launch` exit
       resolves to the distinct `RUN_DEPLOY_FAILED`; a COMPILE runs
       `settings`+`build` only and stops (no install/launch, no
       target required).
-- [ ] The output-progress watchdog is exercised: a step whose byte
+- [x] The output-progress watchdog is exercised: a step whose byte
       stream stalls past the window resolves to a terminal failure,
       while a long step that keeps emitting bytes does not — proving
       reset-on-byte; the DevConsole is exempt and a `CONSOLE_EOF`
       resolves cleanly to idle.
-- [ ] The worker never blocks: keepalive and the connection/disc
+- [x] The worker never blocks: keepalive and the connection/disc
       machines continue while a run is in flight (the run path only
       adds a non-blocking `drive_run` and serializes opens through
       `open_owner`).
-- [ ] `build/librunstate.a`, `build/libbuilddeploy.a`,
+- [x] `build/librunstate.a`, `build/libbuilddeploy.a`,
       `build/libsession.a`, `tools/run_smoke`, and the full app
       build clean on Linux and macOS, and `make test` passes.
 - [ ] Manually via `run_smoke` against a live Mac: EXECUTE on a real

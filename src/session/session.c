@@ -2,9 +2,11 @@
 
 #include "session.h"
 #include "arena.h"
+#include "builddeploy.h"
 #include "connstate.h"
 #include "discovery.h"
 #include "log.h"
+#include "runstate.h"
 #include "spsc_ring.h"
 #include "ssh.h"
 
@@ -27,6 +29,20 @@
 #define CONNECT_TIMEOUT_SEC    30.0
 #define KEEPALIVE_INTERVAL_SEC 30
 
+/* ── run subsystem constants ──────────────────────────────────────── */
+
+#define RUN_CMD_RING_CAP         8
+#define RUN_EVENT_RING_CAP      64
+#define RUN_ARENA_SZ        (256 * 1024)
+#define RUN_SETTINGS_BUF_CAP (256 * 1024)
+#define RUN_READ_CHUNK       4096
+#ifdef RUN_STALL_SEC_OVERRIDE
+#define RUN_STALL_SEC RUN_STALL_SEC_OVERRIDE
+#else
+#define RUN_STALL_SEC 120.0
+#endif
+#define RUN_CHAIN_SLOT       DISC_MAX_JOBS   /* = 4, for open_owner seam */
+
 /* ── discovery job engine constants ───────────────────────────────── */
 
 #define DISC_MAX_JOBS      4
@@ -43,6 +59,8 @@ struct Session {
     SpscRing  *event_ring;       /* worker→UI: SessionEvent records    */
     SpscRing  *disc_cmd_ring;    /* UI→worker: SessionDiscCmd records  */
     SpscRing  *disc_event_ring;  /* worker→UI: SessionDiscEvent records */
+    SpscRing  *run_cmd_ring;     /* UI→worker: SessionRunCmd records   */
+    SpscRing  *run_event_ring;   /* worker→UI: SessionRunEvent records */
     int        pipe_read;        /* worker reads wakeup bytes          */
     int        pipe_write;       /* UI writes to wake worker           */
     pthread_t  thread;
@@ -97,6 +115,55 @@ typedef struct {
     TargetList    targets;
 } DiscJob;
 
+/* ── run chain types (worker-private) ────────────────────────────── */
+
+typedef enum {
+    RCHAIN_STEP_SETTINGS,
+    RCHAIN_STEP_BUILD,
+    RCHAIN_STEP_PRIME_BOOT,
+    RCHAIN_STEP_PRIME_STATUS,
+    RCHAIN_STEP_INSTALL,
+    RCHAIN_STEP_LAUNCH,
+} RChainStep;
+
+typedef enum {
+    RCHAIN_OPEN,
+    RCHAIN_EXEC,
+    RCHAIN_READ,
+    RCHAIN_EXIT,
+} RChainState;
+
+typedef struct {
+    bool        active;
+    RChainStep  step;
+    RChainState state;
+    SshChannel *ch;
+    RunConfig   cfg;
+    Target      target;
+    bool        has_target;
+    bool        compile_only;
+    char       *settings_buf;  /* arena-allocated; NULL when not accumulating */
+    size_t      settings_len;
+    char        app_path[1024]; /* parsed product path */
+    long        build_pgid;     /* parsed from PID marker (for ABORT in T6) */
+    struct timespec stall_deadline;
+    bool            has_stall_deadline;
+} RunChain;
+
+typedef enum {
+    DCON_IDLE,
+    DCON_STREAMING,
+    DCON_EXIT,
+} DevConState;
+
+typedef struct {
+    DevConState  state;
+    SshChannel  *ch;
+    char         bundle_id[256];
+    char         udid[128];
+    bool         is_sim;
+} DevConsole;
+
 /* ── worker-private sub-phase ─────────────────────────────────────── */
 
 typedef enum {
@@ -129,6 +196,11 @@ typedef struct {
     int              sweep_group_remaining; /* sweep jobs still in flight */
     bool             sweep_group_failed;    /* SWEEP_FAILED already emitted */
     int              sweep_total;           /* DEV_TARGET events emitted so far */
+    /* run subsystem */
+    RunChain         run_chain;
+    DevConsole       dev_console;
+    RunState         rs;
+    Arena           *run_arena;
 } WorkerCtx;
 
 /* ── time helpers ─────────────────────────────────────────────────── */
@@ -198,6 +270,484 @@ static void push_disc_ev(WorkerCtx *ctx, const SessionDiscEvent *ev)
 {
     while (!spsc_push(ctx->s->disc_event_ring, ev))
         ;
+}
+
+/* ── run subsystem helpers ────────────────────────────────────────── */
+
+static void push_run_ev(WorkerCtx *ctx, const SessionRunEvent *ev)
+{
+    while (!spsc_push(ctx->s->run_event_ring, ev))
+        ;
+}
+
+static void emit_run_phase(WorkerCtx *ctx, RunPhase phase, BdStatus reason)
+{
+    SessionRunEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.kind   = REV_PHASE;
+    ev.phase  = phase;
+    ev.reason = reason;
+    push_run_ev(ctx, &ev);
+    LOG_INFO(LG_RUN, "phase → %s reason=%s",
+             runstate_phase_str(phase), bd_status_str(reason));
+}
+
+static void emit_build_log(WorkerCtx *ctx, const char *bytes, size_t n)
+{
+    while (n > 0) {
+        size_t chunk = n < RUN_CHUNK_CAP ? n : (size_t)RUN_CHUNK_CAP;
+        SessionRunEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind = REV_BUILD_LOG;
+        ev.len  = (int)chunk;
+        memcpy(ev.chunk, bytes, chunk);
+        push_run_ev(ctx, &ev);
+        bytes += chunk;
+        n     -= chunk;
+    }
+}
+
+static void emit_device_log(WorkerCtx *ctx, const char *bytes, size_t n)
+{
+    while (n > 0) {
+        size_t chunk = n < RUN_CHUNK_CAP ? n : (size_t)RUN_CHUNK_CAP;
+        SessionRunEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind = REV_DEVICE_LOG;
+        ev.len  = (int)chunk;
+        memcpy(ev.chunk, bytes, chunk);
+        push_run_ev(ctx, &ev);
+        bytes += chunk;
+        n     -= chunk;
+    }
+}
+
+static RunEvent step_to_fail_ev(RChainStep step)
+{
+    switch (step) {
+    case RCHAIN_STEP_SETTINGS:
+    case RCHAIN_STEP_BUILD:        return RUN_EV_BUILD_FAIL;
+    case RCHAIN_STEP_PRIME_BOOT:
+    case RCHAIN_STEP_PRIME_STATUS: return RUN_EV_PRIME_FAIL;
+    case RCHAIN_STEP_INSTALL:      return RUN_EV_INSTALL_FAIL;
+    case RCHAIN_STEP_LAUNCH:       return RUN_EV_LAUNCH_FAIL;
+    }
+    return RUN_EV_BUILD_FAIL;
+}
+
+#ifdef OSTRICH_DEBUG
+static const char *rchain_step_str(RChainStep step)
+{
+    switch (step) {
+    case RCHAIN_STEP_SETTINGS:     return "settings";
+    case RCHAIN_STEP_BUILD:        return "build";
+    case RCHAIN_STEP_PRIME_BOOT:   return "prime-boot";
+    case RCHAIN_STEP_PRIME_STATUS: return "prime-status";
+    case RCHAIN_STEP_INSTALL:      return "install";
+    case RCHAIN_STEP_LAUNCH:       return "launch";
+    }
+    return "?";
+}
+#endif
+
+static void fail_run_chain(WorkerCtx *ctx, RunEvent ev, BdStatus reason)
+{
+    RunChain *rc = &ctx->run_chain;
+    if (ctx->open_owner == RUN_CHAIN_SLOT) ctx->open_owner = -1;
+    if (rc->ch) { ssh_channel_close(rc->ch); rc->ch = NULL; }
+    arena_reset(ctx->run_arena);
+    rc->settings_buf = NULL;
+    rc->settings_len = 0;
+    rc->active = false;
+
+    RunAction act = runstate_step(&ctx->rs, ev);
+    (void)act;
+    emit_run_phase(ctx, ctx->rs.phase, reason);
+    LOG_WARN(LG_RUN, "chain fail step=%s reason=%s",
+             rchain_step_str(rc->step), bd_status_str(reason));
+}
+
+static void handle_step_exit(WorkerCtx *ctx, int exit_code)
+{
+    RunChain *rc = &ctx->run_chain;
+
+    switch (rc->step) {
+    case RCHAIN_STEP_SETTINGS: {
+        if (exit_code != 0) {
+            BdStatus r = (exit_code == 127) ? BD_ERR_XCODE_MISSING : BD_ERR_BUILD;
+            fail_run_chain(ctx, RUN_EV_BUILD_FAIL, r);
+            return;
+        }
+        Str raw = { rc->settings_buf, rc->settings_len };
+        BdStatus bs = bd_parse_product_path(raw, rc->app_path, sizeof(rc->app_path));
+        if (bs != BD_OK) {
+            fail_run_chain(ctx, RUN_EV_BUILD_FAIL, BD_ERR_PARSE);
+            return;
+        }
+        rc->settings_buf = NULL;
+        rc->settings_len = 0;
+        RunAction act = runstate_step(&ctx->rs, RUN_EV_SETTINGS_OK);
+        (void)act;
+        rc->step  = RCHAIN_STEP_BUILD;
+        rc->state = RCHAIN_OPEN;
+        break;
+    }
+    case RCHAIN_STEP_BUILD: {
+        if (exit_code != 0) {
+            BdStatus r = (exit_code == 127) ? BD_ERR_XCODE_MISSING : BD_ERR_BUILD;
+            fail_run_chain(ctx, RUN_EV_BUILD_FAIL, r);
+            return;
+        }
+        RunAction act = runstate_step(&ctx->rs, RUN_EV_BUILD_OK);
+        if (act == RUN_ACT_DONE) {
+            emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+            rc->active = false;
+            return;
+        }
+        emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+        if (act == RUN_ACT_PRIME) {
+            rc->step  = RCHAIN_STEP_PRIME_BOOT;
+            rc->state = RCHAIN_OPEN;
+        } else {
+            rc->step  = RCHAIN_STEP_INSTALL;
+            rc->state = RCHAIN_OPEN;
+        }
+        break;
+    }
+    case RCHAIN_STEP_PRIME_BOOT: {
+        if (exit_code != 0) {
+            fail_run_chain(ctx, RUN_EV_PRIME_FAIL, BD_ERR_BOOT);
+            return;
+        }
+        rc->step  = RCHAIN_STEP_PRIME_STATUS;
+        rc->state = RCHAIN_OPEN;
+        break;
+    }
+    case RCHAIN_STEP_PRIME_STATUS: {
+        if (exit_code != 0) {
+            fail_run_chain(ctx, RUN_EV_PRIME_FAIL, BD_ERR_BOOT);
+            return;
+        }
+        RunAction act = runstate_step(&ctx->rs, RUN_EV_PRIME_OK);
+        (void)act;
+        emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+        rc->step  = RCHAIN_STEP_INSTALL;
+        rc->state = RCHAIN_OPEN;
+        break;
+    }
+    case RCHAIN_STEP_INSTALL: {
+        if (exit_code != 0) {
+            BdStatus r = (exit_code == 127) ? BD_ERR_XCODE_MISSING : BD_ERR_INSTALL;
+            fail_run_chain(ctx, RUN_EV_INSTALL_FAIL, r);
+            return;
+        }
+        RunAction act = runstate_step(&ctx->rs, RUN_EV_INSTALL_OK);
+        (void)act;
+        emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+        rc->step  = RCHAIN_STEP_LAUNCH;
+        rc->state = RCHAIN_OPEN;
+        break;
+    }
+    case RCHAIN_STEP_LAUNCH:
+        /* Handled at EXEC time via handoff */
+        break;
+    }
+}
+
+static void process_run_chunk(WorkerCtx *ctx, const char *buf, size_t n)
+{
+    RunChain *rc = &ctx->run_chain;
+    switch (rc->step) {
+    case RCHAIN_STEP_SETTINGS:
+        if (rc->settings_buf && rc->settings_len + n <= RUN_SETTINGS_BUF_CAP) {
+            memcpy(rc->settings_buf + rc->settings_len, buf, n);
+            rc->settings_len += n;
+        }
+        break;
+    case RCHAIN_STEP_BUILD:
+        emit_build_log(ctx, buf, n);
+        {
+            Str chunk = { buf, n };
+            long pgid = 0;
+            if (bd_parse_pid_marker(chunk, &pgid) && pgid > 0) {
+                rc->build_pgid = pgid;
+                LOG_INFO(LG_RUN, "build pgid=%ld", pgid);
+            }
+        }
+        break;
+    case RCHAIN_STEP_PRIME_BOOT:
+    case RCHAIN_STEP_PRIME_STATUS:
+    case RCHAIN_STEP_INSTALL:
+        emit_build_log(ctx, buf, n);
+        break;
+    case RCHAIN_STEP_LAUNCH:
+        break;
+    }
+}
+
+static BdStatus build_step_cmd(WorkerCtx *ctx, char *cmd, size_t cap)
+{
+    RunChain *rc = &ctx->run_chain;
+    switch (rc->step) {
+    case RCHAIN_STEP_SETTINGS:
+        return bd_settings_cmd(&rc->cfg, &rc->target, rc->has_target, cmd, cap);
+    case RCHAIN_STEP_BUILD:
+        return bd_build_cmd(&rc->cfg, &rc->target, rc->has_target, cmd, cap);
+    case RCHAIN_STEP_PRIME_BOOT:
+        return bd_boot_cmd(&rc->target, cmd, cap);
+    case RCHAIN_STEP_PRIME_STATUS:
+        return bd_bootstatus_cmd(&rc->target, cmd, cap);
+    case RCHAIN_STEP_INSTALL:
+        return bd_install_cmd(&rc->target, rc->app_path, cmd, cap);
+    case RCHAIN_STEP_LAUNCH:
+        return bd_launch_cmd(&rc->target, rc->cfg.bundle_id, cmd, cap);
+    }
+    return BD_ERR_OOM;
+}
+
+static void drive_dev_console(WorkerCtx *ctx)
+{
+    DevConsole *dc = &ctx->dev_console;
+
+again:
+    switch (dc->state) {
+    case DCON_IDLE:
+        return;
+    case DCON_STREAMING: {
+        for (;;) {
+            if (ssh_channel_eof(dc->ch)) {
+                dc->state = DCON_EXIT;
+                goto again;
+            }
+            char tmp[RUN_READ_CHUNK];
+            size_t n = 0;
+            SshStatus st = ssh_channel_read(dc->ch, tmp, sizeof(tmp), &n);
+            if (st == SSH_AGAIN) return;
+            if (st != SSH_OK) {
+                ssh_channel_close(dc->ch);
+                dc->ch = NULL;
+                dc->state = DCON_IDLE;
+                RunAction act = runstate_step(&ctx->rs, RUN_EV_DROP);
+                (void)act;
+                emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+                LOG_WARN(LG_RUN, "dev-console io-error → aborted");
+                return;
+            }
+            if (n == 0) return;
+            emit_device_log(ctx, tmp, n);
+        }
+    }
+    case DCON_EXIT: {
+        int exit_code = -1;
+        SshStatus st = ssh_channel_exit(dc->ch, &exit_code);
+        if (st == SSH_AGAIN) return;
+        ssh_channel_close(dc->ch);
+        dc->ch = NULL;
+        dc->state = DCON_IDLE;
+        LOG_INFO(LG_RUN, "dev-console exit=%d", exit_code);
+        if (exit_code != 0) {
+            RunAction act = runstate_step(&ctx->rs, RUN_EV_LAUNCH_FAIL);
+            (void)act;
+            emit_run_phase(ctx, ctx->rs.phase, BD_ERR_LAUNCH);
+        } else {
+            RunAction act = runstate_step(&ctx->rs, RUN_EV_CONSOLE_EOF);
+            (void)act;
+            emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+        }
+        break;
+    }
+    }
+}
+
+static void drive_run_chain(WorkerCtx *ctx)
+{
+    RunChain *rc = &ctx->run_chain;
+    if (!rc->active) return;
+
+    bool again = true;
+    while (again && rc->active) {
+        again = false;
+
+        switch (rc->state) {
+        case RCHAIN_OPEN: {
+            if (ctx->open_owner != -1 && ctx->open_owner != RUN_CHAIN_SLOT) return;
+            ctx->open_owner = RUN_CHAIN_SLOT;
+            SshStatus st = ssh_channel_open(ctx->ssh, &rc->ch);
+            if (st == SSH_AGAIN) return;
+            if (st != SSH_OK) {
+                ctx->open_owner = -1;
+                fail_run_chain(ctx, step_to_fail_ev(rc->step), BD_ERR_BUILD);
+                return;
+            }
+            ctx->open_owner = -1;
+            rc->state = RCHAIN_EXEC;
+            again = true;
+            break;
+        }
+        case RCHAIN_EXEC: {
+            /* Allocate settings buffer on first exec of the settings step */
+            if (rc->step == RCHAIN_STEP_SETTINGS && !rc->settings_buf) {
+                rc->settings_buf = arena_alloc(ctx->run_arena, RUN_SETTINGS_BUF_CAP, 1);
+                if (!rc->settings_buf) {
+                    fail_run_chain(ctx, RUN_EV_BUILD_FAIL, BD_ERR_OOM);
+                    return;
+                }
+                rc->settings_len = 0;
+            }
+
+            char cmd[4096];
+            BdStatus bs = build_step_cmd(ctx, cmd, sizeof(cmd));
+            if (bs != BD_OK) {
+                fail_run_chain(ctx, step_to_fail_ev(rc->step), bs);
+                return;
+            }
+
+            SshStatus st = ssh_channel_exec(rc->ch, cmd);
+            if (st == SSH_AGAIN) return;
+            if (st != SSH_OK) {
+                fail_run_chain(ctx, step_to_fail_ev(rc->step), BD_ERR_BUILD);
+                return;
+            }
+
+            LOG_INFO(LG_RUN, "exec step=%s", rchain_step_str(rc->step));
+
+            /* Launch: hand channel to DevConsole immediately */
+            if (rc->step == RCHAIN_STEP_LAUNCH) {
+                ctx->dev_console.ch    = rc->ch;
+                ctx->dev_console.state = DCON_STREAMING;
+                size_t blen = strlen(rc->cfg.bundle_id);
+                if (blen >= sizeof(ctx->dev_console.bundle_id))
+                    blen = sizeof(ctx->dev_console.bundle_id) - 1;
+                memcpy(ctx->dev_console.bundle_id, rc->cfg.bundle_id, blen);
+                ctx->dev_console.bundle_id[blen] = '\0';
+                size_t ulen = strlen(rc->target.udid);
+                if (ulen >= sizeof(ctx->dev_console.udid))
+                    ulen = sizeof(ctx->dev_console.udid) - 1;
+                memcpy(ctx->dev_console.udid, rc->target.udid, ulen);
+                ctx->dev_console.udid[ulen] = '\0';
+                ctx->dev_console.is_sim = rc->target.is_simulator;
+                rc->ch     = NULL;
+                rc->active = false;
+
+                RunAction act = runstate_step(&ctx->rs, RUN_EV_LAUNCH_OK);
+                (void)act;
+                emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+                LOG_INFO(LG_RUN, "launch: handed to dev-console");
+                return;
+            }
+
+            /* Other steps: start reading */
+            rc->state = RCHAIN_READ;
+            rc->stall_deadline     = deadline_in(RUN_STALL_SEC);
+            rc->has_stall_deadline = true;
+            again = true;
+            break;
+        }
+        case RCHAIN_READ: {
+            if (rc->has_stall_deadline && deadline_past(&rc->stall_deadline)) {
+                LOG_WARN(LG_RUN, "stall timeout step=%s", rchain_step_str(rc->step));
+                fail_run_chain(ctx, step_to_fail_ev(rc->step), BD_ERR_BUILD);
+                return;
+            }
+            for (;;) {
+                if (ssh_channel_eof(rc->ch)) {
+                    rc->state = RCHAIN_EXIT;
+                    again     = true;
+                    break;
+                }
+                char tmp[RUN_READ_CHUNK];
+                size_t n = 0;
+                SshStatus st = ssh_channel_read(rc->ch, tmp, sizeof(tmp), &n);
+                if (st == SSH_AGAIN) break;
+                if (st != SSH_OK) {
+                    fail_run_chain(ctx, step_to_fail_ev(rc->step), BD_ERR_BUILD);
+                    return;
+                }
+                if (n == 0) break;
+                /* Reset stall watchdog on each byte */
+                rc->stall_deadline = deadline_in(RUN_STALL_SEC);
+                process_run_chunk(ctx, tmp, n);
+            }
+            break;
+        }
+        case RCHAIN_EXIT: {
+            int exit_code = -1;
+            SshStatus st = ssh_channel_exit(rc->ch, &exit_code);
+            if (st == SSH_AGAIN) return;
+            LOG_INFO(LG_RUN, "exit step=%s code=%d", rchain_step_str(rc->step), exit_code);
+            ssh_channel_close(rc->ch);
+            rc->ch = NULL;
+            handle_step_exit(ctx, exit_code);
+            break;
+        }
+        }
+    }
+}
+
+static void drive_run(WorkerCtx *ctx)
+{
+    drive_dev_console(ctx);
+    drive_run_chain(ctx);
+}
+
+static void handle_run_execute(WorkerCtx *ctx, const SessionRunCmd *cmd)
+{
+    if (ctx->sub != SUB_ONLINE) return;
+    if (ctx->run_chain.active || ctx->dev_console.state != DCON_IDLE) return;
+
+    arena_reset(ctx->run_arena);
+    RunChain *rc = &ctx->run_chain;
+    memset(rc, 0, sizeof(*rc));
+    rc->cfg        = cmd->cfg;
+    rc->target     = cmd->target;
+    rc->has_target = cmd->has_target;
+    rc->compile_only = false;
+    ctx->rs.target_is_sim = cmd->has_target && cmd->target.is_simulator;
+
+    RunAction act = runstate_step(&ctx->rs, RUN_EV_EXECUTE);
+    (void)act;
+    emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+
+    rc->step   = RCHAIN_STEP_SETTINGS;
+    rc->state  = RCHAIN_OPEN;
+    rc->active = true;
+    LOG_INFO(LG_RUN, "execute project=\"%.64s\"", rc->cfg.project);
+}
+
+static void handle_run_compile(WorkerCtx *ctx, const SessionRunCmd *cmd)
+{
+    if (ctx->sub != SUB_ONLINE) return;
+    if (ctx->run_chain.active) return;
+
+    arena_reset(ctx->run_arena);
+    RunChain *rc = &ctx->run_chain;
+    memset(rc, 0, sizeof(*rc));
+    rc->cfg          = cmd->cfg;
+    rc->target       = cmd->target;
+    rc->has_target   = cmd->has_target;
+    rc->compile_only = true;
+    ctx->rs.target_is_sim = false;
+
+    RunAction act = runstate_step(&ctx->rs, RUN_EV_COMPILE);
+    (void)act;
+    emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+
+    rc->step   = RCHAIN_STEP_SETTINGS;
+    rc->state  = RCHAIN_OPEN;
+    rc->active = true;
+    LOG_INFO(LG_RUN, "compile project=\"%.64s\"", rc->cfg.project);
+}
+
+static void drain_run_cmds(WorkerCtx *ctx)
+{
+    SessionRunCmd cmd;
+    while (spsc_pop(ctx->s->run_cmd_ring, &cmd)) {
+        switch (cmd.kind) {
+        case RCMD_EXECUTE: handle_run_execute(ctx, &cmd); break;
+        case RCMD_COMPILE: handle_run_compile(ctx, &cmd); break;
+        case RCMD_ABORT:   /* T6 */ break;
+        }
+    }
 }
 
 /* ── disc job helpers ─────────────────────────────────────────────── */
@@ -746,6 +1296,34 @@ static void drain_disc_cmds(WorkerCtx *ctx)
 static void disconnect_ssh(WorkerCtx *ctx)
 {
     fail_all_disc_jobs(ctx);
+
+    /* Tear down run chain */
+    RunChain *rc = &ctx->run_chain;
+    if (rc->active) {
+        rc->ch = NULL;  /* session teardown frees it */
+        arena_reset(ctx->run_arena);
+        rc->settings_buf = NULL;
+        rc->settings_len = 0;
+        rc->active = false;
+        RunAction act = runstate_step(&ctx->rs, RUN_EV_DROP);
+        (void)act;
+        emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+        LOG_WARN(LG_RUN, "chain dropped on disconnect");
+    }
+
+    /* Tear down DevConsole */
+    DevConsole *dc = &ctx->dev_console;
+    if (dc->state != DCON_IDLE) {
+        dc->ch = NULL;  /* session teardown frees it */
+        dc->state = DCON_IDLE;
+        if (ctx->rs.phase == RUN_RUNNING) {
+            RunAction act = runstate_step(&ctx->rs, RUN_EV_DROP);
+            (void)act;
+            emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+        }
+        LOG_WARN(LG_RUN, "dev-console dropped on disconnect");
+    }
+
     ctx->open_owner = -1;
     if (ctx->ssh) {
         ssh_disconnect(ctx->ssh);
@@ -1007,8 +1585,11 @@ static int compute_timeout_ms(const WorkerCtx *ctx)
         return 1000;
 
     case SUB_ONLINE:
-        /* bound poll while disc jobs are in flight so reads stay responsive */
-        if (has_active_disc_jobs(ctx)) return 10;
+        /* bound poll while disc jobs or run chain are in flight */
+        if (has_active_disc_jobs(ctx) ||
+            ctx->run_chain.active ||
+            ctx->dev_console.state != DCON_IDLE)
+            return 10;
         return ctx->keepalive_next * 1000;
     }
     return -1;
@@ -1046,7 +1627,16 @@ static void *worker_fn(void *arg)
         }
     }
 
+    ctx.run_arena = arena_create(RUN_ARENA_SZ);
+    if (!ctx.run_arena) {
+        for (int i = 0; i < DISC_MAX_JOBS; i++) arena_destroy(ctx.disc_arenas[i]);
+        arena_destroy(ctx.arena);
+        atomic_store(&s->running, 0);
+        return NULL;
+    }
+
     connstate_init(&ctx.cs);
+    runstate_init(&ctx.rs);
 
     while (atomic_load(&s->running)) {
         struct pollfd fds[2];
@@ -1071,6 +1661,7 @@ static void *worker_fn(void *arg)
 
         drain_cmds(&ctx);
         drain_disc_cmds(&ctx);
+        drain_run_cmds(&ctx);
 
         if (ctx.sub == SUB_ONLINE && nready == 0 && ctx.ssh) {
             SshStatus kst = ssh_keepalive(ctx.ssh, &ctx.keepalive_next);
@@ -1093,8 +1684,10 @@ static void *worker_fn(void *arg)
 
         drive_sub(&ctx);
 
-        if (ctx.sub == SUB_ONLINE && ctx.ssh)
+        if (ctx.sub == SUB_ONLINE && ctx.ssh) {
             drive_disc_jobs(&ctx);
+            drive_run(&ctx);
+        }
     }
 
     LOG_INFO(LG_SESS, "worker stopped");
@@ -1103,6 +1696,7 @@ static void *worker_fn(void *arg)
     for (int i = 0; i < DISC_MAX_JOBS; i++) {
         if (ctx.disc_arenas[i]) arena_destroy(ctx.disc_arenas[i]);
     }
+    if (ctx.run_arena) arena_destroy(ctx.run_arena);
     if (ctx.arena) arena_destroy(ctx.arena);
     return NULL;
 }
@@ -1144,8 +1738,31 @@ SshStatus session_open(Session **out)
         return SSH_ERR_OOM;
     }
 
+    s->run_cmd_ring = spsc_create(sizeof(SessionRunCmd), RUN_CMD_RING_CAP);
+    if (!s->run_cmd_ring) {
+        spsc_destroy(s->disc_event_ring);
+        spsc_destroy(s->disc_cmd_ring);
+        spsc_destroy(s->event_ring);
+        spsc_destroy(s->cmd_ring);
+        free(s);
+        return SSH_ERR_OOM;
+    }
+
+    s->run_event_ring = spsc_create(sizeof(SessionRunEvent), RUN_EVENT_RING_CAP);
+    if (!s->run_event_ring) {
+        spsc_destroy(s->run_cmd_ring);
+        spsc_destroy(s->disc_event_ring);
+        spsc_destroy(s->disc_cmd_ring);
+        spsc_destroy(s->event_ring);
+        spsc_destroy(s->cmd_ring);
+        free(s);
+        return SSH_ERR_OOM;
+    }
+
     int pipefd[2];
     if (pipe(pipefd) != 0) {
+        spsc_destroy(s->run_event_ring);
+        spsc_destroy(s->run_cmd_ring);
         spsc_destroy(s->disc_event_ring);
         spsc_destroy(s->disc_cmd_ring);
         spsc_destroy(s->event_ring);
@@ -1161,6 +1778,8 @@ SshStatus session_open(Session **out)
     if (pthread_create(&s->thread, NULL, worker_fn, s) != 0) {
         close(s->pipe_read);
         close(s->pipe_write);
+        spsc_destroy(s->run_event_ring);
+        spsc_destroy(s->run_cmd_ring);
         spsc_destroy(s->disc_event_ring);
         spsc_destroy(s->disc_cmd_ring);
         spsc_destroy(s->event_ring);
@@ -1212,6 +1831,8 @@ void session_close(Session *s)
     pthread_join(s->thread, NULL);
     close(s->pipe_write);
     close(s->pipe_read);
+    spsc_destroy(s->run_event_ring);
+    spsc_destroy(s->run_cmd_ring);
     spsc_destroy(s->disc_event_ring);
     spsc_destroy(s->disc_cmd_ring);
     spsc_destroy(s->event_ring);
@@ -1222,4 +1843,19 @@ void session_close(Session *s)
 const char *session_status_str(SshStatus st)
 {
     return ssh_status_str(st);
+}
+
+bool session_run_submit(Session *s, const SessionRunCmd *cmd)
+{
+    bool ok = spsc_push(s->run_cmd_ring, cmd);
+    if (ok) {
+        char byte = 1;
+        (void)write(s->pipe_write, &byte, 1);
+    }
+    return ok;
+}
+
+bool session_run_poll(Session *s, SessionRunEvent *out)
+{
+    return spsc_pop(s->run_event_ring, out);
 }

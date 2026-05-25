@@ -21,7 +21,8 @@ typedef enum {
     LG_SESS  = 3,
     LG_DISC  = 4,
     LG_STORE = 5,
-    LG_UI    = 6
+    LG_UI    = 6,
+    LG_RUN   = 7
 } LogSubsys;
 
 typedef enum {

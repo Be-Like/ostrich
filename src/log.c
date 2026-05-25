@@ -33,7 +33,7 @@ const char *log_status_str(LogStatus s) {
 #define LOG_TAG_LEN   8
 
 static const char *s_lev[] = { "ERROR", "WARN",  "INFO",  "DEBUG", "TRACE" };
-static const char *s_sub[] = { "app",   "ssh",   "conn",  "sess",  "disc", "store", "ui" };
+static const char *s_sub[] = { "app",   "ssh",   "conn",  "sess",  "disc", "store", "ui", "run" };
 
 typedef struct {
     int             fd;

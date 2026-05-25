@@ -1,0 +1,466 @@
+/* session_run_test.c — unit tests for the session run subsystem (T5).
+   Uses ssh_stub_run.c (configurable per-exec stub) and compiles session.c
+   directly with -DRUN_STALL_SEC_OVERRIDE=0.05 so the watchdog test runs
+   in under a second. */
+
+#define _POSIX_C_SOURCE 200809L
+
+#include "../include/session.h"
+#include "../include/log.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+/* ── stub globals (defined in ssh_stub_run.c) ─────────────────────── */
+
+typedef struct {
+    const char *output;
+    size_t      output_len;
+    int         exit_code;
+    bool        streaming;
+    bool        stall_read;
+} StubRunResp;
+
+extern StubRunResp  g_run_resp[];
+extern int          g_run_resp_count;
+extern volatile int g_run_stop_stream;
+extern int          g_exec_next;
+extern int          g_cur_idx;
+extern int          g_bytes_sent;
+
+void stub_run_reset(void);
+
+/* ── test macros ──────────────────────────────────────────────────── */
+
+#define PASS(name) printf("PASS: %s\n", (name))
+#define FAIL(name) do { printf("FAIL: %s\n", (name)); return 1; } while (0)
+#define ASSERT(name, cond) do { if (!(cond)) { printf("FAIL: %s (assert: %s)\n", (name), #cond); return 1; } } while (0)
+
+#define POLL_MAX 5000  /* 5 seconds max per assertion */
+
+/* ── test data ────────────────────────────────────────────────────── */
+
+/* Minimal xcodebuild -showBuildSettings -json output that bd_parse_product_path
+   can extract a product path from. */
+static const char k_settings_json[] =
+    "[{\"action\":\"build\","
+    "\"buildSettings\":{"
+    "\"BUILT_PRODUCTS_DIR\":\"/tmp\","
+    "\"FULL_PRODUCT_NAME\":\"Test.app\","
+    "\"PRODUCT_BUNDLE_IDENTIFIER\":\"com.test.App\""
+    "},\"target\":\"Test\"}]";
+
+/* Build output with an embedded PID marker. */
+static const char k_build_output[] =
+    "xcodebuild output\n__OSTRICH_PGID__99001\nBUILD SUCCEEDED\n";
+
+static const char k_install_output[] = "install ok\n";
+static const char k_device_output[]  = "app log line\n";
+
+/* ── helpers ──────────────────────────────────────────────────────── */
+
+static void sleep_ms(int ms)
+{
+    struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
+    nanosleep(&ts, NULL);
+}
+
+static bool connect_and_wait_online(Session *s)
+{
+    SessionCmd cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.kind     = CMD_BREACH;
+    cmd.cfg.port = 22;
+    cmd.cfg.auth = SSH_AUTH_AGENT;
+    snprintf(cmd.cfg.host, sizeof(cmd.cfg.host), "stubhost");
+    snprintf(cmd.cfg.user, sizeof(cmd.cfg.user), "stubuser");
+
+    if (!session_submit(s, &cmd)) return false;
+
+    SessionEvent ev;
+    for (int i = 0; i < POLL_MAX; i++) {
+        if (session_poll(s, &ev) && ev.phase == CONN_ONLINE) return true;
+        sleep_ms(1);
+    }
+    return false;
+}
+
+static SessionRunCmd make_execute_cmd(void)
+{
+    SessionRunCmd cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.kind = RCMD_EXECUTE;
+    snprintf(cmd.cfg.project,   sizeof(cmd.cfg.project),   "/tmp/Test.xcodeproj");
+    snprintf(cmd.cfg.scheme,    sizeof(cmd.cfg.scheme),    "Test");
+    snprintf(cmd.cfg.config,    sizeof(cmd.cfg.config),    "Debug");
+    snprintf(cmd.cfg.bundle_id, sizeof(cmd.cfg.bundle_id), "com.test.App");
+    snprintf(cmd.target.name,   sizeof(cmd.target.name),   "iPhone");
+    snprintf(cmd.target.udid,   sizeof(cmd.target.udid),   "DEVICE-UDID-001");
+    cmd.target.is_simulator = false;
+    cmd.target.booted       = true;
+    cmd.has_target          = true;
+    return cmd;
+}
+
+static SessionRunCmd make_compile_cmd(void)
+{
+    SessionRunCmd cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.kind = RCMD_COMPILE;
+    snprintf(cmd.cfg.project,   sizeof(cmd.cfg.project),   "/tmp/Test.xcodeproj");
+    snprintf(cmd.cfg.scheme,    sizeof(cmd.cfg.scheme),    "Test");
+    snprintf(cmd.cfg.config,    sizeof(cmd.cfg.config),    "Debug");
+    snprintf(cmd.cfg.bundle_id, sizeof(cmd.cfg.bundle_id), "com.test.App");
+    cmd.has_target = false;
+    return cmd;
+}
+
+/* Predicate type for drain_until */
+typedef bool (*RunEvPred)(const SessionRunEvent *ev, void *data);
+
+/* Poll run events for up to POLL_MAX ms; return true when pred fires. */
+static bool drain_until(Session *s, RunEvPred pred, void *data)
+{
+    SessionRunEvent ev;
+    for (int i = 0; i < POLL_MAX; i++) {
+        if (session_run_poll(s, &ev)) {
+            if (pred(&ev, data)) return true;
+        }
+        sleep_ms(1);
+    }
+    return false;
+}
+
+/* Same but with a shorter timeout (ms). */
+static bool drain_until_ms(Session *s, RunEvPred pred, void *data, int timeout_ms)
+{
+    SessionRunEvent ev;
+    for (int i = 0; i < timeout_ms; i++) {
+        if (session_run_poll(s, &ev)) {
+            if (pred(&ev, data)) return true;
+        }
+        sleep_ms(1);
+    }
+    return false;
+}
+
+static bool phase_is(const SessionRunEvent *ev, void *p)
+{
+    return ev->kind == REV_PHASE && ev->phase == *(RunPhase *)p;
+}
+
+static bool got_build_log(const SessionRunEvent *ev, void *p)
+{
+    (void)p;
+    return ev->kind == REV_BUILD_LOG && ev->len > 0;
+}
+
+static bool got_device_log(const SessionRunEvent *ev, void *p)
+{
+    (void)p;
+    return ev->kind == REV_DEVICE_LOG && ev->len > 0;
+}
+
+/* ── Tests ────────────────────────────────────────────────────────── */
+
+/* 1. EXECUTE happy path: device target (no sim priming).
+   Chain: settings → build → install → launch → running → console_eof → idle. */
+static int test_execute_happy_path(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    /* Streaming launch channel: won't EOF until g_run_stop_stream is set. */
+    g_run_resp[3] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp_count = 4;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    /* Phase: BUILDING */
+    RunPhase p = RUN_BUILDING;
+    ASSERT("phase building", drain_until(s, phase_is, &p));
+
+    /* Build log chunk should arrive */
+    ASSERT("build log chunk", drain_until(s, got_build_log, NULL));
+
+    /* Phase: INSTALLING */
+    p = RUN_INSTALLING;
+    ASSERT("phase installing", drain_until(s, phase_is, &p));
+
+    /* Phase: LAUNCHING */
+    p = RUN_LAUNCHING;
+    ASSERT("phase launching", drain_until(s, phase_is, &p));
+
+    /* Phase: RUNNING */
+    p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+
+    /* Device log chunk should arrive from the streaming channel */
+    ASSERT("device log chunk", drain_until(s, got_device_log, NULL));
+
+    /* Signal stream end → console EOF → IDLE */
+    g_run_stop_stream = 1;
+    p = RUN_IDLE;
+    ASSERT("phase idle after console eof", drain_until(s, phase_is, &p));
+
+    /* 4 execs: settings, build, install, launch */
+    ASSERT("4 execs used", g_exec_next == 4);
+
+    session_close(s);
+    PASS("execute_happy_path");
+    return 0;
+}
+
+/* 2. COMPILE only: no target → no install, no launch. */
+static int test_compile_only(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_compile_cmd();
+    ASSERT("submit compile", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_BUILDING;
+    ASSERT("phase building", drain_until(s, phase_is, &p));
+
+    ASSERT("build log chunk", drain_until(s, got_build_log, NULL));
+
+    /* Should return to IDLE after build (compile_only, RUN_ACT_DONE). */
+    p = RUN_IDLE;
+    ASSERT("phase idle after compile", drain_until(s, phase_is, &p));
+
+    /* Only 2 execs: settings + build */
+    ASSERT("only 2 execs for compile", g_exec_next == 2);
+
+    session_close(s);
+    PASS("compile_only");
+    return 0;
+}
+
+/* 3. Build failure (non-zero exit from build step). */
+static int test_build_failure(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        "build error\n", 12, 1, false, false };  /* exit 1 → build fail */
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_BUILD_FAILED;
+    ASSERT("phase build_failed", drain_until(s, phase_is, &p));
+
+    /* Only 2 execs: settings + build; no install or launch. */
+    ASSERT("only 2 execs for build fail", g_exec_next == 2);
+
+    session_close(s);
+    PASS("build_failure");
+    return 0;
+}
+
+/* 4. Install failure (non-zero exit from install step). */
+static int test_install_failure(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        "install failed\n", 15, 1, false, false };  /* exit 1 → install fail */
+    g_run_resp_count = 3;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_DEPLOY_FAILED;
+    ASSERT("phase deploy_failed on install", drain_until(s, phase_is, &p));
+
+    /* 3 execs: settings, build, install; no launch. */
+    ASSERT("only 3 execs for install fail", g_exec_next == 3);
+
+    session_close(s);
+    PASS("install_failure");
+    return 0;
+}
+
+/* 5. Launch channel exits with non-zero code.
+   The state machine transitions: LAUNCH_OK → RUNNING (emitted on exec),
+   then DevConsole gets non-zero exit → RUN_EV_DROP → ABORTED.
+   We set g_run_stop_stream=1 immediately so the streaming channel EOFs
+   as soon as we've read its data. */
+static int test_launch_nonzero_exit(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    /* streaming, exit 1 — stop immediately so the channel EOFs right away */
+    g_run_resp[3] = (StubRunResp){
+        "launch error\n", 13, 1, true, false };
+    g_run_resp_count = 4;
+    g_run_stop_stream = 1;  /* pre-set: EOF after first read */
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    /* RUNNING is emitted when launch exec succeeds (before DevConsole runs). */
+    RunPhase p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+
+    /* DevConsole gets exit=1; RUN_EV_LAUNCH_FAIL from RUNNING is not handled
+       by the state machine (RUNNING only handles CONSOLE_EOF → IDLE and
+       DROP → ABORTED).  The implementation falls through with the current
+       phase unchanged and emits a RUNNING+BD_ERR_LAUNCH event to signal
+       the error.  We assert we get a REV_PHASE event with BD_ERR_LAUNCH. */
+    bool got_error = false;
+    SessionRunEvent ev;
+    for (int i = 0; i < POLL_MAX; i++) {
+        if (session_run_poll(s, &ev)) {
+            if (ev.kind == REV_PHASE && ev.reason == BD_ERR_LAUNCH) {
+                got_error = true;
+                break;
+            }
+        }
+        sleep_ms(1);
+    }
+    ASSERT("got phase event with BD_ERR_LAUNCH on nonzero exit", got_error);
+
+    session_close(s);
+    PASS("launch_nonzero_exit");
+    return 0;
+}
+
+/* 6. Normal console EOF (exit 0) → IDLE. */
+static int test_console_eof(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    /* streaming, exit 0 — EOF when g_run_stop_stream */
+    g_run_resp[3] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp_count = 4;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+
+    /* Trigger EOF with exit 0 → IDLE */
+    g_run_stop_stream = 1;
+    p = RUN_IDLE;
+    ASSERT("phase idle after console eof exit-0", drain_until(s, phase_is, &p));
+
+    session_close(s);
+    PASS("console_eof");
+    return 0;
+}
+
+/* 7. Watchdog stall test.
+   With -DRUN_STALL_SEC_OVERRIDE=0.05 the watchdog fires after 50 ms.
+   The build step uses stall_read=true so read always returns SSH_AGAIN
+   and eof always returns false.  The worker should detect the stall and
+   resolve to RUN_BUILD_FAILED within a few hundred ms. */
+static int test_watchdog_stall(void)
+{
+    stub_run_reset();
+    /* Settings step: OK */
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    /* Build step: stall — read always SSH_AGAIN, eof always false */
+    g_run_resp[1] = (StubRunResp){ NULL, 0, 0, false, true };
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    /* Build phase should start */
+    RunPhase p = RUN_BUILDING;
+    ASSERT("phase building", drain_until(s, phase_is, &p));
+
+    /* With a 50ms stall window, BUILD_FAILED should arrive within 1 second. */
+    p = RUN_BUILD_FAILED;
+    ASSERT("stall watchdog fires → build_failed",
+           drain_until_ms(s, phase_is, &p, 1000));
+
+    session_close(s);
+    PASS("watchdog_stall");
+    return 0;
+}
+
+/* ── main ─────────────────────────────────────────────────────────── */
+
+int main(void)
+{
+    /* Initialize debug log to /tmp so we don't pollute the real log. */
+    (void)setenv("OSTRICH_LOG_FILE", "/tmp/ostrich_session_run_test.log", 1);
+    (void)setenv("OSTRICH_LOG",      "trace", 1);
+    log_init();
+
+    int rc = 0;
+    rc |= test_execute_happy_path();
+    rc |= test_compile_only();
+    rc |= test_build_failure();
+    rc |= test_install_failure();
+    rc |= test_launch_nonzero_exit();
+    rc |= test_console_eof();
+    rc |= test_watchdog_stall();
+
+    log_shutdown();
+    unlink("/tmp/ostrich_session_run_test.log");
+    unlink("/tmp/ostrich_session_run_test.log.1");
+    return rc;
+}

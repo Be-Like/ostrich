@@ -117,7 +117,7 @@ BUILDDEPLOY_OBJS := $(patsubst %.c,$(BUILD)/builddeploy/%.o,$(BUILDDEPLOY_SRC))
 LOGBUF_SRC  := logbuf.c
 LOGBUF_OBJS := $(patsubst %.c,$(BUILD)/logbuf/%.o,$(LOGBUF_SRC))
 
-.PHONY: all clean test debug ssh_version_smoke ssh_smoke session_smoke discovery_smoke
+.PHONY: all clean test debug ssh_version_smoke ssh_smoke session_smoke discovery_smoke run_smoke
 
 all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
      $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
@@ -193,12 +193,14 @@ APP_OBJS := $(BUILD)/app_main.o $(BUILD)/app_app.o $(BUILD)/app_form.o \
 $(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a \
                   $(BUILD)/libsession.a $(BUILD)/libssh.a \
                   $(BUILD)/libconnstate.a $(BUILD)/libstore.a \
-                  $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a
+                  $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
+                  $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a
 	$(CXX) -o $@ $(APP_OBJS) \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a \
 	    $(BUILD)/libconnstate.a $(BUILD)/libstore.a \
-	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+	    $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
+	    $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
 	    $(OPENSSL_LIBS) $(PLATFORM_LIBS)
 
 # ── ssh library (our libssh2 wrapper) ────────────────────────────────
@@ -278,25 +280,45 @@ session_smoke: $(BUILD)/session_smoke
 
 $(BUILD)/session_smoke: tools/session_smoke.c $(BUILD)/libsession.a \
                         $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
-                        $(BUILD)/liblibssh2.a \
+                        $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
+                        $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
                         $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/session_smoke.c \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
-	    $(BUILD)/liblibssh2.a $(OPENSSL_LIBS) -lpthread -lm
+	    $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
+	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+	    $(OPENSSL_LIBS) -lpthread -lm
+
+run_smoke: $(BUILD)/run_smoke
+
+$(BUILD)/run_smoke: tools/run_smoke.c $(BUILD)/libsession.a \
+                    $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+                    $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
+                    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+                    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
+	    -o $@ tools/run_smoke.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
+	    $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
+	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+	    $(OPENSSL_LIBS) -lpthread -lm
 
 discovery_smoke: $(BUILD)/discovery_smoke
 
 $(BUILD)/discovery_smoke: tools/discovery_smoke.c $(BUILD)/libsession.a \
                           $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
-                          $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+                          $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
+                          $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
                           $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/discovery_smoke.c \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
-	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+	    $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
+	    $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
 	    $(OPENSSL_LIBS) -lpthread -lm
 
 # ── Tests ─────────────────────────────────────────────────────────────
@@ -377,7 +399,8 @@ $(BUILD)/log_test: $(TESTS)/log_test.c $(SRC)/log.c | $(BUILD)
 $(BUILD)/session_test: $(TESTS)/session_test.c $(SRC)/session/session.c \
                        $(SRC)/log.c \
                        $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
-                       $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+                       $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
+                       $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
                        $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
 	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ $(TESTS)/session_test.c \
@@ -385,7 +408,8 @@ $(BUILD)/session_test: $(TESTS)/session_test.c $(SRC)/session/session.c \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
 	    $(SRC)/log.c \
 	    $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
-	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
+	    $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
+	    $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
 	    $(OPENSSL_LIBS) -lpthread -lm
 
 # session_exec_test uses a stub SSH library instead of the real libssh.a so the
@@ -396,6 +420,7 @@ $(BUILD)/session_exec_test: $(TESTS)/session_exec_test.c \
                             $(SRC)/session/session.c \
                             $(SRC)/log.c \
                             $(BUILD)/libdiscovery.a $(BUILD)/libconnstate.a \
+                            $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
                             $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
 	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) \
 	    -o $@ $(TESTS)/session_exec_test.c \
@@ -404,6 +429,32 @@ $(BUILD)/session_exec_test: $(TESTS)/session_exec_test.c \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
 	    $(SRC)/log.c \
 	    $(BUILD)/libdiscovery.a $(BUILD)/libconnstate.a \
+	    $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
+	    -lpthread -lm
+
+# session_run_test compiles session.c directly with OSTRICH_DEBUG and
+# RUN_STALL_SEC_OVERRIDE=0.05 so the watchdog test runs in under a second.
+# ssh_stub_run.c provides a per-exec configurable stub for run chain tests.
+$(BUILD)/session_run_test: $(TESTS)/session_run_test.c \
+                            $(TESTS)/ssh_stub_run.c \
+                            $(SRC)/session/session.c \
+                            $(SRC)/log.c \
+                            $(BUILD)/librunstate.a \
+                            $(BUILD)/libbuilddeploy.a \
+                            $(BUILD)/libdiscovery.a \
+                            $(BUILD)/libconnstate.a \
+                            $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -DRUN_STALL_SEC_OVERRIDE=0.05 \
+	    -I$(INCLUDE) -I$(JSMN_DIR) \
+	    -o $@ $(TESTS)/session_run_test.c \
+	    $(TESTS)/ssh_stub_run.c \
+	    $(SRC)/session/session.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(SRC)/log.c \
+	    $(BUILD)/librunstate.a \
+	    $(BUILD)/libbuilddeploy.a \
+	    $(BUILD)/libdiscovery.a \
+	    $(BUILD)/libconnstate.a \
 	    -lpthread -lm
 
 # session_disc_parse_test compiles discovery.c and session.c directly with
@@ -415,6 +466,8 @@ $(BUILD)/session_disc_parse_test: $(TESTS)/session_disc_parse_test.c \
                                   $(SRC)/discovery/discovery.c \
                                   $(SRC)/log.c \
                                   $(BUILD)/libconnstate.a \
+                                  $(BUILD)/librunstate.a \
+                                  $(BUILD)/libbuilddeploy.a \
                                   $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
 	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) -I$(JSMN_DIR) \
 	    -o $@ $(TESTS)/session_disc_parse_test.c \
@@ -424,6 +477,8 @@ $(BUILD)/session_disc_parse_test: $(TESTS)/session_disc_parse_test.c \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
 	    $(SRC)/log.c \
 	    $(BUILD)/libconnstate.a \
+	    $(BUILD)/librunstate.a \
+	    $(BUILD)/libbuilddeploy.a \
 	    -lpthread -lm
 
 test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
@@ -431,7 +486,8 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
       $(BUILD)/ui_test $(BUILD)/store_test $(BUILD)/discovery_test \
       $(BUILD)/log_test $(BUILD)/session_test $(BUILD)/session_exec_test \
       $(BUILD)/session_disc_parse_test $(BUILD)/runstate_test \
-      $(BUILD)/builddeploy_test $(BUILD)/logbuf_test
+      $(BUILD)/builddeploy_test $(BUILD)/logbuf_test \
+      $(BUILD)/session_run_test
 	./$(BUILD)/app_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
@@ -448,6 +504,7 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
 	./$(BUILD)/runstate_test
 	./$(BUILD)/builddeploy_test
 	./$(BUILD)/logbuf_test
+	./$(BUILD)/session_run_test
 
 debug:
 	$(MAKE) CFLAGS="$(CFLAGS) -DOSTRICH_DEBUG -g -O0" all

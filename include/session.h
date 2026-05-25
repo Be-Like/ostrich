@@ -3,6 +3,7 @@
 
 #include "connstate.h"
 #include "discovery.h"
+#include "runstate.h"
 #include "ssh.h"
 #include <stdbool.h>
 
@@ -82,6 +83,42 @@ typedef struct {
         Target     target;         /* DEV_TARGET                                  */
     };
 } SessionDiscEvent;
+
+/* ── run command/event family ─────────────────────────────────────── */
+
+#define RUN_CHUNK_CAP 4096
+
+typedef enum {
+    RCMD_EXECUTE,
+    RCMD_COMPILE,
+    RCMD_ABORT
+} SessionRunCmdKind;
+
+typedef struct {
+    SessionRunCmdKind kind;
+    RunConfig         cfg;
+    Target            target;
+    bool              has_target;
+} SessionRunCmd;
+
+typedef enum {
+    REV_PHASE,
+    REV_BUILD_LOG,
+    REV_DEVICE_LOG,
+    REV_STALE
+} SessionRunEventKind;
+
+typedef struct {
+    SessionRunEventKind kind;
+    RunPhase            phase;
+    BdStatus            reason;
+    bool                stale;
+    int                 len;
+    char                chunk[RUN_CHUNK_CAP];
+} SessionRunEvent;
+
+bool session_run_submit(Session *s, const SessionRunCmd *cmd);
+bool session_run_poll  (Session *s, SessionRunEvent *out);
 
 /* ── connection API ───────────────────────────────────────────────── */
 
