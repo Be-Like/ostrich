@@ -105,7 +105,7 @@ SESSION_OBJS := $(patsubst %.c,$(BUILD)/session/%.o,$(SESSION_SRC))
 DISCOVERY_SRC  := discovery.c
 DISCOVERY_OBJS := $(patsubst %.c,$(BUILD)/discovery/%.o,$(DISCOVERY_SRC))
 
-.PHONY: all clean test ssh_version_smoke ssh_smoke session_smoke discovery_smoke
+.PHONY: all clean test debug ssh_version_smoke ssh_smoke session_smoke discovery_smoke
 
 all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
      $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
@@ -314,9 +314,14 @@ $(BUILD)/discovery_test: $(TESTS)/discovery_test.c $(BUILD)/libdiscovery.a \
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/discovery_test.c \
 	    $(SRC)/arena.c $(BUILD)/libdiscovery.a
 
+$(BUILD)/log_test: $(TESTS)/log_test.c $(SRC)/log.c | $(BUILD)
+	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) -o $@ \
+	    $(TESTS)/log_test.c $(SRC)/log.c
+
 test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
       $(BUILD)/arena_test $(BUILD)/lexicon_test $(BUILD)/framestats_test \
-      $(BUILD)/ui_test $(BUILD)/store_test $(BUILD)/discovery_test
+      $(BUILD)/ui_test $(BUILD)/store_test $(BUILD)/discovery_test \
+      $(BUILD)/log_test
 	./$(BUILD)/app_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
@@ -326,6 +331,10 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
 	./$(BUILD)/ui_test
 	./$(BUILD)/store_test
 	./$(BUILD)/discovery_test
+	./$(BUILD)/log_test
+
+debug:
+	$(MAKE) CFLAGS="$(CFLAGS) -DOSTRICH_DEBUG -g -O0" all
 
 # ── Build directories ─────────────────────────────────────────────────
 $(BUILD):

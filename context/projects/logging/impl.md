@@ -203,7 +203,7 @@ naturally in the log.
 
 ### Task 1 - Core logging facility
 
-- **Status**: pending
+- **Status**: complete
 - **Blocked by**: none
 - **User stories covered**: n/a (infrastructure concern; no PRD)
 
@@ -268,22 +268,22 @@ test binary, and every smoke tool.
 
 #### Acceptance criteria
 
-- [ ] `include/log.h` + `src/log.c` compile; symbols link into a
+- [x] `include/log.h` + `src/log.c` compile; symbols link into a
       test binary; `log.h` is includable from C and C++.
-- [ ] With `-DOSTRICH_DEBUG` and `OSTRICH_LOG_FILE` set, `log_init`
+- [x] With `-DOSTRICH_DEBUG` and `OSTRICH_LOG_FILE` set, `log_init`
       creates the file; a second `log_init` renames the prior file
       to `ostrich.log.1`.
-- [ ] Emitted records match the columnar format (timestamp, delta,
+- [x] Emitted records match the columnar format (timestamp, delta,
       level, subsystem, thread tag, message), asserted by reading
       the file back.
-- [ ] Level gating: at default `INFO`, `LOG_DEBUG` writes nothing;
+- [x] Level gating: at default `INFO`, `LOG_DEBUG` writes nothing;
       `OSTRICH_LOG=debug` makes it appear.
-- [ ] `log_blob` truncates beyond the cap, emits one record with an
+- [x] `log_blob` truncates beyond the cap, emits one record with an
       elision marker, and writes the block in a single `write()`.
-- [ ] Without `-DOSTRICH_DEBUG`, macros are no-ops: no file is
+- [x] Without `-DOSTRICH_DEBUG`, macros are no-ops: no file is
       created and the default `make test` passes (the log test is
       built `-DOSTRICH_DEBUG`).
-- [ ] `make` builds with no logging compiled in; `make debug`
+- [x] `make` builds with no logging compiled in; `make debug`
       builds the app with `-DOSTRICH_DEBUG -g -O0`.
 
 ### Task 2 - Stand up + mirror startup errors
