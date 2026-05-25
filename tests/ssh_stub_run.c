@@ -3,7 +3,11 @@
    code.  The last response can be set as "streaming" (does not EOF until
    g_run_stop_stream is set).  A response with stall_read=true makes
    ssh_channel_read always return SSH_AGAIN and ssh_channel_eof return false,
-   which is used to exercise the stall watchdog. */
+   which is used to exercise the stall watchdog.
+
+   Each ssh_channel_open returns a distinct pointer from a pool so that
+   concurrent channels (e.g. DevConsole + COMPILE-while-running chain) can
+   coexist without aliasing. */
 
 #define _POSIX_C_SOURCE 200809L
 #include "../include/ssh.h"
@@ -39,16 +43,20 @@ struct Ssh        { int dummy; };
 struct SshChannel { int idx; };
 
 static struct Ssh        stub_ssh;
-static struct SshChannel stub_ch;
+
+/* Pool of channel structs so concurrent channels have distinct pointers. */
+static struct SshChannel stub_ch_pool[STUB_RUN_MAX_RESP];
 
 static int stub_pipe_rd = -1;
 static int stub_pipe_wr = -1;
 
 int g_exec_next  = 0;  /* next response index to assign on open */
-int g_cur_idx    = -1; /* current channel's response index      */
-int g_bytes_sent = 0;  /* bytes sent for current exec           */
+int g_cur_idx    = -1; /* last-opened channel index (kept for compat) */
 
-/* Called by reset_stub() in the test to reset per-test state. */
+/* Per-channel bytes-sent tracker (indexed by channel idx). */
+int g_bytes_sent[STUB_RUN_MAX_RESP];
+
+/* Called by stub_run_reset() in the test to reset per-test state. */
 void stub_run_reset(void)
 {
     g_run_resp_count     = 0;
@@ -56,7 +64,7 @@ void stub_run_reset(void)
     g_run_simulate_drop  = 0;
     g_exec_next          = 0;
     g_cur_idx            = -1;
-    g_bytes_sent         = 0;
+    memset(g_bytes_sent, 0, sizeof(g_bytes_sent));
     for (int i = 0; i < STUB_RUN_MAX_RESP; i++)
         g_exec_cmds[i][0] = '\0';
 }
@@ -112,17 +120,17 @@ void ssh_disconnect(Ssh *s)
 SshStatus ssh_channel_open(Ssh *s, SshChannel **out)
 {
     (void)s;
-    g_cur_idx    = g_exec_next++;
-    g_bytes_sent = 0;
-    stub_ch.idx  = g_cur_idx;
-    *out = &stub_ch;
+    int idx = g_exec_next++;
+    g_cur_idx               = idx;
+    stub_ch_pool[idx].idx   = idx;
+    g_bytes_sent[idx]       = 0;
+    *out = &stub_ch_pool[idx];
     return SSH_OK;
 }
 
 SshStatus ssh_channel_exec(SshChannel *ch, const char *cmd)
 {
-    (void)ch;
-    int idx = g_cur_idx;
+    int idx = ch->idx;
     if (idx >= 0 && idx < STUB_RUN_MAX_RESP) {
         size_t len = strlen(cmd);
         if (len >= STUB_MAX_CMD_LEN) len = STUB_MAX_CMD_LEN - 1;
@@ -134,23 +142,21 @@ SshStatus ssh_channel_exec(SshChannel *ch, const char *cmd)
 
 bool ssh_channel_eof(SshChannel *ch)
 {
-    (void)ch;
-    int idx = g_cur_idx;
+    int idx = ch->idx;
     if (idx < 0 || idx >= g_run_resp_count) return true;
     StubRunResp *r = &g_run_resp[idx];
     if (r->stall_read) return false;
-    if (r->streaming) return (g_run_stop_stream != 0) && (g_bytes_sent > 0);
-    return g_bytes_sent > 0;
+    if (r->streaming) return (g_run_stop_stream != 0) && (g_bytes_sent[idx] > 0);
+    return g_bytes_sent[idx] > 0;
 }
 
 SshStatus ssh_channel_read(SshChannel *ch, char *buf, size_t cap, size_t *n)
 {
-    (void)ch;
     if (g_run_simulate_drop) {
         *n = 0;
         return SSH_ERR_IO;
     }
-    int idx = g_cur_idx;
+    int idx = ch->idx;
     if (idx < 0 || idx >= g_run_resp_count) {
         *n = 0;
         return SSH_AGAIN;
@@ -164,7 +170,7 @@ SshStatus ssh_channel_read(SshChannel *ch, char *buf, size_t cap, size_t *n)
     }
 
     /* already sent output for this exec */
-    if (g_bytes_sent > 0) {
+    if (g_bytes_sent[idx] > 0) {
         *n = 0;
         return SSH_AGAIN;
     }
@@ -173,14 +179,13 @@ SshStatus ssh_channel_read(SshChannel *ch, char *buf, size_t cap, size_t *n)
     if (len > cap) len = cap;
     if (len > 0) memcpy(buf, r->output, len);
     *n = len;
-    g_bytes_sent = 1;
+    g_bytes_sent[idx] = 1;
     return SSH_OK;
 }
 
 SshStatus ssh_channel_exit(SshChannel *ch, int *code)
 {
-    (void)ch;
-    int idx = g_cur_idx;
+    int idx = ch->idx;
     *code = (idx >= 0 && idx < g_run_resp_count) ? g_run_resp[idx].exit_code : 0;
     return SSH_OK;
 }

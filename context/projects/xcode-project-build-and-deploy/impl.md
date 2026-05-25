@@ -513,7 +513,7 @@ No new `ssh.h` primitive — every action is an ordinary exec.
 
 ### Task 7 - worker: COMPILE-while-running + build-gen/stale
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 5
 - **User stories covered**: 40, 41, 42, 43, 53, 55
 
@@ -549,20 +549,20 @@ Extend `session_run_test.c` with stub assertions for this edge.
 
 #### Acceptance criteria
 
-- [ ] `session_run_test.c` asserts that a COMPILE submitted while
+- [x] `session_run_test.c` asserts that a COMPILE submitted while
       `RUN_RUNNING` opens a second channel while the DevConsole
       channel stays open, the phase remains `RUN_RUNNING`, and the
       DevConsole keeps emitting `REV_DEVICE_LOG` chunks during the
       compile.
-- [ ] A successful COMPILE-while-running increments `built_gen` and
+- [x] A successful COMPILE-while-running increments `built_gen` and
       the worker emits a `REV_STALE` event reflecting
       `runstate_stale` going true; a subsequent EXECUTE that
       redeploys clears it.
-- [ ] The COMPILE's per-run arena reset does not disturb the
+- [x] The COMPILE's per-run arena reset does not disturb the
       running app's DevConsole identity (bundle/udid/sim flag held
       in fixed fields, verified by the DevConsole continuing to
       stream).
-- [ ] `make test` passes (no real Mac required for the stub
+- [x] `make test` passes (no real Mac required for the stub
       assertions).
 - [ ] Manually via the app / a live Mac: with an app running, a
       COMPILE streams the new build in the Build Log while the

@@ -346,6 +346,17 @@ static void emit_device_log(WorkerCtx *ctx, const char *bytes, size_t n)
     }
 }
 
+static void emit_stale(WorkerCtx *ctx, bool stale)
+{
+    SessionRunEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.kind  = REV_STALE;
+    ev.stale = stale;
+    push_run_ev(ctx, &ev);
+    LOG_INFO(LG_RUN, "stale=%s built_gen=%d deployed_gen=%d",
+             stale ? "true" : "false", ctx->rs.built_gen, ctx->rs.deployed_gen);
+}
+
 static RunEvent step_to_fail_ev(RChainStep step)
 {
     switch (step) {
@@ -493,6 +504,8 @@ static void handle_step_exit(WorkerCtx *ctx, int exit_code)
         if (act == RUN_ACT_DONE) {
             emit_run_phase(ctx, ctx->rs.phase, BD_OK);
             rc->active = false;
+            if (runstate_stale(&ctx->rs))
+                emit_stale(ctx, true);
             return;
         }
         emit_run_phase(ctx, ctx->rs.phase, BD_OK);
@@ -813,6 +826,7 @@ static void drive_run_chain(WorkerCtx *ctx)
                 RunAction act = runstate_step(&ctx->rs, RUN_EV_LAUNCH_OK);
                 (void)act;
                 emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+                emit_stale(ctx, false);
                 LOG_INFO(LG_RUN, "launch: handed to dev-console");
                 return;
             }

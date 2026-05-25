@@ -30,7 +30,7 @@ extern volatile int g_run_stop_stream;
 extern volatile int g_run_simulate_drop;
 extern int          g_exec_next;
 extern int          g_cur_idx;
-extern int          g_bytes_sent;
+extern int          g_bytes_sent[];
 extern char         g_exec_cmds[][2048];
 
 void stub_run_reset(void);
@@ -645,6 +645,145 @@ static int test_drop_mid_run(void)
     return 0;
 }
 
+static bool got_stale_true(const SessionRunEvent *ev, void *p)
+{
+    (void)p;
+    return ev->kind == REV_STALE && ev->stale;
+}
+
+static bool got_stale_false(const SessionRunEvent *ev, void *p)
+{
+    (void)p;
+    return ev->kind == REV_STALE && !ev->stale;
+}
+
+/* 12. COMPILE-while-running: app is running (DevConsole streaming), a
+    compile-only chain starts on a second channel, build succeeds, and
+    REV_STALE(true) is emitted while the DevConsole stays alive. */
+static int test_compile_while_running(void)
+{
+    stub_run_reset();
+    /* First EXECUTE: settings(0) build(1) install(2) launch(3, streaming) */
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[3] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    /* COMPILE-while-running: settings(4) build(5) */
+    g_run_resp[4] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[5] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp_count = 6;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    /* First EXECUTE → RUNNING */
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+    ASSERT("device log chunk", drain_until(s, got_device_log, NULL));
+
+    /* COMPILE while app is running */
+    SessionRunCmd compile_cmd = make_compile_cmd();
+    ASSERT("submit compile while running", session_run_submit(s, &compile_cmd));
+
+    /* Build log chunk from the compile chain confirms second channel opened */
+    ASSERT("compile build log chunk", drain_until(s, got_build_log, NULL));
+
+    /* REV_STALE(true) must arrive after compile succeeds (built_gen > deployed_gen) */
+    ASSERT("stale emitted true after compile", drain_until(s, got_stale_true, NULL));
+
+    /* DevConsole was still alive: stop stream → IDLE via console EOF */
+    g_run_stop_stream = 1;
+    p = RUN_IDLE;
+    ASSERT("phase idle after console eof", drain_until(s, phase_is, &p));
+
+    /* 6 execs: settings(0) build(1) install(2) launch(3)
+                compile-settings(4) compile-build(5) */
+    ASSERT("6 execs total", g_exec_next == 6);
+    ASSERT("compile settings at exec[4]",
+           strstr(g_exec_cmds[4], "showBuildSettings") != NULL);
+
+    session_close(s);
+    PASS("compile_while_running");
+    return 0;
+}
+
+/* 13. Stale clears on re-deploy: after a COMPILE-while-running makes the
+    state stale, a subsequent EXECUTE that redeploys emits REV_STALE(false). */
+static int test_stale_clears_on_execute(void)
+{
+    stub_run_reset();
+    /* First EXECUTE */
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[3] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    /* COMPILE-while-running */
+    g_run_resp[4] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[5] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    /* Second EXECUTE (from IDLE after console EOF) */
+    g_run_resp[6] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[7] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[8] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    /* launch for second run: streaming, but g_run_stop_stream will already
+       be 1 so it EOFs immediately after sending data */
+    g_run_resp[9] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp_count = 10;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    /* First EXECUTE → RUNNING */
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+    ASSERT("device log chunk", drain_until(s, got_device_log, NULL));
+
+    /* COMPILE-while-running → stale */
+    SessionRunCmd compile_cmd = make_compile_cmd();
+    ASSERT("submit compile", session_run_submit(s, &compile_cmd));
+    ASSERT("stale becomes true", drain_until(s, got_stale_true, NULL));
+
+    /* End first run: stop DevConsole → IDLE */
+    g_run_stop_stream = 1;
+    p = RUN_IDLE;
+    ASSERT("phase idle after first run", drain_until(s, phase_is, &p));
+
+    /* Second EXECUTE → new deploy → stale should clear */
+    ASSERT("submit second execute", session_run_submit(s, &cmd));
+    p = RUN_RUNNING;
+    ASSERT("phase running second time", drain_until(s, phase_is, &p));
+
+    /* REV_STALE(false) is emitted at the LAUNCH_OK point of the second deploy */
+    ASSERT("stale cleared after redeploy", drain_until(s, got_stale_false, NULL));
+
+    session_close(s);
+    PASS("stale_clears_on_execute");
+    return 0;
+}
+
 /* ── main ─────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -666,6 +805,8 @@ int main(void)
     rc |= test_abort_running();
     rc |= test_terminate_first();
     rc |= test_drop_mid_run();
+    rc |= test_compile_while_running();
+    rc |= test_stale_clears_on_execute();
 
     log_shutdown();
     unlink("/tmp/ostrich_session_run_test.log");
