@@ -194,13 +194,15 @@ $(BUILD)/ostrich: $(APP_OBJS) $(BUILD)/libui.a $(BUILD)/libglfw.a \
                   $(BUILD)/libsession.a $(BUILD)/libssh.a \
                   $(BUILD)/libconnstate.a $(BUILD)/libstore.a \
                   $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
-                  $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a
+                  $(BUILD)/libbuilddeploy.a $(BUILD)/liblogbuf.a \
+                  $(BUILD)/liblibssh2.a
 	$(CXX) -o $@ $(APP_OBJS) \
 	    $(BUILD)/libui.a $(BUILD)/libglfw.a \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a \
 	    $(BUILD)/libconnstate.a $(BUILD)/libstore.a \
 	    $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
-	    $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
+	    $(BUILD)/libbuilddeploy.a $(BUILD)/liblogbuf.a \
+	    $(BUILD)/liblibssh2.a \
 	    $(OPENSSL_LIBS) $(PLATFORM_LIBS)
 
 # ── ssh library (our libssh2 wrapper) ────────────────────────────────
@@ -364,10 +366,13 @@ $(BUILD)/ui_framestats.o: $(SRC)/framestats.c | $(BUILD)
 
 $(BUILD)/ui_test: $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
                   $(BUILD)/ui_lexicon.o $(BUILD)/ui_framestats.o \
-                  $(BUILD)/libui.a $(BUILD)/libglfw.a
+                  $(BUILD)/libui.a $(BUILD)/libglfw.a \
+                  $(BUILD)/librunstate.a $(BUILD)/liblogbuf.a
 	$(CXX) -o $@ $(BUILD)/ui_test.o $(BUILD)/ui_arena.o \
 	    $(BUILD)/ui_lexicon.o $(BUILD)/ui_framestats.o \
-	    $(BUILD)/libui.a $(BUILD)/libglfw.a $(PLATFORM_LIBS)
+	    $(BUILD)/libui.a $(BUILD)/libglfw.a \
+	    $(BUILD)/librunstate.a $(BUILD)/liblogbuf.a \
+	    $(PLATFORM_LIBS)
 
 $(BUILD)/discovery_test: $(TESTS)/discovery_test.c $(BUILD)/libdiscovery.a \
                          $(SRC)/arena.c | $(BUILD)

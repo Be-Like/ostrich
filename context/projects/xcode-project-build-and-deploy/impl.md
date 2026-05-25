@@ -572,7 +572,7 @@ Extend `session_run_test.c` with stub assertions for this edge.
 
 ### Task 8 - UI slice A: wiring + run controls + Build Log
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 5, 6, 1, 3, 4
 - **User stories covered**: 2, 13, 14, 16, 22, 23, 24, 25, 26, 27,
   28, 29, 30, 49, 50, 51, 52, 55
@@ -625,25 +625,25 @@ DevConsole, but no Device Log panel renders yet (deferred to T9).
 
 #### Acceptance criteria
 
-- [ ] `ui_frame`'s extended signature (the `UiRunView` +
+- [x] `ui_frame`'s extended signature (the `UiRunView` +
       `UiRunIntents`) matches ARD §"Interfaces (`ui.h`)"; the app
       builds the run view-model each frame and the existing
       connection/recon panels are unaffected.
-- [ ] EXECUTE is enabled only when `disc_readiness` is READY and a
+- [x] EXECUTE is enabled only when `disc_readiness` is READY and a
       target is locked; COMPILE is enabled without a target; in
       flight the control reads ABORT; the run-state label and the
       build ▷ install ▷ launch progression track the mirrored
       phase.
-- [ ] The Build Log streams `REV_BUILD_LOG` chunks live (build,
+- [x] The Build Log streams `REV_BUILD_LOG` chunks live (build,
       then install/launch), is cleared at each build start,
       auto-scrolls but pauses on scroll-up, and offers copy + clear;
       it renders raw with no recoloring and a themed empty state
       before the first build.
-- [ ] A build failure renders EXPLOIT FAILED and a deploy failure
+- [x] A build failure renders EXPLOIT FAILED and a deploy failure
       the distinct DEPLOYMENT FAILED // PAYLOAD REJECTED, with the
       errors in the Build Log; semantic colors are used only for
       meaning.
-- [ ] The controls are keyboard-drivable; `build/ostrich` builds
+- [x] The controls are keyboard-drivable; `build/ostrich` builds
       clean on Linux and macOS and `make test` passes (`ui_test`
       headless still green).
 - [ ] Manually against a live Mac: with a READY preset+target,

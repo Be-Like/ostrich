@@ -1,12 +1,14 @@
 #include "app.h"
 #include "arena.h"
 #include "log.h"
+#include "logbuf.h"
 #include "ui.h"
 #include "session.h"
 #include "connstate.h"
 #include "lexicon.h"
 #include "store.h"
 #include "discovery.h"
+#include "runstate.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -74,6 +76,12 @@ struct App {
     DiscStatus    sweep_err;
     int           target_selected;  /* -1 = none; session-sticky             */
     char          remembered_udid[128]; /* last loaded via target_load       */
+
+    /* run state — mirrored from run event ring each frame */
+    LogBuf   *build_log;  /* Build Log buffer; lives in app arena           */
+    LogBuf   *device_log; /* Device Log buffer; lives in app arena          */
+    RunPhase  run_phase;
+    bool      run_stale;
 };
 
 AppStatus app_init(Arena *a, AppOptions opts, App **out) {
@@ -138,6 +146,28 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
         return APP_ERR;
     }
 
+    LogBuf *build_log = logbuf_init(a, 256 * 1024, 2048);
+    if (!build_log) {
+        arena_destroy(targets_arena);
+        arena_destroy(presets_arena);
+        arena_destroy(bp_read_arena);
+        arena_destroy(bp_arena);
+        session_close(session);
+        ui_shutdown(ui);
+        return APP_ERR;
+    }
+
+    LogBuf *device_log = logbuf_init(a, 256 * 1024, 2048);
+    if (!device_log) {
+        arena_destroy(targets_arena);
+        arena_destroy(presets_arena);
+        arena_destroy(bp_read_arena);
+        arena_destroy(bp_arena);
+        session_close(session);
+        ui_shutdown(ui);
+        return APP_ERR;
+    }
+
     App *app = arena_alloc(a, sizeof(App), _Alignof(App));
     if (!app) {
         arena_destroy(targets_arena);
@@ -156,6 +186,9 @@ AppStatus app_init(Arena *a, AppOptions opts, App **out) {
     app->bp_read_arena            = bp_read_arena;
     app->presets_arena            = presets_arena;
     app->targets_arena            = targets_arena;
+    app->build_log                = build_log;
+    app->device_log               = device_log;
+    app->run_phase                = RUN_IDLE;
     app->form.selected_known_host = -1;
     app->phase                    = CONN_DISCONNECTED;
     app->blueprint_selected       = -1;
@@ -201,6 +234,8 @@ bool app_tick(App *app) {
             app->sweep_done      = false;
             app->targets         = (TargetList){0};
             app->target_selected = -1;
+            app->run_phase       = RUN_IDLE;
+            app->run_stale       = false;
         }
     }
 
@@ -375,6 +410,29 @@ bool app_tick(App *app) {
         }
     }
 
+    /* Drain run events and mirror into app state. */
+    SessionRunEvent rev;
+    while (session_run_poll(app->session, &rev)) {
+        switch (rev.kind) {
+        case REV_PHASE:
+            if (rev.phase == RUN_BUILDING)
+                logbuf_clear(app->build_log);
+            app->run_phase = rev.phase;
+            break;
+        case REV_BUILD_LOG:
+            if (rev.len > 0)
+                logbuf_append(app->build_log, rev.chunk, (size_t)rev.len);
+            break;
+        case REV_DEVICE_LOG:
+            if (rev.len > 0)
+                logbuf_append(app->device_log, rev.chunk, (size_t)rev.len);
+            break;
+        case REV_STALE:
+            app->run_stale = rev.stale;
+            break;
+        }
+    }
+
     UiConnView view = {0};
     view.phase               = app->phase;
     view.user_host           = app->user_host;
@@ -407,14 +465,23 @@ bool app_tick(App *app) {
     rv.readiness             = disc_readiness(&app->run_cfg,
                                               app->target_selected >= 0);
 
+    UiRunView rrv = {0};
+    rrv.phase      = app->run_phase;
+    rrv.stale      = app->run_stale;
+    rrv.readiness  = disc_readiness(&app->run_cfg, app->target_selected >= 0);
+    rrv.build_log  = app->build_log;
+    rrv.device_log = app->device_log;
+
     UiIntents     intents = {0};
     UiReconIntents ri     = {0};
+    UiRunIntents   rri    = {0};
     intents.select_host  = -1;
     ri.pick_blueprint    = -1;
     ri.pick_preset       = -1;
     ri.pick_target       = -1;
     bool keep_going = ui_frame(app->ui, &view, &app->form, &intents,
-                               &rv, &app->run_cfg, &ri);
+                               &rv, &app->run_cfg, &ri,
+                               &rrv, &rri);
 
     bool connected = (app->phase == CONN_ONLINE ||
                       app->phase == CONN_REACQUIRING);
@@ -697,6 +764,33 @@ bool app_tick(App *app) {
         if (app->conn_key[0] != '\0')
             preset_save(app->conn_key, &app->presets);
     }
+
+    /* ── run intents ─────────────────────────────────────────────────── */
+    if (rri.execute && online) {
+        bool has_target = (app->target_selected >= 0 &&
+                           app->target_selected < app->targets.count);
+        SessionRunCmd rcmd = {0};
+        rcmd.kind       = RCMD_EXECUTE;
+        rcmd.cfg        = app->run_cfg;
+        rcmd.has_target = has_target;
+        if (has_target)
+            rcmd.target = app->targets.items[app->target_selected];
+        session_run_submit(app->session, &rcmd);
+    }
+    if (rri.compile && online) {
+        SessionRunCmd rcmd = {0};
+        rcmd.kind = RCMD_COMPILE;
+        rcmd.cfg  = app->run_cfg;
+        session_run_submit(app->session, &rcmd);
+    }
+    if (rri.abort_run) {
+        SessionRunCmd rcmd = {.kind = RCMD_ABORT};
+        session_run_submit(app->session, &rcmd);
+    }
+    if (rri.build_log_clear)
+        logbuf_clear(app->build_log);
+    if (rri.device_log_clear)
+        logbuf_clear(app->device_log);
 
     return keep_going;
 }

@@ -5,6 +5,8 @@
 #include "arena.h"
 #include "connstate.h"
 #include "discovery.h"
+#include "logbuf.h"
+#include "runstate.h"
 #include "store.h"
 
 #ifdef __cplusplus
@@ -116,6 +118,26 @@ typedef struct {
     int  pick_target;     /* -1 = no pick                                  */
 } UiReconIntents;
 
+/* Read-only run view-model the app builds each frame. */
+typedef struct {
+    RunPhase  phase;      /* mirrored run phase                            */
+    bool      stale;      /* built_gen > deployed_gen while running        */
+    Readiness readiness;  /* for EXECUTE/COMPILE enablement                */
+    LogBuf   *build_log;  /* Build Log buffer (never NULL after app init)  */
+    LogBuf   *device_log; /* Device Log buffer (T9; may be NULL for now)   */
+} UiRunView;
+
+/* Discrete run intents returned by ui_frame each frame. */
+typedef struct {
+    bool execute;          /* request EXECUTE (or terminate-first re-exec) */
+    bool compile;          /* request build-only COMPILE                   */
+    bool abort_run;        /* request ABORT (universal stop)               */
+    bool build_log_copy;   /* user pressed COPY on Build Log               */
+    bool build_log_clear;  /* user pressed CLEAR on Build Log              */
+    bool device_log_copy;  /* (T9) user pressed COPY on Device Log         */
+    bool device_log_clear; /* (T9) user pressed CLEAR on Device Log        */
+} UiRunIntents;
+
 /* Stand up window + GL + ImGui + theme + fonts. Allocates the
    Ui handle and font bytes from `a`. */
 UiStatus ui_init(Arena *a, UiOptions opts, Ui **out);
@@ -123,11 +145,12 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out);
 /* Render exactly one frame. Returns false when the window
    should close (close button or Ctrl-Q), true otherwise.
    Writes discrete intents to *out (zeroed then filled).
-   rv/rf/ri handle the recon panel; rv may be NULL (no panel). */
+   rv/rf/ri handle the recon panel; rv may be NULL (no panel).
+   rrv/rri handle the run panel; rrv may be NULL (no panel). */
 bool ui_frame(Ui *ui,
               const UiConnView *cv, ConnForm *cf, UiIntents *ci,
-              const UiReconView *rv, RunConfig *rf,
-              UiReconIntents *ri);
+              const UiReconView *rv, RunConfig *rf, UiReconIntents *ri,
+              const UiRunView *rrv, UiRunIntents *rri);
 
 /* Tear down ImGui, the GL context, and GLFW cleanly. */
 void ui_shutdown(Ui *ui);

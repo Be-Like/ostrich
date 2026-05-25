@@ -4,6 +4,8 @@
 #include "arena.h"
 #include "framestats.h"
 #include "lexicon.h"
+#include "logbuf.h"
+#include "runstate.h"
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -783,6 +785,210 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
     ImGui::End();
 }
 
+/* ── run panel: controls + Build Log ─────────────────────────────────── */
+static void draw_run_panel(const UiRunView *rv, UiRunIntents *ri) {
+    const ImGuiIO &io     = ImGui::GetIO();
+    const float    pad    = ImGui::GetStyle().FramePadding.y;
+    const float    v_pad  = pad * 2.0f;
+    const float    bar_h  = ImGui::GetTextLineHeight() + v_pad * 2.0f;
+    const float    foot_h = ImGui::GetTextLineHeight() + pad * 2.0f;
+    const float    avail_w = io.DisplaySize.x;
+    const float    avail_h = io.DisplaySize.y;
+    const float    panel_w = 400.0f;
+    const float    panel_x = avail_w - panel_w - 8.0f;
+    const float    panel_y = bar_h + 12.0f;
+    const float    panel_h = avail_h - panel_y - foot_h - 8.0f;
+
+    ImGui::SetNextWindowPos({panel_x, panel_y}, ImGuiCond_Always);
+    ImGui::SetNextWindowSize({panel_w, panel_h}, ImGuiCond_Always);
+    ImGui::PushStyleColor(ImGuiCol_Border, C_CYAN_DIM);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
+    ImGui::Begin("##run_panel", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+
+    /* ── Phase label ──────────────────────────────────────────────────── */
+    bool in_chain = (rv->phase == RUN_BUILDING || rv->phase == RUN_PRIMING ||
+                     rv->phase == RUN_INSTALLING || rv->phase == RUN_LAUNCHING);
+    bool running  = (rv->phase == RUN_RUNNING);
+    bool failed   = (rv->phase == RUN_BUILD_FAILED || rv->phase == RUN_DEPLOY_FAILED);
+    bool aborted  = (rv->phase == RUN_ABORTED);
+
+    ImVec4 phase_col = C_CYAN_DIM;
+    if (running)
+        phase_col = C_OK;
+    else if (failed)
+        phase_col = C_FAIL;
+    else if (aborted || in_chain)
+        phase_col = C_BUSY;
+
+    ImGui::PushStyleColor(ImGuiCol_Text, phase_col);
+    ImGui::TextUnformatted(lex(runstate_phase_lex(rv->phase)));
+    ImGui::PopStyleColor();
+
+    /* ── Progression indicator: BUILD ▷ INSTALL ▷ LAUNCH ─────────────── */
+    {
+        struct {
+            const char *label;
+            RunPhase    phase;
+        } steps[] = {
+            {"BUILD", RUN_BUILDING},
+            {"INSTALL", RUN_INSTALLING},
+            {"LAUNCH", RUN_LAUNCHING},
+        };
+        int n = 3;
+        for (int i = 0; i < n; i++) {
+            bool active = (rv->phase == steps[i].phase);
+            bool done   = false;
+            if (steps[i].phase == RUN_BUILDING &&
+                (rv->phase == RUN_INSTALLING || rv->phase == RUN_LAUNCHING || running))
+                done = true;
+            if (steps[i].phase == RUN_INSTALLING && (rv->phase == RUN_LAUNCHING || running))
+                done = true;
+            if (steps[i].phase == RUN_LAUNCHING && running)
+                done = true;
+
+            ImVec4 col = done ? C_OK : (active ? C_BUSY : C_CYAN_DIM);
+            ImGui::PushStyleColor(ImGuiCol_Text, col);
+            ImGui::TextUnformatted(steps[i].label);
+            ImGui::PopStyleColor();
+            if (i < n - 1) {
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+                ImGui::TextUnformatted(" \xe2\x96\xb7 "); /* ▷ */
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+            }
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    /* ── Action buttons ───────────────────────────────────────────────── */
+    bool can_execute = (rv->readiness == READY_OK) && !in_chain;
+    bool can_compile =
+        (rv->readiness == READY_OK || rv->readiness == READY_NO_TARGET) && !in_chain;
+
+    if (in_chain) {
+        /* ABORT replaces EXECUTE during the chain */
+        if (ImGui::Button(lex(LEX_RUN_ABORT)))
+            ri->abort_run = true;
+    } else {
+        if (!can_execute)
+            ImGui::BeginDisabled();
+        if (ImGui::Button(lex(LEX_RUN_EXECUTE)))
+            ri->execute = true;
+        if (!can_execute)
+            ImGui::EndDisabled();
+    }
+
+    ImGui::SameLine();
+
+    if (!can_compile)
+        ImGui::BeginDisabled();
+    if (ImGui::Button(lex(LEX_RUN_COMPILE)))
+        ri->compile = true;
+    if (!can_compile)
+        ImGui::EndDisabled();
+
+    /* Stale indicator */
+    if (rv->stale) {
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
+        ImGui::TextUnformatted(lex(LEX_RUN_STALE));
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    /* ── Build Log header + controls ──────────────────────────────────── */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted("BUILD LOG");
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine();
+
+    {
+        const float btn_pad = ImGui::GetStyle().FramePadding.x * 2.0f;
+        const float spc     = ImGui::GetStyle().ItemSpacing.x;
+        float       copy_w  = ImGui::CalcTextSize("COPY").x + btn_pad;
+        float       clr_w   = ImGui::CalcTextSize("CLR").x + btn_pad;
+        float       btns_w  = copy_w + spc + clr_w;
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - btns_w);
+
+        ImGui::PushStyleColor(ImGuiCol_Button, C_CYAN_DIM);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, C_CYAN);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, C_CYAN);
+        ImGui::PushStyleColor(ImGuiCol_Text, C_BG);
+        if (ImGui::SmallButton("COPY")) {
+            ri->build_log_copy = true;
+            if (rv->build_log) {
+                size_t needed = logbuf_copy_all(rv->build_log, nullptr, 0);
+                if (needed > 0) {
+                    char *tmp = new char[needed + 1];
+                    logbuf_copy_all(rv->build_log, tmp, needed + 1);
+                    tmp[needed] = '\0';
+                    ImGui::SetClipboardText(tmp);
+                    delete[] tmp;
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("CLR"))
+            ri->build_log_clear = true;
+        ImGui::PopStyleColor(4);
+    }
+
+    /* ── Build Log scrollable content ─────────────────────────────────── */
+    float log_h = ImGui::GetContentRegionAvail().y;
+    ImGui::BeginChild("##build_log", {0.0f, log_h}, false,
+                      ImGuiWindowFlags_HorizontalScrollbar);
+
+    static bool s_build_auto_scroll = true;
+
+    int count = rv->build_log ? logbuf_count(rv->build_log) : 0;
+    if (count == 0) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_RUN_BUILD_EMPTY));
+        ImGui::PopStyleColor();
+    } else {
+        /* Failure header in semantic color */
+        if (failed) {
+            ImVec4 fail_col = C_FAIL;
+            ImGui::PushStyleColor(ImGuiCol_Text, fail_col);
+            ImGui::TextUnformatted(lex(runstate_phase_lex(rv->phase)));
+            ImGui::PopStyleColor();
+        }
+
+        for (int i = 0; i < count; i++) {
+            size_t     len  = 0;
+            const char *ln  = logbuf_line(rv->build_log, i, &len);
+            ImGui::TextUnformatted(ln, ln + len);
+        }
+    }
+
+    /* Detect upward scroll → pause auto-scroll */
+    float scroll_y   = ImGui::GetScrollY();
+    float scroll_max = ImGui::GetScrollMaxY();
+    if (scroll_max > 0.0f && scroll_y < scroll_max - 4.0f)
+        s_build_auto_scroll = false;
+    else
+        s_build_auto_scroll = true;
+
+    if (s_build_auto_scroll)
+        ImGui::SetScrollHereY(1.0f);
+
+    ImGui::EndChild();
+    ImGui::End();
+}
+
 static void draw_conn_bar(const UiConnView *view, double online_since,
                           UiIntents *out) {
     const ImGuiIO &io     = ImGui::GetIO();
@@ -968,8 +1174,8 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
 
 bool ui_frame(Ui *ui,
               const UiConnView *cv, ConnForm *cf, UiIntents *ci,
-              const UiReconView *rv, RunConfig *rf,
-              UiReconIntents *ri) {
+              const UiReconView *rv, RunConfig *rf, UiReconIntents *ri,
+              const UiRunView *rrv, UiRunIntents *rri) {
     *ci = {};
     ci->select_host = -1;
     if (ri) {
@@ -978,6 +1184,8 @@ bool ui_frame(Ui *ui,
         ri->pick_preset    = -1;
         ri->pick_target    = -1;
     }
+    if (rri)
+        *rri = {};
     /* Aliases for local use — existing code uses view/form/out. */
     const UiConnView *view = cv;
     ConnForm         *form = cf;
@@ -1062,6 +1270,10 @@ bool ui_frame(Ui *ui,
     /* ── recon panel (ONLINE / REACQUIRING, no overlay) ─────────────── */
     if (bar_phase && !view->overlay_open && rv != nullptr && rf != nullptr && ri != nullptr)
         draw_recon_panel(rv, rf, ri);
+
+    /* ── run panel: controls + Build Log (ONLINE / REACQUIRING, no overlay) ── */
+    if (bar_phase && !view->overlay_open && rrv != nullptr && rri != nullptr)
+        draw_run_panel(rrv, rri);
 
     /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY /
           SEVERED — SEVERED shows reason + BREACH to re-connect;
