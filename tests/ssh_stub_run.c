@@ -12,7 +12,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define STUB_RUN_MAX_RESP 8
+#define STUB_RUN_MAX_RESP   16
+#define STUB_MAX_CMD_LEN  2048
 
 typedef struct {
     const char *output;
@@ -27,6 +28,12 @@ int         g_run_resp_count = 0;
 
 /* Test sets this to 1 to make the streaming channel EOF. */
 volatile int g_run_stop_stream = 0;
+
+/* Test sets this to 1 to make the next channel read return SSH_ERR_IO. */
+volatile int g_run_simulate_drop = 0;
+
+/* Records the command string passed to each ssh_channel_exec call. */
+char g_exec_cmds[STUB_RUN_MAX_RESP][STUB_MAX_CMD_LEN];
 
 struct Ssh        { int dummy; };
 struct SshChannel { int idx; };
@@ -44,11 +51,14 @@ int g_bytes_sent = 0;  /* bytes sent for current exec           */
 /* Called by reset_stub() in the test to reset per-test state. */
 void stub_run_reset(void)
 {
-    g_run_resp_count  = 0;
-    g_run_stop_stream = 0;
-    g_exec_next       = 0;
-    g_cur_idx         = -1;
-    g_bytes_sent      = 0;
+    g_run_resp_count     = 0;
+    g_run_stop_stream    = 0;
+    g_run_simulate_drop  = 0;
+    g_exec_next          = 0;
+    g_cur_idx            = -1;
+    g_bytes_sent         = 0;
+    for (int i = 0; i < STUB_RUN_MAX_RESP; i++)
+        g_exec_cmds[i][0] = '\0';
 }
 
 SshStatus ssh_connect_start(Arena *a, SshConfig cfg, Ssh **out, int *out_fd)
@@ -111,7 +121,14 @@ SshStatus ssh_channel_open(Ssh *s, SshChannel **out)
 
 SshStatus ssh_channel_exec(SshChannel *ch, const char *cmd)
 {
-    (void)ch; (void)cmd;
+    (void)ch;
+    int idx = g_cur_idx;
+    if (idx >= 0 && idx < STUB_RUN_MAX_RESP) {
+        size_t len = strlen(cmd);
+        if (len >= STUB_MAX_CMD_LEN) len = STUB_MAX_CMD_LEN - 1;
+        memcpy(g_exec_cmds[idx], cmd, len);
+        g_exec_cmds[idx][len] = '\0';
+    }
     return SSH_OK;
 }
 
@@ -129,6 +146,10 @@ bool ssh_channel_eof(SshChannel *ch)
 SshStatus ssh_channel_read(SshChannel *ch, char *buf, size_t cap, size_t *n)
 {
     (void)ch;
+    if (g_run_simulate_drop) {
+        *n = 0;
+        return SSH_ERR_IO;
+    }
     int idx = g_cur_idx;
     if (idx < 0 || idx >= g_run_resp_count) {
         *n = 0;

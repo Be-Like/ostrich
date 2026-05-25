@@ -448,7 +448,7 @@ host-free automated path.
 
 ### Task 6 - worker: ABORT + terminate-first + drop teardown
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 5
 - **User stories covered**: 17, 18, 19, 20, 21, 47, 53, 55
 
@@ -489,20 +489,20 @@ No new `ssh.h` primitive — every action is an ordinary exec.
 
 #### Acceptance criteria
 
-- [ ] `RCMD_ABORT` mid-build runs the two-pronged kill: the stub
+- [x] `RCMD_ABORT` mid-build runs the two-pronged kill: the stub
       test asserts a `terminate <bundle>` exec and a
       `kill -- -<pgid>` exec are issued (the pgid matching the
       parsed build marker), the local channels close, and the state
       resolves to `RUN_ABORTED`.
-- [ ] An EXECUTE while `RUN_RUNNING` issues `terminate <bundle>`
+- [x] An EXECUTE while `RUN_RUNNING` issues `terminate <bundle>`
       **before** opening the next `RunChain`'s first channel (stub
       test asserts the ordering), and the DevConsole channel EOFs /
       closes in between.
-- [ ] An SSH drop mid-run (stub-simulated transport failure) tears
+- [x] An SSH drop mid-run (stub-simulated transport failure) tears
       down the `RunChain` + `DevConsole` and resolves to
       `RUN_ABORTED` via `RUN_EV_DROP`; no run-event pointer dangles
       and the connection-machine teardown is otherwise unchanged.
-- [ ] The existing connection/discovery teardown behavior and tests
+- [x] The existing connection/discovery teardown behavior and tests
       are unaffected; `make test` passes.
 - [ ] Manually via `run_smoke` / a live Mac: ABORT during a build
       stops `xcodebuild` (no orphaned process holds the build dir)

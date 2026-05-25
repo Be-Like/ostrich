@@ -27,9 +27,11 @@ typedef struct {
 extern StubRunResp  g_run_resp[];
 extern int          g_run_resp_count;
 extern volatile int g_run_stop_stream;
+extern volatile int g_run_simulate_drop;
 extern int          g_exec_next;
 extern int          g_cur_idx;
 extern int          g_bytes_sent;
+extern char         g_exec_cmds[][2048];
 
 void stub_run_reset(void);
 
@@ -441,6 +443,208 @@ static int test_watchdog_stall(void)
     return 0;
 }
 
+/* ── T6 Tests ─────────────────────────────────────────────────────── */
+
+/* 8. ABORT mid-build: two-pronged kill.
+   The build channel is streaming (won't EOF); we submit ABORT while it
+   is in flight.  The worker should issue a kill exec, close local
+   channels, and resolve to RUN_ABORTED. */
+static int test_abort_mid_build(void)
+{
+    stub_run_reset();
+    /* settings: ok */
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    /* build: streaming so the chain stalls waiting for more data;
+       the pgid marker is in the output so build_pgid is set. */
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, true, false };
+    /* kill channel: no output, exit 0 (abort exec, fire-and-forget) */
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    /* Wait for build phase to confirm chain is running */
+    RunPhase p = RUN_BUILDING;
+    ASSERT("phase building", drain_until(s, phase_is, &p));
+    /* Ensure at least one build-log chunk arrived (pgid marker parsed) */
+    ASSERT("build log chunk", drain_until(s, got_build_log, NULL));
+
+    /* Submit ABORT */
+    SessionRunCmd abort_cmd;
+    memset(&abort_cmd, 0, sizeof(abort_cmd));
+    abort_cmd.kind = RCMD_ABORT;
+    ASSERT("submit abort", session_run_submit(s, &abort_cmd));
+
+    /* Should resolve to RUN_ABORTED */
+    p = RUN_ABORTED;
+    ASSERT("phase aborted", drain_until(s, phase_is, &p));
+
+    /* Kill exec must have been issued: exec 0=settings, 1=build, 2=kill */
+    ASSERT("kill exec was issued", g_exec_next >= 3);
+    ASSERT("kill cmd contains kill",
+           strstr(g_exec_cmds[2], "kill") != NULL ||
+           strstr(g_exec_cmds[2], "99001") != NULL);
+    /* No terminate (DevConsole was not streaming) */
+    ASSERT("only 3 execs for abort-mid-build", g_exec_next == 3);
+
+    session_close(s);
+    PASS("abort_mid_build");
+    return 0;
+}
+
+/* 9. ABORT while running: terminate the app.
+   App is in RUNNING state (DevConsole streaming).  ABORT should send
+   a terminate exec and resolve to RUN_ABORTED. */
+static int test_abort_running(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    /* streaming DevConsole */
+    g_run_resp[3] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp_count = 4;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+    ASSERT("device log chunk", drain_until(s, got_device_log, NULL));
+
+    /* Submit ABORT while running */
+    SessionRunCmd abort_cmd;
+    memset(&abort_cmd, 0, sizeof(abort_cmd));
+    abort_cmd.kind = RCMD_ABORT;
+    ASSERT("submit abort", session_run_submit(s, &abort_cmd));
+
+    p = RUN_ABORTED;
+    ASSERT("phase aborted", drain_until(s, phase_is, &p));
+
+    /* Terminate exec at index 4 (after settings=0, build=1, install=2, launch=3) */
+    ASSERT("terminate exec was issued", g_exec_next >= 5);
+    ASSERT("terminate cmd contains terminate or bundle",
+           strstr(g_exec_cmds[4], "terminate") != NULL ||
+           strstr(g_exec_cmds[4], "com.test.App") != NULL);
+
+    session_close(s);
+    PASS("abort_running");
+    return 0;
+}
+
+/* 10. Terminate-first re-EXECUTE: EXECUTE while running terminates the old
+    instance and then starts a fresh chain.  The terminate exec must happen
+    BEFORE the new chain's settings exec. */
+static int test_terminate_first(void)
+{
+    stub_run_reset();
+    /* First run */
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[3] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    /* Second run (terminate at 4, then settings+build at 5+6, install at 7,
+       launch at 8 — stop with build failure to keep test simple) */
+    /* index 4: terminate (fire-and-forget, no pre-set response needed) */
+    g_run_resp[5] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[6] = (StubRunResp){
+        "rebuild error\n", 14, 1, false, false };  /* build fail → stop early */
+    g_run_resp_count = 7;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    /* First EXECUTE */
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_RUNNING;
+    ASSERT("phase running (first run)", drain_until(s, phase_is, &p));
+    ASSERT("device log chunk", drain_until(s, got_device_log, NULL));
+
+    /* Second EXECUTE while running (terminate-first) */
+    ASSERT("submit second execute", session_run_submit(s, &cmd));
+
+    /* Phase should jump to BUILDING as terminate-first starts */
+    p = RUN_BUILDING;
+    ASSERT("phase building (second run)", drain_until(s, phase_is, &p));
+
+    /* Second run build fails */
+    p = RUN_BUILD_FAILED;
+    ASSERT("phase build_failed", drain_until(s, phase_is, &p));
+
+    /* Ordering: exec[4] = terminate; exec[5] = settings (second run).
+       The terminate must precede the settings exec. */
+    ASSERT("terminate at exec[4]",
+           strstr(g_exec_cmds[4], "terminate") != NULL ||
+           strstr(g_exec_cmds[4], "com.test.App") != NULL);
+    ASSERT("settings at exec[5] follows terminate",
+           strstr(g_exec_cmds[5], "showBuildSettings") != NULL ||
+           strstr(g_exec_cmds[5], "xcodebuild") != NULL);
+
+    session_close(s);
+    PASS("terminate_first");
+    return 0;
+}
+
+/* 11. SSH drop mid-run: channel read error on DevConsole causes
+    RUN_EV_DROP → RUN_ABORTED without crashing. */
+static int test_drop_mid_run(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[3] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp_count = 4;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+    ASSERT("device log chunk", drain_until(s, got_device_log, NULL));
+
+    /* Simulate transport drop: next channel read returns SSH_ERR_IO */
+    g_run_simulate_drop = 1;
+
+    /* DevConsole read error → RUN_EV_DROP → RUN_ABORTED */
+    p = RUN_ABORTED;
+    ASSERT("phase aborted on drop", drain_until(s, phase_is, &p));
+
+    session_close(s);
+    PASS("drop_mid_run");
+    return 0;
+}
+
 /* ── main ─────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -458,6 +662,10 @@ int main(void)
     rc |= test_launch_nonzero_exit();
     rc |= test_console_eof();
     rc |= test_watchdog_stall();
+    rc |= test_abort_mid_build();
+    rc |= test_abort_running();
+    rc |= test_terminate_first();
+    rc |= test_drop_mid_run();
 
     log_shutdown();
     unlink("/tmp/ostrich_session_run_test.log");

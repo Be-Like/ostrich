@@ -41,7 +41,8 @@
 #else
 #define RUN_STALL_SEC 120.0
 #endif
-#define RUN_CHAIN_SLOT       DISC_MAX_JOBS   /* = 4, for open_owner seam */
+#define RUN_CHAIN_SLOT       DISC_MAX_JOBS       /* = 4, for open_owner seam */
+#define RUN_ABORT_SLOT       (DISC_MAX_JOBS + 1) /* = 5, for open_owner seam */
 
 /* ── discovery job engine constants ───────────────────────────────── */
 
@@ -164,6 +165,28 @@ typedef struct {
     bool         is_sim;
 } DevConsole;
 
+/* ── run abort types (worker-private) ────────────────────────────── */
+
+typedef enum {
+    RABORT_IDLE,
+    RABORT_TERM_OPEN,  /* opening channel for terminate */
+    RABORT_TERM_EXEC,  /* exec terminate (may SSH_AGAIN) */
+    RABORT_KILL_OPEN,  /* opening channel for kill */
+    RABORT_KILL_EXEC,  /* exec kill (may SSH_AGAIN) */
+    RABORT_COMPLETE,   /* emit aborted or start pending chain */
+} RunAbortState;
+
+typedef struct {
+    RunAbortState state;
+    SshChannel   *ch;
+    bool          need_term;
+    bool          need_kill;
+    char          term_cmd[1024];
+    char          kill_cmd[256];
+    bool          is_reexecute;   /* terminate-first: start new chain on complete */
+    SessionRunCmd pending;        /* saved execute cmd for terminate-first */
+} RunAbort;
+
 /* ── worker-private sub-phase ─────────────────────────────────────── */
 
 typedef enum {
@@ -199,6 +222,7 @@ typedef struct {
     /* run subsystem */
     RunChain         run_chain;
     DevConsole       dev_console;
+    RunAbort         run_abort;
     RunState         rs;
     Arena           *run_arena;
 } WorkerCtx;
@@ -349,6 +373,73 @@ static const char *rchain_step_str(RChainStep step)
     return "?";
 }
 #endif
+
+/* Start a RunChain without stepping the state machine (state already
+   transitioned by the caller). */
+static void start_run_chain(WorkerCtx *ctx, const SessionRunCmd *cmd, bool compile_only)
+{
+    arena_reset(ctx->run_arena);
+    RunChain *rc = &ctx->run_chain;
+    memset(rc, 0, sizeof(*rc));
+    rc->cfg          = cmd->cfg;
+    rc->target       = cmd->target;
+    rc->has_target   = cmd->has_target;
+    rc->compile_only = compile_only;
+    ctx->rs.target_is_sim = (!compile_only) && cmd->has_target && cmd->target.is_simulator;
+    rc->step   = RCHAIN_STEP_SETTINGS;
+    rc->state  = RCHAIN_OPEN;
+    rc->active = true;
+}
+
+/* Capture kill/terminate commands, tear down local channels, and start
+   the abort state machine.  Called for both RCMD_ABORT and
+   terminate-first re-EXECUTE (is_reexecute=true). */
+static void start_run_abort(WorkerCtx *ctx, bool is_reexecute,
+                             const SessionRunCmd *pending)
+{
+    RunAbort   *ra = &ctx->run_abort;
+    RunChain   *rc = &ctx->run_chain;
+    DevConsole *dc = &ctx->dev_console;
+
+    memset(ra, 0, sizeof(*ra));
+    ra->is_reexecute = is_reexecute;
+    if (pending) ra->pending = *pending;
+
+    /* Build kill command if RunChain has a parsed pgid. */
+    if (rc->active && rc->build_pgid > 0) {
+        if (bd_kill_cmd(rc->build_pgid, ra->kill_cmd, sizeof(ra->kill_cmd)) == BD_OK)
+            ra->need_kill = true;
+    }
+
+    /* Build terminate command if DevConsole is active. */
+    if (dc->state != DCON_IDLE) {
+        Target tgt;
+        memset(&tgt, 0, sizeof(tgt));
+        memcpy(tgt.udid, dc->udid, sizeof(tgt.udid));
+        tgt.is_simulator = dc->is_sim;
+        if (bd_terminate_cmd(&tgt, dc->bundle_id, ra->term_cmd,
+                             sizeof(ra->term_cmd)) == BD_OK)
+            ra->need_term = true;
+    }
+
+    /* Tear down local channels immediately. */
+    if (rc->active) {
+        if (ctx->open_owner == RUN_CHAIN_SLOT) ctx->open_owner = -1;
+        if (rc->ch) { ssh_channel_close(rc->ch); rc->ch = NULL; }
+        arena_reset(ctx->run_arena);
+        rc->settings_buf = NULL;
+        rc->settings_len = 0;
+        rc->active = false;
+    }
+    if (dc->state != DCON_IDLE) {
+        if (dc->ch) { ssh_channel_close(dc->ch); dc->ch = NULL; }
+        dc->state = DCON_IDLE;
+    }
+
+    ra->state = RABORT_TERM_OPEN;
+    LOG_INFO(LG_RUN, "abort: start need_term=%d need_kill=%d is_reexecute=%d",
+             ra->need_term, ra->need_kill, is_reexecute);
+}
 
 static void fail_run_chain(WorkerCtx *ctx, RunEvent ev, BdStatus reason)
 {
@@ -503,6 +594,96 @@ static BdStatus build_step_cmd(WorkerCtx *ctx, char *cmd, size_t cap)
         return bd_launch_cmd(&rc->target, rc->cfg.bundle_id, cmd, cap);
     }
     return BD_ERR_OOM;
+}
+
+static void drive_run_abort(WorkerCtx *ctx)
+{
+    RunAbort *ra = &ctx->run_abort;
+    if (ra->state == RABORT_IDLE) return;
+
+    bool again = true;
+    while (again && ra->state != RABORT_IDLE) {
+        again = false;
+
+        switch (ra->state) {
+        case RABORT_IDLE:
+            return;
+
+        case RABORT_TERM_OPEN:
+            if (!ra->need_term) { ra->state = RABORT_KILL_OPEN; again = true; break; }
+            if (ctx->open_owner != -1 && ctx->open_owner != RUN_ABORT_SLOT) return;
+            ctx->open_owner = RUN_ABORT_SLOT;
+            {
+                SshStatus st = ssh_channel_open(ctx->ssh, &ra->ch);
+                if (st == SSH_AGAIN) return;
+                ctx->open_owner = -1;
+                if (st != SSH_OK) {
+                    ra->ch = NULL;
+                    ra->state = RABORT_KILL_OPEN;
+                    again = true;
+                    break;
+                }
+            }
+            ra->state = RABORT_TERM_EXEC;
+            again = true;
+            break;
+
+        case RABORT_TERM_EXEC: {
+            SshStatus st = ssh_channel_exec(ra->ch, ra->term_cmd);
+            if (st == SSH_AGAIN) return;
+            ssh_channel_close(ra->ch);
+            ra->ch = NULL;
+            LOG_INFO(LG_RUN, "abort: terminate exec'd");
+            ra->state = RABORT_KILL_OPEN;
+            again = true;
+            break;
+        }
+
+        case RABORT_KILL_OPEN:
+            if (!ra->need_kill) { ra->state = RABORT_COMPLETE; again = true; break; }
+            if (ctx->open_owner != -1 && ctx->open_owner != RUN_ABORT_SLOT) return;
+            ctx->open_owner = RUN_ABORT_SLOT;
+            {
+                SshStatus st = ssh_channel_open(ctx->ssh, &ra->ch);
+                if (st == SSH_AGAIN) return;
+                ctx->open_owner = -1;
+                if (st != SSH_OK) {
+                    ra->ch = NULL;
+                    ra->state = RABORT_COMPLETE;
+                    again = true;
+                    break;
+                }
+            }
+            ra->state = RABORT_KILL_EXEC;
+            again = true;
+            break;
+
+        case RABORT_KILL_EXEC: {
+            SshStatus st = ssh_channel_exec(ra->ch, ra->kill_cmd);
+            if (st == SSH_AGAIN) return;
+            ssh_channel_close(ra->ch);
+            ra->ch = NULL;
+            LOG_INFO(LG_RUN, "abort: kill exec'd");
+            ra->state = RABORT_COMPLETE;
+            again = true;
+            break;
+        }
+
+        case RABORT_COMPLETE:
+            ra->state = RABORT_IDLE;
+            if (ra->is_reexecute) {
+                /* Runstate already in BUILDING from handle_run_execute; just start chain. */
+                start_run_chain(ctx, &ra->pending, false);
+                LOG_INFO(LG_RUN, "abort: terminate-first complete, new chain starting");
+            } else {
+                RunAction act = runstate_step(&ctx->rs, RUN_EV_ABORT);
+                (void)act;
+                emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+                LOG_INFO(LG_RUN, "abort: resolved to aborted");
+            }
+            break;
+        }
+    }
 }
 
 static void drive_dev_console(WorkerCtx *ctx)
@@ -686,6 +867,7 @@ static void drive_run_chain(WorkerCtx *ctx)
 
 static void drive_run(WorkerCtx *ctx)
 {
+    drive_run_abort(ctx);
     drive_dev_console(ctx);
     drive_run_chain(ctx);
 }
@@ -693,49 +875,52 @@ static void drive_run(WorkerCtx *ctx)
 static void handle_run_execute(WorkerCtx *ctx, const SessionRunCmd *cmd)
 {
     if (ctx->sub != SUB_ONLINE) return;
-    if (ctx->run_chain.active || ctx->dev_console.state != DCON_IDLE) return;
+    if (ctx->run_abort.state != RABORT_IDLE) return; /* abort in progress */
 
-    arena_reset(ctx->run_arena);
-    RunChain *rc = &ctx->run_chain;
-    memset(rc, 0, sizeof(*rc));
-    rc->cfg        = cmd->cfg;
-    rc->target     = cmd->target;
-    rc->has_target = cmd->has_target;
-    rc->compile_only = false;
-    ctx->rs.target_is_sim = cmd->has_target && cmd->target.is_simulator;
+    /* Terminate-first: DevConsole streaming, no chain active → kill app then rebuild. */
+    if (!ctx->run_chain.active && ctx->dev_console.state != DCON_IDLE) {
+        RunAction act = runstate_step(&ctx->rs, RUN_EV_EXECUTE);
+        if (act != RUN_ACT_TERMINATE_FIRST) return;
+        emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+        start_run_abort(ctx, true, cmd);
+        LOG_INFO(LG_RUN, "execute: terminate-first project=\"%.64s\"", cmd->cfg.project);
+        return;
+    }
+
+    if (ctx->run_chain.active || ctx->dev_console.state != DCON_IDLE) return;
 
     RunAction act = runstate_step(&ctx->rs, RUN_EV_EXECUTE);
     (void)act;
     emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+    start_run_chain(ctx, cmd, false);
+    LOG_INFO(LG_RUN, "execute project=\"%.64s\"", cmd->cfg.project);
+}
 
-    rc->step   = RCHAIN_STEP_SETTINGS;
-    rc->state  = RCHAIN_OPEN;
-    rc->active = true;
-    LOG_INFO(LG_RUN, "execute project=\"%.64s\"", rc->cfg.project);
+static void handle_run_abort(WorkerCtx *ctx)
+{
+    if (ctx->sub != SUB_ONLINE) return;
+    if (ctx->run_abort.state != RABORT_IDLE) return; /* already aborting */
+
+    bool have_chain   = ctx->run_chain.active;
+    bool have_console = ctx->dev_console.state != DCON_IDLE;
+
+    /* Nothing to abort and already idle — ignore. */
+    if (!have_chain && !have_console && ctx->rs.phase == RUN_IDLE) return;
+
+    start_run_abort(ctx, false, NULL);
 }
 
 static void handle_run_compile(WorkerCtx *ctx, const SessionRunCmd *cmd)
 {
     if (ctx->sub != SUB_ONLINE) return;
     if (ctx->run_chain.active) return;
-
-    arena_reset(ctx->run_arena);
-    RunChain *rc = &ctx->run_chain;
-    memset(rc, 0, sizeof(*rc));
-    rc->cfg          = cmd->cfg;
-    rc->target       = cmd->target;
-    rc->has_target   = cmd->has_target;
-    rc->compile_only = true;
-    ctx->rs.target_is_sim = false;
+    if (ctx->run_abort.state != RABORT_IDLE) return;
 
     RunAction act = runstate_step(&ctx->rs, RUN_EV_COMPILE);
     (void)act;
     emit_run_phase(ctx, ctx->rs.phase, BD_OK);
-
-    rc->step   = RCHAIN_STEP_SETTINGS;
-    rc->state  = RCHAIN_OPEN;
-    rc->active = true;
-    LOG_INFO(LG_RUN, "compile project=\"%.64s\"", rc->cfg.project);
+    start_run_chain(ctx, cmd, true);
+    LOG_INFO(LG_RUN, "compile project=\"%.64s\"", cmd->cfg.project);
 }
 
 static void drain_run_cmds(WorkerCtx *ctx)
@@ -745,7 +930,7 @@ static void drain_run_cmds(WorkerCtx *ctx)
         switch (cmd.kind) {
         case RCMD_EXECUTE: handle_run_execute(ctx, &cmd); break;
         case RCMD_COMPILE: handle_run_compile(ctx, &cmd); break;
-        case RCMD_ABORT:   /* T6 */ break;
+        case RCMD_ABORT:   handle_run_abort(ctx); break;
         }
     }
 }
@@ -1297,6 +1482,22 @@ static void disconnect_ssh(WorkerCtx *ctx)
 {
     fail_all_disc_jobs(ctx);
 
+    /* Tear down run abort if in flight. */
+    RunAbort *ra = &ctx->run_abort;
+    if (ra->state != RABORT_IDLE) {
+        if (ctx->open_owner == RUN_ABORT_SLOT) ctx->open_owner = -1;
+        if (ra->ch) ra->ch = NULL;  /* session teardown frees it */
+        bool was_reexecute = ra->is_reexecute;
+        ra->state = RABORT_IDLE;
+        /* For terminate-first, rs is already BUILDING — emit DROP. */
+        if (was_reexecute) {
+            RunAction act = runstate_step(&ctx->rs, RUN_EV_DROP);
+            (void)act;
+            emit_run_phase(ctx, ctx->rs.phase, BD_OK);
+        }
+        LOG_WARN(LG_RUN, "run-abort dropped on disconnect");
+    }
+
     /* Tear down run chain */
     RunChain *rc = &ctx->run_chain;
     if (rc->active) {
@@ -1588,7 +1789,8 @@ static int compute_timeout_ms(const WorkerCtx *ctx)
         /* bound poll while disc jobs or run chain are in flight */
         if (has_active_disc_jobs(ctx) ||
             ctx->run_chain.active ||
-            ctx->dev_console.state != DCON_IDLE)
+            ctx->dev_console.state != DCON_IDLE ||
+            ctx->run_abort.state != RABORT_IDLE)
             return 10;
         return ctx->keepalive_next * 1000;
     }
