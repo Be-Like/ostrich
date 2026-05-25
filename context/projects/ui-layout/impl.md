@@ -302,7 +302,7 @@ copy. No `ui.h`/`app.c` changes.
 
 ### Task 5 - Resizable log divider
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: T2
 - **User stories covered**: n/a; realizes the resizable-divider
   decision recorded in T1
@@ -330,15 +330,15 @@ struct). Per `coding_standards.md`: no allocation; UI-thread state.
 
 #### Acceptance criteria
 
-- [ ] A draggable divider sits between Build Log and Live Feed;
+- [x] A draggable divider sits between Build Log and Live Feed;
       dragging it resizes both panels live.
-- [ ] The split defaults to 50/50 and the dragged ratio persists
+- [x] The split defaults to 50/50 and the dragged ratio persists
       across frames within the session.
-- [ ] The ratio is clamped so neither log collapses below a usable
+- [x] The ratio is clamped so neither log collapses below a usable
       minimum width.
-- [ ] No public `ui.h` change and no `app.c`/`store` change (ratio
+- [x] No public `ui.h` change and no `app.c`/`store` change (ratio
       is UI-internal session state).
-- [ ] `make` builds and `make test` passes.
+- [x] `make` builds and `make test` passes.
 
 ## Conformance checklist (coding_standards.md)
 

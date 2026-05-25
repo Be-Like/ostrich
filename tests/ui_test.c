@@ -1922,6 +1922,152 @@ int main(void) {
         }
     }
 
+    /* ── T5: Resizable log divider ──────────────────────────────────── */
+
+    /* T5: default split (50/50) — ONLINE with both log panels renders without
+     * crash and emits no spurious intents across multiple frames. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        logbuf_append(build_log, "Build succeeded\n", 16);
+        logbuf_append(dev_log,   "App output\n",      11);
+
+        for (int i = 0; i < 5; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_RUNNING;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.device_log      = dev_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.execute);
+            assert(!run_ri.abort_run);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T5: both panels empty — splitter renders over empty-state wordmarks
+     * without crash and emits no spurious intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        /* both logs intentionally empty */
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.device_log      = dev_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T5: minimum-width clamp — even if log_split is driven to extremes,
+     * neither panel collapses (render stays stable across many frames). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        logbuf_append(build_log, "line\n", 5);
+        logbuf_append(dev_log,   "line\n", 5);
+
+        /* Render once with a ratio that would normally be out of bounds. */
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_RUNNING;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.device_log      = dev_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.device_log_copy);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T5: REACQUIRING phase — splitter still present; no spurious intents. */
+    {
+        UiConnView reacq_view = {0};
+        reacq_view.phase      = CONN_REACQUIRING;
+        reacq_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        logbuf_append(build_log, "Build output\n", 13);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.device_log      = dev_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.execute);
+            assert(!run_ri.compile);
+            assert(!run_ri.abort_run);
+        }
+        arena_destroy(test_arena);
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

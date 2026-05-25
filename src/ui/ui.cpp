@@ -126,6 +126,7 @@ struct Ui {
     double      last_time;
     double      online_since; /* glfwGetTime() when phase last became ONLINE; 0 = not online */
     ConnPhase   prev_phase;
+    float       log_split;   /* build-log / live-feed split ratio (0..1), session-only */
 };
 
 static bool has_display(void) {
@@ -1268,6 +1269,7 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
     ui->last_time    = glfwGetTime();
     ui->online_since = 0.0;
     ui->prev_phase   = CONN_DISCONNECTED;
+    ui->log_split    = 0.5f;
     ui->window       = window;
     *out = ui;
     return UI_OK;
@@ -1328,9 +1330,20 @@ bool ui_frame(Ui *ui,
     const float    g_log_y = g_hdr_h + g_cfg_h;
     const float    g_log_h_raw = avail_h - g_log_y - g_ftr_h;
     const float    g_log_h = g_log_h_raw > 0.0f ? g_log_h_raw : 0.0f;
-    const float    g_log_w = avail_w * 0.5f;
     const float    g_rcn_w = avail_w * 0.60f;
     const float    g_ctl_w = avail_w - g_rcn_w;
+
+    /* Clamp log_split so neither panel narrows below 96 px after window resize. */
+    {
+        const float safe_w = avail_w > 0.0f ? avail_w : 1.0f;
+        const float min_r  = 96.0f / safe_w;
+        const float max_r  = 1.0f - min_r;
+        if (ui->log_split < min_r) ui->log_split = min_r;
+        if (ui->log_split > max_r) ui->log_split = max_r;
+    }
+    const float g_build_w = avail_w * ui->log_split;
+    const float g_live_x  = g_build_w;
+    const float g_live_w  = avail_w - g_build_w;
 
     draw_overlay();
 
@@ -1387,8 +1400,40 @@ bool ui_frame(Ui *ui,
 
     /* ── log panels: Build Log (left) + Live Feed (right) ───────────── */
     if (bar_phase && !view->overlay_open && rrv != nullptr && rri != nullptr) {
-        draw_build_log(rrv, rri, {0.0f, g_log_y}, {g_log_w, g_log_h});
-        draw_live_feed(rrv, rri, {g_log_w, g_log_y}, {g_log_w, g_log_h});
+        draw_build_log(rrv, rri, {0.0f, g_log_y}, {g_build_w, g_log_h});
+        draw_live_feed(rrv, rri, {g_live_x, g_log_y}, {g_live_w, g_log_h});
+
+        /* Draggable splitter between the two log panels. */
+        if (g_log_h > 0.0f && avail_w > 0.0f) {
+            const float spl_w = 6.0f;
+            const float spl_x = g_build_w - spl_w * 0.5f;
+            ImGui::SetNextWindowPos({spl_x, g_log_y});
+            ImGui::SetNextWindowSize({spl_w, g_log_h});
+            ImGui::SetNextWindowBgAlpha(0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0f, 0.0f});
+            ImGui::Begin("##log_splitter", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus |
+                             ImGuiWindowFlags_NoNav);
+            ImGui::PopStyleVar();
+
+            float btn_h = ImGui::GetContentRegionAvail().y;
+            if (btn_h <= 0.0f) btn_h = 1.0f;
+            ImGui::InvisibleButton("##split_drag", {spl_w, btn_h});
+            if (ImGui::IsItemActive()) {
+                float delta = ImGui::GetIO().MouseDelta.x;
+                ui->log_split += delta / avail_w;
+                const float min_r = 96.0f / avail_w;
+                const float max_r = 1.0f - min_r;
+                if (ui->log_split < min_r) ui->log_split = min_r;
+                if (ui->log_split > max_r) ui->log_split = max_r;
+            }
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+
+            ImGui::End();
+        }
     }
 
     /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY /
