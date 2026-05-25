@@ -235,7 +235,7 @@ discovery) for the settings parse. Black-box tested through
 
 ### Task 3 - liblogbuf
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: 24, 35, 36, 54
 
@@ -273,22 +273,22 @@ through `logbuf.h` only.
 
 #### Acceptance criteria
 
-- [ ] `include/logbuf.h` declares the opaque `LogBuf` and the seven
+- [x] `include/logbuf.h` declares the opaque `LogBuf` and the seven
       functions exactly as ARD §"Interfaces (`logbuf.h`)"
       specifies; `logbuf_init` takes an `Arena *` (no hidden
       allocator).
-- [ ] Incremental assembly is verified: bytes split mid-line across
+- [x] Incremental assembly is verified: bytes split mid-line across
       two `logbuf_append` calls produce one correct line; multiple
       lines in one chunk produce multiple lines.
-- [ ] Bounding is verified for both caps: exceeding the byte cap and
+- [x] Bounding is verified for both caps: exceeding the byte cap and
       exceeding the line cap each drop whole oldest lines, and no
       surviving line is ever truncated.
-- [ ] `logbuf_mark` flushes a pending partial line, then inserts the
+- [x] `logbuf_mark` flushes a pending partial line, then inserts the
       demarcation line as its own complete line; `logbuf_clear`
       empties the store.
-- [ ] `logbuf_copy_all` flattens all lines and reports the required
+- [x] `logbuf_copy_all` flattens all lines and reports the required
       size, handling the cap-exceeded case.
-- [ ] `build/liblogbuf.a` builds clean on Linux and macOS,
+- [x] `build/liblogbuf.a` builds clean on Linux and macOS,
       `tests/logbuf_test.c` links the archive, and `make test`
       passes.
 

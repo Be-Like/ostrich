@@ -113,12 +113,16 @@ RUNSTATE_OBJS := $(patsubst %.c,$(BUILD)/runstate/%.o,$(RUNSTATE_SRC))
 BUILDDEPLOY_SRC  := builddeploy.c
 BUILDDEPLOY_OBJS := $(patsubst %.c,$(BUILD)/builddeploy/%.o,$(BUILDDEPLOY_SRC))
 
+# logbuf (pure bounded line buffer)
+LOGBUF_SRC  := logbuf.c
+LOGBUF_OBJS := $(patsubst %.c,$(BUILD)/logbuf/%.o,$(LOGBUF_SRC))
+
 .PHONY: all clean test debug ssh_version_smoke ssh_smoke session_smoke discovery_smoke
 
 all: $(BUILD)/ostrich $(BUILD)/libglfw.a $(BUILD)/libui.a \
      $(BUILD)/liblibssh2.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
      $(BUILD)/libstore.a $(BUILD)/libsession.a $(BUILD)/libdiscovery.a \
-     $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a
+     $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a $(BUILD)/liblogbuf.a
 
 # ── GLFW ──────────────────────────────────────────────────────────────
 $(BUILD)/glfw/%.o: $(GLFW_DIR)/src/%.c | $(BUILD)/glfw
@@ -246,6 +250,13 @@ $(BUILD)/builddeploy/%.o: $(SRC)/builddeploy/%.c | $(BUILD)/builddeploy
 $(BUILD)/libbuilddeploy.a: $(BUILDDEPLOY_OBJS)
 	ar rcs $@ $^
 
+# ── logbuf library (pure bounded line buffer) ─────────────────────────
+$(BUILD)/logbuf/%.o: $(SRC)/logbuf/%.c | $(BUILD)/logbuf
+	$(CC) $(CFLAGS) -I$(INCLUDE) -c $< -o $@
+
+$(BUILD)/liblogbuf.a: $(LOGBUF_OBJS)
+	ar rcs $@ $^
+
 # ── Dev smokes (not part of make test) ───────────────────────────────
 ssh_version_smoke: $(BUILD)/ssh_version_smoke
 	./$(BUILD)/ssh_version_smoke
@@ -352,6 +363,11 @@ $(BUILD)/builddeploy_test: $(TESTS)/builddeploy_test.c \
 	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/builddeploy_test.c \
 	    $(SRC)/lexicon.c $(BUILD)/libbuilddeploy.a
 
+$(BUILD)/logbuf_test: $(TESTS)/logbuf_test.c $(BUILD)/liblogbuf.a \
+                      $(SRC)/arena.c | $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) -o $@ $(TESTS)/logbuf_test.c \
+	    $(SRC)/arena.c $(BUILD)/liblogbuf.a
+
 $(BUILD)/log_test: $(TESTS)/log_test.c $(SRC)/log.c | $(BUILD)
 	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) -o $@ \
 	    $(TESTS)/log_test.c $(SRC)/log.c
@@ -415,7 +431,7 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
       $(BUILD)/ui_test $(BUILD)/store_test $(BUILD)/discovery_test \
       $(BUILD)/log_test $(BUILD)/session_test $(BUILD)/session_exec_test \
       $(BUILD)/session_disc_parse_test $(BUILD)/runstate_test \
-      $(BUILD)/builddeploy_test
+      $(BUILD)/builddeploy_test $(BUILD)/logbuf_test
 	./$(BUILD)/app_test
 	./$(BUILD)/connstate_test
 	./$(BUILD)/spsc_ring_test
@@ -431,6 +447,7 @@ test: all $(BUILD)/app_test $(BUILD)/connstate_test $(BUILD)/spsc_ring_test \
 	./$(BUILD)/session_disc_parse_test
 	./$(BUILD)/runstate_test
 	./$(BUILD)/builddeploy_test
+	./$(BUILD)/logbuf_test
 
 debug:
 	$(MAKE) CFLAGS="$(CFLAGS) -DOSTRICH_DEBUG -g -O0" all
@@ -474,6 +491,9 @@ $(BUILD)/runstate: | $(BUILD)
 
 $(BUILD)/builddeploy: | $(BUILD)
 	mkdir -p $(BUILD)/builddeploy
+
+$(BUILD)/logbuf: | $(BUILD)
+	mkdir -p $(BUILD)/logbuf
 
 clean:
 	rm -rf $(BUILD)
