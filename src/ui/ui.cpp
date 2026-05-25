@@ -944,8 +944,23 @@ static void draw_build_log(const UiRunView *rv, UiRunIntents *ri,
 
     int count = rv->build_log ? logbuf_count(rv->build_log) : 0;
     if (count == 0) {
+        const char  *wm     = lex(LEX_WORDMARK);
+        const char  *cap    = lex(LEX_RUN_BUILD_EMPTY);
+        const ImVec2 wm_sz  = ImGui::CalcTextSize(wm);
+        const ImVec2 cap_sz = ImGui::CalcTextSize(cap);
+        const float  gap    = ImGui::GetTextLineHeightWithSpacing() * 0.5f;
+        const float  blk_h  = wm_sz.y + gap + cap_sz.y;
+        const ImVec2 avail  = ImGui::GetContentRegionAvail();
+        const float  x_wm   = center_offset(avail.x, wm_sz.x);
+        const float  x_cap  = center_offset(avail.x, cap_sz.x);
+        const float  y0     = center_offset(avail.y, blk_h);
+        ImGui::SetCursorPos({x_wm, y0});
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN);
+        ImGui::TextUnformatted(wm);
+        ImGui::PopStyleColor();
+        ImGui::SetCursorPos({x_cap, y0 + wm_sz.y + gap});
         ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted(lex(LEX_RUN_BUILD_EMPTY));
+        ImGui::TextUnformatted(cap);
         ImGui::PopStyleColor();
     } else {
         if (failed) {
@@ -1031,8 +1046,23 @@ static void draw_live_feed(const UiRunView *rv, UiRunIntents *ri,
 
     int dev_count = rv->device_log ? logbuf_count(rv->device_log) : 0;
     if (dev_count == 0) {
+        const char  *wm     = lex(LEX_WORDMARK);
+        const char  *cap    = lex(LEX_RUN_DEVICE_EMPTY);
+        const ImVec2 wm_sz  = ImGui::CalcTextSize(wm);
+        const ImVec2 cap_sz = ImGui::CalcTextSize(cap);
+        const float  gap    = ImGui::GetTextLineHeightWithSpacing() * 0.5f;
+        const float  blk_h  = wm_sz.y + gap + cap_sz.y;
+        const ImVec2 avail  = ImGui::GetContentRegionAvail();
+        const float  x_wm   = center_offset(avail.x, wm_sz.x);
+        const float  x_cap  = center_offset(avail.x, cap_sz.x);
+        const float  y0     = center_offset(avail.y, blk_h);
+        ImGui::SetCursorPos({x_wm, y0});
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN);
+        ImGui::TextUnformatted(wm);
+        ImGui::PopStyleColor();
+        ImGui::SetCursorPos({x_cap, y0 + wm_sz.y + gap});
         ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted(lex(LEX_RUN_DEVICE_EMPTY));
+        ImGui::TextUnformatted(cap);
         ImGui::PopStyleColor();
     } else {
         for (int i = 0; i < dev_count; i++) {

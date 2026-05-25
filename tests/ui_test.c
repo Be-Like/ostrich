@@ -1499,6 +1499,144 @@ int main(void) {
         }
     }
 
+    /* ── T4: Per-panel empty-state wordmark ─────────────────────────── */
+
+    /* T4: empty Build Log (non-null logbuf, count 0) renders wordmark art
+     * without crash and emits no spurious build_log intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        /* logbuf is intentionally left empty — count == 0 */
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log; /* non-null, empty */
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T4: empty Live Feed (non-null logbuf, count 0) renders wordmark art
+     * without crash and emits no spurious device_log intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        /* dev_log is intentionally left empty — count == 0 */
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.device_log      = dev_log; /* non-null, empty */
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T4: Build Log populated while Live Feed empty — each panel renders
+     * its own state independently, no spurious intents from either side. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        logbuf_append(build_log, "Build output line\n", 18);
+        /* dev_log intentionally left empty — should show wordmark */
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_RUNNING;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log; /* populated */
+            run_rv.device_log      = dev_log;   /* empty → wordmark */
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T4: Live Feed populated while Build Log empty — wordmark shows in the
+     * left panel only; right panel streams content; no spurious intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(dev_log != NULL);
+        /* build_log intentionally left empty — should show wordmark */
+        logbuf_append(dev_log, "App output line\n", 16);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_RUNNING;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log; /* empty → wordmark */
+            run_rv.device_log      = dev_log;   /* populated */
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+            assert(!run_ri.device_log_copy);
+            assert(!run_ri.device_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

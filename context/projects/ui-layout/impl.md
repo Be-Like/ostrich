@@ -257,7 +257,7 @@ shrinks to ~3 short rows, maximizing log height:
 
 ### Task 4 - Per-panel empty-state wordmark
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: T2
 - **User stories covered**: n/a; realizes the requested empty-log
   art + `theme.md` empty-state copy
@@ -289,15 +289,15 @@ copy. No `ui.h`/`app.c` changes.
 
 #### Acceptance criteria
 
-- [ ] An empty Build Log shows the centered wordmark with
+- [x] An empty Build Log shows the centered wordmark with
       `// NO PAYLOAD COMPILED` beneath it.
-- [ ] An empty Live Feed shows the centered wordmark with
+- [x] An empty Live Feed shows the centered wordmark with
       `// NO SIGNAL — TARGET DARK` beneath it.
-- [ ] As soon as a panel receives content its art disappears and
+- [x] As soon as a panel receives content its art disappears and
       log lines render; the other panel's empty art is unaffected.
-- [ ] Wordmark uses the existing `LEX_WORDMARK` and palette; no new
+- [x] Wordmark uses the existing `LEX_WORDMARK` and palette; no new
       strings introduced.
-- [ ] `make` builds and `make test` passes (ui_test exercises both
+- [x] `make` builds and `make test` passes (ui_test exercises both
       the empty and populated render paths).
 
 ### Task 5 - Resizable log divider
