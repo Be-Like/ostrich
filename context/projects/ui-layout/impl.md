@@ -184,7 +184,7 @@ live a 50/50 horizontal split).
 
 ### Task 3 - Compact config internals (dropdowns + columns)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: T2
 - **User stories covered**: n/a; realizes `workflow.md`
   Containers-in-detail + the discovery dropdown intent
@@ -239,21 +239,21 @@ shrinks to ~3 short rows, maximizing log height:
 
 #### Acceptance criteria
 
-- [ ] PROJECT is a typable path field with a `[v]` picker popup
+- [x] PROJECT is a typable path field with a `[v]` picker popup
       containing scan-root + SCAN HOST + the scanned blueprints;
       hand-typed paths work without being overwritten.
-- [ ] PRESET and TARGET are dropdown pickers; preset new/rename/
+- [x] PRESET and TARGET are dropdown pickers; preset new/rename/
       delete and `↻ SWEEP` still work; empty/error states render
       with the correct lexicon copy.
-- [ ] SCHEME/CONFIG/BUNDLE remain editable inputs with discovered-
+- [x] SCHEME/CONFIG/BUNDLE remain editable inputs with discovered-
       set hint tooltips.
-- [ ] READY and the run controls are grouped in the band's right
+- [x] READY and the run controls are grouped in the band's right
       region; the config band is ~3 rows tall and the logs visibly
       gain vertical space.
-- [ ] All existing recon and run intents fire exactly as before
+- [x] All existing recon and run intents fire exactly as before
       (verified via the app and ui_test); `ui.h` and `app.c`
       unchanged.
-- [ ] `make` builds and `make test` passes.
+- [x] `make` builds and `make test` passes.
 
 ### Task 4 - Per-panel empty-state wordmark
 

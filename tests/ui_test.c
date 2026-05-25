@@ -1637,6 +1637,291 @@ int main(void) {
         arena_destroy(test_arena);
     }
 
+    /* ── T3: Compact config internals ───────────────────────────────── */
+
+    /* T3: compact layout — all slices fully populated renders without crash
+     * and emits no spurious intents (project picker popup is closed by
+     * default; combos are not open). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Blueprint bp_items[2] = {0};
+        snprintf(bp_items[0].path, sizeof(bp_items[0].path),
+                 "/Users/alice/App/App.xcworkspace");
+        bp_items[0].is_workspace = true;
+        snprintf(bp_items[1].path, sizeof(bp_items[1].path),
+                 "/Users/alice/Lib/Lib.xcodeproj");
+        bp_items[1].is_workspace = false;
+        BlueprintList bp_list = { .items = bp_items, .count = 2 };
+
+        char scheme_arr[2][256];
+        snprintf(scheme_arr[0], 256, "MyApp");
+        snprintf(scheme_arr[1], 256, "MyAppTests");
+        StrList schemes = { .items = scheme_arr, .count = 2 };
+
+        char config_arr[1][256];
+        snprintf(config_arr[0], 256, "Debug");
+        StrList configs = { .items = config_arr, .count = 1 };
+
+        Preset preset_arr[2];
+        memset(preset_arr, 0, sizeof(preset_arr));
+        snprintf(preset_arr[0].name, sizeof(preset_arr[0].name), "debug");
+        snprintf(preset_arr[1].name, sizeof(preset_arr[1].name), "release");
+        PresetList presets = { .items = preset_arr, .count = 2, .active_index = 0 };
+
+        Target target_arr[2];
+        memset(target_arr, 0, sizeof(target_arr));
+        snprintf(target_arr[0].name, sizeof(target_arr[0].name), "My iPhone");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
+                 "AAAA1111-BBBB-CCCC-DDDD-EEEE11112222");
+        target_arr[0].is_simulator = false;
+        snprintf(target_arr[1].name, sizeof(target_arr[1].name), "iPhone 16 Sim");
+        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid),
+                 "BBBB2222-CCCC-DDDD-EEEE-FFFF22223333");
+        target_arr[1].is_simulator = true;
+        target_arr[1].booted       = true;
+        TargetList targets = { .items = target_arr, .count = 2 };
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            rv.scan_done           = true;
+            rv.scan_err            = DISC_OK;
+            rv.blueprints          = &bp_list;
+            rv.blueprint_selected  = 0;
+            rv.schemes             = &schemes;
+            rv.configs             = &configs;
+            rv.presets             = &presets;
+            rv.preset_selected     = 0;
+            rv.sweep_done          = true;
+            rv.sweep_err           = DISC_OK;
+            rv.targets             = &targets;
+            rv.target_selected     = 0;
+            rv.readiness           = READY_OK;
+            run_rv.readiness       = READY_OK;
+            snprintf(rf.project,   sizeof(rf.project),   "/Users/alice/App/App.xcworkspace");
+            snprintf(rf.scheme,    sizeof(rf.scheme),    "MyApp");
+            snprintf(rf.config,    sizeof(rf.config),    "Debug");
+            snprintf(rf.bundle_id, sizeof(rf.bundle_id), "com.alice.myapp");
+            snprintf(rf.scan_root, sizeof(rf.scan_root), "/Users/alice");
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!ri.scan);
+            assert(!ri.abort_scan);
+            assert(ri.pick_blueprint == -1);
+            assert(!ri.scheme_edited);
+            assert(!ri.config_edited);
+            assert(!ri.bundle_id_edited);
+            assert(!ri.preset_new);
+            assert(!ri.preset_rename);
+            assert(!ri.preset_delete);
+            assert(ri.pick_preset == -1);
+            assert(!ri.sweep);
+            assert(ri.pick_target == -1);
+            assert(!run_ri.execute);
+            assert(!run_ri.compile);
+            assert(!run_ri.abort_run);
+        }
+    }
+
+    /* T3: PRESET combo — null presets renders // NO OPERATION CONFIGURED
+     * in the combo without crash; no spurious preset intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            rv.presets             = NULL;
+            rv.preset_selected     = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!ri.preset_new);
+            assert(!ri.preset_rename);
+            assert(!ri.preset_delete);
+            assert(ri.pick_preset == -1);
+        }
+    }
+
+    /* T3: PRESET combo — populated with selection renders selected preset
+     * name as the combo label without crash; no spurious picks. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Preset preset_arr[3];
+        memset(preset_arr, 0, sizeof(preset_arr));
+        snprintf(preset_arr[0].name, sizeof(preset_arr[0].name), "alpha");
+        snprintf(preset_arr[1].name, sizeof(preset_arr[1].name), "beta");
+        snprintf(preset_arr[2].name, sizeof(preset_arr[2].name), "gamma");
+        PresetList presets = { .items = preset_arr, .count = 3, .active_index = 1 };
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            rv.presets             = &presets;
+            rv.preset_selected     = 1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(ri.pick_preset == -1);
+            assert(!ri.preset_delete);
+        }
+    }
+
+    /* T3: TARGET combo — no sweep done renders // NO OPERATION CONFIGURED
+     * without crash; no spurious sweep or pick. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            rv.sweep_done          = false;
+            rv.targets             = NULL;
+            rv.target_selected     = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!ri.sweep);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* T3: TARGET combo — sweep done, target selected renders target name
+     * as the combo label without crash; no spurious picks. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Target target_arr[2];
+        memset(target_arr, 0, sizeof(target_arr));
+        snprintf(target_arr[0].name, sizeof(target_arr[0].name), "My Device");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
+                 "ABCD1234-EFGH-5678-IJKL-MNOP91011121");
+        target_arr[0].is_simulator = false;
+        snprintf(target_arr[1].name, sizeof(target_arr[1].name), "Simulator");
+        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid),
+                 "DCBA4321-HGFE-8765-LKJI-PONM21101191");
+        target_arr[1].is_simulator = true;
+        target_arr[1].booted       = true;
+        TargetList targets = { .items = target_arr, .count = 2 };
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            rv.sweep_done          = true;
+            rv.sweep_err           = DISC_OK;
+            rv.targets             = &targets;
+            rv.target_selected     = 0;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!ri.sweep);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* T3: TARGET combo — sweeping=true disables the combo and shows
+     * SWEEPING text; no spurious sweep intent. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            rv.sweeping            = true;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!ri.sweep);
+            assert(ri.pick_target == -1);
+        }
+    }
+
+    /* T3: READY indicator in run-controls — READY_OK renders without crash
+     * and emits no spurious execute/compile/abort. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.readiness       = READY_OK;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.execute);
+            assert(!run_ri.compile);
+            assert(!run_ri.abort_run);
+        }
+    }
+
+    /* T3: READY indicator in run-controls — each non-OK readiness value
+     * renders a hint in the right panel without crash. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Readiness states[] = {
+            READY_NO_PROJECT, READY_NO_SCHEME, READY_NO_CONFIG,
+            READY_NO_BUNDLE_ID, READY_NO_TARGET
+        };
+        int n = (int)(sizeof(states) / sizeof(states[0]));
+        for (int s = 0; s < n; s++) {
+            for (int i = 0; i < 3; i++) {
+                UiIntents      intents = {0};
+                UiReconView    rv      = make_recon_view();
+                RunConfig      rf      = {0};
+                UiReconIntents ri      = make_recon_intents();
+                UiRunView      run_rv  = make_run_view();
+                run_rv.readiness       = states[s];
+                UiRunIntents   run_ri  = {0};
+                intents.select_host    = -1;
+                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+                assert(!run_ri.execute);
+                assert(!run_ri.compile);
+                assert(!run_ri.abort_run);
+            }
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

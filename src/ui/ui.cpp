@@ -430,7 +430,7 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form,
 }
 
 /* ── connection bar ─────────────────────────────────────────────────── */
-/* ── recon panel (ONLINE / REACQUIRING, slice A) ────────────────────── */
+/* ── recon panel (ONLINE / REACQUIRING) — compact 4-row layout ──────── */
 static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
                              UiReconIntents *ri, ImVec2 pos, ImVec2 sz) {
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
@@ -444,196 +444,212 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
 
-    const float lw = 90.0f;
+    const float avail = ImGui::GetContentRegionAvail().x;
 
-    /* SCAN ROOT field */
-    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-    ImGui::TextUnformatted(lex(LEX_REC_FIELD_SCAN_ROOT));
-    ImGui::PopStyleColor();
-    ImGui::SameLine(lw);
-    ImGui::SetNextItemWidth(-1.0f);
-    if (rv->scanning) ImGui::BeginDisabled();
-    ImGui::InputText("##scan_root", rf->scan_root, sizeof(rf->scan_root));
-    if (rv->scanning) ImGui::EndDisabled();
-
-    ImGui::Spacing();
-
-    /* SCAN HOST / ABORT SCAN */
-    if (rv->scanning) {
-        if (ImGui::Button(lex(LEX_REC_ABORT_SCAN)))
-            ri->abort_scan = true;
-    } else {
-        bool can_scan = (rf->scan_root[0] != '\0');
-        if (!can_scan) ImGui::BeginDisabled();
-        if (ImGui::Button(lex(LEX_REC_SCAN_HOST)))
-            ri->scan = true;
-        if (!can_scan) ImGui::EndDisabled();
-    }
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    /* Blueprints section */
-    if (rv->scan_done) {
-        if (rv->scan_err == DISC_ERR_XCODE_MISSING) {
-            ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
-            ImGui::Text("%s %s", lex(LEX_VOICE_PREFIX), lex(LEX_REC_ERR_XCODE));
-            ImGui::PopStyleColor();
-        } else if (rv->scan_err != DISC_OK) {
-            ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
-            ImGui::Text("%s %s", lex(LEX_VOICE_PREFIX), lex(LEX_REC_ERR_INVENTORY));
-            ImGui::PopStyleColor();
-        } else if (!rv->blueprints || rv->blueprints->count == 0) {
-            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-            ImGui::TextUnformatted(lex(LEX_REC_NO_BLUEPRINTS));
-            ImGui::PopStyleColor();
-        } else {
-            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-            ImGui::TextUnformatted(lex(LEX_REC_BLUEPRINTS));
-            ImGui::PopStyleColor();
-
-            int   vis    = rv->blueprints->count < 6 ? rv->blueprints->count : 6;
-            float list_h = ImGui::GetTextLineHeightWithSpacing() * (float)vis;
-            ImGui::BeginChild("##blueprints", {0.0f, list_h}, false);
-            for (int i = 0; i < rv->blueprints->count; i++) {
-                const Blueprint *bp  = &rv->blueprints->items[i];
-                bool             sel = (rv->blueprint_selected == i);
-                const char      *disp = bp->path;
-                const char      *sl   = strrchr(bp->path, '/');
-                if (sl) disp = sl + 1;
-                char buf[1040]; /* glyph(3) + space(1) + path component(1024) + null */
-                /* ⌖ for workspace, ○ for project */
-                snprintf(buf, sizeof(buf), "%s %s",
-                         bp->is_workspace ? "\xe2\x8c\x96" : "\xe2\x97\x8b", disp);
-                ImGui::PushStyleColor(ImGuiCol_Text, sel ? C_CYAN : C_TEXT);
-                if (ImGui::Selectable(buf, sel))
-                    ri->pick_blueprint = i;
-                ImGui::PopStyleColor();
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("%s", bp->path);
-            }
-            ImGui::EndChild();
-        }
-    } else if (!rv->scanning) {
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted(lex(LEX_REC_NO_OP));
-        ImGui::PopStyleColor();
-    }
-
-    /* PROJECT path — manual entry, always available */
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
+    /* ── Row 1: PROJECT path + [v] picker popup ───────────────────────── */
     ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
     ImGui::TextUnformatted("PROJECT");
     ImGui::PopStyleColor();
-    ImGui::SameLine(lw);
-    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::SameLine(70.0f);
+    {
+        const float btn_w = ImGui::CalcTextSize("[v]").x +
+                            ImGui::GetStyle().FramePadding.x * 2.0f;
+        ImGui::SetNextItemWidth(-(btn_w + ImGui::GetStyle().ItemSpacing.x));
+    }
     ImGui::InputTextWithHint("##project", "path/to/App.xcworkspace",
                              rf->project, sizeof(rf->project));
+    ImGui::SameLine();
+    if (ImGui::Button("[v]"))
+        ImGui::OpenPopup("##project_picker");
 
-    /* ── Slice B: SCHEME / CONFIG / BUNDLE ID ─────────────────────────── */
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
+    /* Project picker popup: scan controls + blueprint results */
+    if (ImGui::BeginPopup("##project_picker")) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_REC_FIELD_SCAN_ROOT));
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(280.0f);
+        if (rv->scanning) ImGui::BeginDisabled();
+        ImGui::InputText("##scan_root", rf->scan_root, sizeof(rf->scan_root));
+        if (rv->scanning) ImGui::EndDisabled();
 
+        if (rv->scanning) {
+            if (ImGui::Button(lex(LEX_REC_ABORT_SCAN)))
+                ri->abort_scan = true;
+        } else {
+            bool can_scan = (rf->scan_root[0] != '\0');
+            if (!can_scan) ImGui::BeginDisabled();
+            if (ImGui::Button(lex(LEX_REC_SCAN_HOST)))
+                ri->scan = true;
+            if (!can_scan) ImGui::EndDisabled();
+        }
+
+        ImGui::Separator();
+
+        if (rv->scan_done) {
+            if (rv->scan_err == DISC_ERR_XCODE_MISSING) {
+                ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
+                ImGui::Text("%s %s", lex(LEX_VOICE_PREFIX), lex(LEX_REC_ERR_XCODE));
+                ImGui::PopStyleColor();
+            } else if (rv->scan_err != DISC_OK) {
+                ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
+                ImGui::Text("%s %s", lex(LEX_VOICE_PREFIX), lex(LEX_REC_ERR_INVENTORY));
+                ImGui::PopStyleColor();
+            } else if (!rv->blueprints || rv->blueprints->count == 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+                ImGui::TextUnformatted(lex(LEX_REC_NO_BLUEPRINTS));
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+                ImGui::TextUnformatted(lex(LEX_REC_BLUEPRINTS));
+                ImGui::PopStyleColor();
+                int   vis    = rv->blueprints->count < 8 ? rv->blueprints->count : 8;
+                float list_h = ImGui::GetTextLineHeightWithSpacing() * (float)vis;
+                ImGui::BeginChild("##blueprints", {0.0f, list_h}, false);
+                for (int i = 0; i < rv->blueprints->count; i++) {
+                    const Blueprint *bp   = &rv->blueprints->items[i];
+                    bool             sel  = (rv->blueprint_selected == i);
+                    const char      *disp = bp->path;
+                    const char      *sl   = strrchr(bp->path, '/');
+                    if (sl) disp = sl + 1;
+                    char buf[1040]; /* glyph(3) + space(1) + path component(1024) + null */
+                    snprintf(buf, sizeof(buf), "%s %s",
+                             bp->is_workspace ? "\xe2\x8c\x96" : "\xe2\x97\x8b", disp);
+                    ImGui::PushStyleColor(ImGuiCol_Text, sel ? C_CYAN : C_TEXT);
+                    if (ImGui::Selectable(buf, sel)) {
+                        ri->pick_blueprint = i;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::PopStyleColor();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", bp->path);
+                }
+                ImGui::EndChild();
+            }
+        } else if (!rv->scanning) {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+            ImGui::TextUnformatted(lex(LEX_REC_NO_OP));
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::EndPopup();
+    }
+
+    /* ── Row 2: SCHEME / CONFIG / BUNDLE ID — 3-column table ─────────── */
     bool reading   = rv->reading_blueprint;
     bool resolving = rv->resolving_bundle_id;
 
-    if (reading) ImGui::BeginDisabled();
+    if (ImGui::BeginTable("##row2_fields", 3, ImGuiTableFlags_None)) {
+        ImGui::TableNextRow();
 
-    /* SCHEME */
-    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-    ImGui::TextUnformatted(lex(LEX_REC_FIELD_SCHEME));
-    ImGui::PopStyleColor();
-    ImGui::SameLine(lw);
-    ImGui::SetNextItemWidth(-1.0f);
-    ImGui::InputText("##scheme", rf->scheme, sizeof(rf->scheme));
-    if (!reading && ImGui::IsItemEdited())
-        ri->scheme_edited = true;
-    if (rv->schemes && rv->schemes->count > 0 && ImGui::IsItemHovered()) {
-        char hint[1024];
-        int  off = snprintf(hint, sizeof(hint), "> discovered:");
-        for (int i = 0; i < rv->schemes->count && off < (int)sizeof(hint) - 2; i++)
-            off += snprintf(hint + off, sizeof(hint) - (size_t)off,
-                            "\n  %s", rv->schemes->items[i]);
-        ImGui::SetTooltip("%s", hint);
+        ImGui::TableNextColumn();
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_REC_FIELD_SCHEME));
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        if (reading) ImGui::BeginDisabled();
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputText("##scheme", rf->scheme, sizeof(rf->scheme));
+        if (!reading && ImGui::IsItemEdited())
+            ri->scheme_edited = true;
+        if (rv->schemes && rv->schemes->count > 0 && ImGui::IsItemHovered()) {
+            char hint[1024];
+            int  off = snprintf(hint, sizeof(hint), "> discovered:");
+            for (int i = 0; i < rv->schemes->count && off < (int)sizeof(hint) - 2; i++)
+                off += snprintf(hint + off, sizeof(hint) - (size_t)off,
+                                "\n  %s", rv->schemes->items[i]);
+            ImGui::SetTooltip("%s", hint);
+        }
+        if (reading) ImGui::EndDisabled();
+
+        ImGui::TableNextColumn();
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_REC_FIELD_CONFIG));
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        if (reading) ImGui::BeginDisabled();
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputText("##config", rf->config, sizeof(rf->config));
+        if (!reading && ImGui::IsItemEdited())
+            ri->config_edited = true;
+        if (rv->configs && rv->configs->count > 0 && ImGui::IsItemHovered()) {
+            char hint[512];
+            int  off = snprintf(hint, sizeof(hint), "> discovered:");
+            for (int i = 0; i < rv->configs->count && off < (int)sizeof(hint) - 2; i++)
+                off += snprintf(hint + off, sizeof(hint) - (size_t)off,
+                                "\n  %s", rv->configs->items[i]);
+            ImGui::SetTooltip("%s", hint);
+        }
+        if (reading) ImGui::EndDisabled();
+
+        ImGui::TableNextColumn();
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted(lex(LEX_REC_FIELD_BUNDLE_ID));
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##bundle_id",
+                                 resolving ? "RESOLVING..." : "",
+                                 rf->bundle_id, sizeof(rf->bundle_id));
+        if (ImGui::IsItemEdited())
+            ri->bundle_id_edited = true;
+
+        ImGui::EndTable();
     }
 
-    /* CONFIG */
-    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-    ImGui::TextUnformatted(lex(LEX_REC_FIELD_CONFIG));
-    ImGui::PopStyleColor();
-    ImGui::SameLine(lw);
-    ImGui::SetNextItemWidth(-1.0f);
-    ImGui::InputText("##config", rf->config, sizeof(rf->config));
-    if (!reading && ImGui::IsItemEdited())
-        ri->config_edited = true;
-    if (rv->configs && rv->configs->count > 0 && ImGui::IsItemHovered()) {
-        char hint[512];
-        int  off = snprintf(hint, sizeof(hint), "> discovered:");
-        for (int i = 0; i < rv->configs->count && off < (int)sizeof(hint) - 2; i++)
-            off += snprintf(hint + off, sizeof(hint) - (size_t)off,
-                            "\n  %s", rv->configs->items[i]);
-        ImGui::SetTooltip("%s", hint);
-    }
-
-    if (reading) ImGui::EndDisabled();
-
-    /* BUNDLE ID */
-    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-    ImGui::TextUnformatted(lex(LEX_REC_FIELD_BUNDLE_ID));
-    ImGui::PopStyleColor();
-    ImGui::SameLine(lw);
-    ImGui::SetNextItemWidth(-1.0f);
-    ImGui::InputTextWithHint("##bundle_id",
-                             resolving ? "RESOLVING..." : "",
-                             rf->bundle_id, sizeof(rf->bundle_id));
-    if (ImGui::IsItemEdited())
-        ri->bundle_id_edited = true;
-
-    /* ── Slice C: PRESETS ─────────────────────────────────────────────── */
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-    ImGui::TextUnformatted(lex(LEX_REC_FIELD_PRESET));
-    ImGui::PopStyleColor();
+    /* ── Row 3: PRESET dropdown + new / rename / delete ──────────────── */
+    static char s_new_name[64];
+    static char s_rename_buf[64];
 
     bool has_presets = (rv->presets && rv->presets->count > 0);
     bool has_sel     = has_presets &&
                        rv->preset_selected >= 0 &&
                        rv->preset_selected < rv->presets->count;
+    const char *preset_label = has_sel
+                               ? rv->presets->items[rv->preset_selected].name
+                               : lex(LEX_REC_NO_OP);
 
-    if (!has_presets) {
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted(lex(LEX_REC_NO_OP));
-        ImGui::PopStyleColor();
-    } else {
-        int   vis    = rv->presets->count < 4 ? rv->presets->count : 4;
-        float list_h = ImGui::GetTextLineHeightWithSpacing() * (float)vis;
-        ImGui::BeginChild("##presets", {0.0f, list_h}, false);
-        for (int i = 0; i < rv->presets->count; i++) {
-            const Preset *p  = &rv->presets->items[i];
-            bool          sel = (rv->preset_selected == i);
-            ImGui::PushStyleColor(ImGuiCol_Text, sel ? C_CYAN : C_TEXT);
-            if (ImGui::Selectable(p->name, sel))
-                ri->pick_preset = i;
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_REC_FIELD_PRESET));
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(avail * 0.28f);
+    if (ImGui::BeginCombo("##preset_combo", preset_label)) {
+        if (!has_presets) {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+            ImGui::TextUnformatted(lex(LEX_REC_NO_OP));
             ImGui::PopStyleColor();
+        } else {
+            for (int i = 0; i < rv->presets->count; i++) {
+                const Preset *p   = &rv->presets->items[i];
+                bool          sel = (rv->preset_selected == i);
+                ImGui::PushStyleColor(ImGuiCol_Text, sel ? C_CYAN : C_TEXT);
+                if (ImGui::Selectable(p->name, sel))
+                    ri->pick_preset = i;
+                ImGui::PopStyleColor();
+            }
         }
-        ImGui::EndChild();
+        ImGui::EndCombo();
     }
-
-    static char s_new_name[64];
-    static char s_rename_buf[64];
-
+    ImGui::SameLine();
     if (ImGui::Button(lex(LEX_REC_PRESET_NEW))) {
         memset(s_new_name, 0, sizeof(s_new_name));
         ImGui::OpenPopup("##preset_new");
     }
+    ImGui::SameLine();
+    if (!has_sel) ImGui::BeginDisabled();
+    if (ImGui::Button(lex(LEX_REC_PRESET_RENAME))) {
+        if (has_sel)
+            snprintf(s_rename_buf, sizeof(s_rename_buf), "%s",
+                     rv->presets->items[rv->preset_selected].name);
+        ImGui::OpenPopup("##preset_rename");
+    }
+    if (!has_sel) ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (!has_sel) ImGui::BeginDisabled();
+    if (ImGui::Button(lex(LEX_REC_PRESET_DELETE)))
+        ri->preset_delete = true;
+    if (!has_sel) ImGui::EndDisabled();
 
     if (ImGui::BeginPopup("##preset_new")) {
         ImGui::SetNextItemWidth(200.0f);
@@ -648,17 +664,6 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
         ImGui::EndPopup();
     }
 
-    ImGui::SameLine();
-
-    if (!has_sel) ImGui::BeginDisabled();
-    if (ImGui::Button(lex(LEX_REC_PRESET_RENAME))) {
-        if (has_sel)
-            snprintf(s_rename_buf, sizeof(s_rename_buf), "%s",
-                     rv->presets->items[rv->preset_selected].name);
-        ImGui::OpenPopup("##preset_rename");
-    }
-    if (!has_sel) ImGui::EndDisabled();
-
     if (ImGui::BeginPopup("##preset_rename")) {
         ImGui::SetNextItemWidth(200.0f);
         bool enter = ImGui::InputText("##prename", s_rename_buf, sizeof(s_rename_buf),
@@ -672,32 +677,34 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
         ImGui::EndPopup();
     }
 
-    ImGui::SameLine();
+    /* ── Row 4: TARGET dropdown + sweep ──────────────────────────────── */
+    bool has_targets     = (rv->targets && rv->targets->count > 0);
+    bool has_target_sel  = has_targets &&
+                           rv->target_selected >= 0 &&
+                           rv->target_selected < rv->targets->count;
 
-    if (!has_sel) ImGui::BeginDisabled();
-    if (ImGui::Button(lex(LEX_REC_PRESET_DELETE)))
-        ri->preset_delete = true;
-    if (!has_sel) ImGui::EndDisabled();
-
-    /* ── Slice D: TARGETS + READY ─────────────────────────────────────── */
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    if (rv->sweeping) {
-        ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
-        ImGui::TextUnformatted("SWEEPING...");
-        ImGui::PopStyleColor();
-    } else {
-        if (ImGui::Button(lex(LEX_REC_SWEEP)))
-            ri->sweep = true;
+    const char *target_label = lex(LEX_REC_NO_OP);
+    if (rv->sweep_done) {
+        if (rv->sweep_err != DISC_OK)
+            target_label = lex(LEX_REC_ERR_INVENTORY);
+        else if (!has_targets)
+            target_label = lex(LEX_REC_NO_TARGETS);
+        else if (has_target_sel)
+            target_label = rv->targets->items[rv->target_selected].name;
     }
 
-    ImGui::Spacing();
-
-    bool has_targets = (rv->targets && rv->targets->count > 0);
-    if (rv->sweep_done) {
-        if (rv->sweep_err != DISC_OK) {
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted("TARGET");
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    if (rv->sweeping) ImGui::BeginDisabled();
+    ImGui::SetNextItemWidth(avail * 0.28f);
+    if (ImGui::BeginCombo("##target_combo", target_label)) {
+        if (!rv->sweep_done) {
+            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+            ImGui::TextUnformatted(lex(LEX_REC_NO_OP));
+            ImGui::PopStyleColor();
+        } else if (rv->sweep_err != DISC_OK) {
             ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
             ImGui::Text("%s %s", lex(LEX_VOICE_PREFIX), lex(LEX_REC_ERR_INVENTORY));
             ImGui::PopStyleColor();
@@ -706,13 +713,6 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
             ImGui::TextUnformatted(lex(LEX_REC_NO_TARGETS));
             ImGui::PopStyleColor();
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-            ImGui::TextUnformatted(lex(LEX_REC_TARGETS));
-            ImGui::PopStyleColor();
-
-            int   vis    = rv->targets->count < 6 ? rv->targets->count : 6;
-            float list_h = ImGui::GetTextLineHeightWithSpacing() * (float)vis;
-            ImGui::BeginChild("##targets", {0.0f, list_h}, false);
             for (int i = 0; i < rv->targets->count; i++) {
                 const Target *t   = &rv->targets->items[i];
                 bool          sel = (rv->target_selected == i);
@@ -730,50 +730,18 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf,
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", t->udid);
             }
-            ImGui::EndChild();
         }
-    } else if (!rv->sweeping) {
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted(lex(LEX_REC_NO_OP));
-        ImGui::PopStyleColor();
+        ImGui::EndCombo();
     }
-
-    /* READY indicator */
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    switch (rv->readiness) {
-    case READY_OK:
-        ImGui::PushStyleColor(ImGuiCol_Text, C_OK);
-        ImGui::TextUnformatted(lex(LEX_REC_READY));
+    if (rv->sweeping) ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (rv->sweeping) {
+        ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
+        ImGui::TextUnformatted("SWEEPING\xe2\x80\xa6");
         ImGui::PopStyleColor();
-        break;
-    case READY_NO_PROJECT:
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted("// NO PROJECT");
-        ImGui::PopStyleColor();
-        break;
-    case READY_NO_SCHEME:
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::Text("// NO %s", lex(LEX_REC_FIELD_SCHEME));
-        ImGui::PopStyleColor();
-        break;
-    case READY_NO_CONFIG:
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::Text("// NO %s", lex(LEX_REC_FIELD_CONFIG));
-        ImGui::PopStyleColor();
-        break;
-    case READY_NO_BUNDLE_ID:
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::Text("// NO %s", lex(LEX_REC_FIELD_BUNDLE_ID));
-        ImGui::PopStyleColor();
-        break;
-    case READY_NO_TARGET:
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted("// NO TARGET LOCKED");
-        ImGui::PopStyleColor();
-        break;
+    } else {
+        if (ImGui::Button(lex(LEX_REC_SWEEP)))
+            ri->sweep = true;
     }
 
     ImGui::End();
@@ -881,6 +849,43 @@ static void draw_run_controls(const UiRunView *rv, UiRunIntents *ri,
         ImGui::PushStyleColor(ImGuiCol_Text, C_BUSY);
         ImGui::TextUnformatted(lex(LEX_RUN_STALE));
         ImGui::PopStyleColor();
+    }
+
+    /* READY indicator */
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    switch (rv->readiness) {
+    case READY_OK:
+        ImGui::PushStyleColor(ImGuiCol_Text, C_OK);
+        ImGui::TextUnformatted(lex(LEX_REC_READY));
+        ImGui::PopStyleColor();
+        break;
+    case READY_NO_PROJECT:
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted("// NO PROJECT");
+        ImGui::PopStyleColor();
+        break;
+    case READY_NO_SCHEME:
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::Text("// NO %s", lex(LEX_REC_FIELD_SCHEME));
+        ImGui::PopStyleColor();
+        break;
+    case READY_NO_CONFIG:
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::Text("// NO %s", lex(LEX_REC_FIELD_CONFIG));
+        ImGui::PopStyleColor();
+        break;
+    case READY_NO_BUNDLE_ID:
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::Text("// NO %s", lex(LEX_REC_FIELD_BUNDLE_ID));
+        ImGui::PopStyleColor();
+        break;
+    case READY_NO_TARGET:
+        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+        ImGui::TextUnformatted("// NO TARGET LOCKED");
+        ImGui::PopStyleColor();
+        break;
     }
 
     ImGui::End();
@@ -1319,7 +1324,7 @@ bool ui_frame(Ui *ui,
     const float    g_pad   = ImGui::GetStyle().FramePadding.y;
     const float    g_hdr_h = ImGui::GetTextLineHeight() + g_pad * 4.0f;
     const float    g_ftr_h = ImGui::GetTextLineHeight() + g_pad * 2.0f;
-    const float    g_cfg_h = 340.0f;
+    const float    g_cfg_h = 140.0f;
     const float    g_log_y = g_hdr_h + g_cfg_h;
     const float    g_log_h_raw = avail_h - g_log_y - g_ftr_h;
     const float    g_log_h = g_log_h_raw > 0.0f ? g_log_h_raw : 0.0f;
