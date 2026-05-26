@@ -260,14 +260,41 @@ static int test_compile_only(void)
     return 0;
 }
 
-/* 3. Build failure (non-zero exit from build step). */
+/* Collect all REV_BUILD_LOG chunks until a phase event matching *p arrives.
+   Returns true if the target phase was reached; appends chunk bytes into
+   buf (NUL-terminated, up to cap-1 bytes). */
+static bool collect_build_log_until_phase(Session *s, RunPhase target,
+                                          char *buf, size_t cap)
+{
+    size_t pos = 0;
+    SessionRunEvent ev;
+    for (int i = 0; i < POLL_MAX; i++) {
+        if (session_run_poll(s, &ev)) {
+            if (ev.kind == REV_BUILD_LOG && ev.len > 0) {
+                size_t space = cap - 1 - pos;
+                size_t copy  = (size_t)ev.len < space ? (size_t)ev.len : space;
+                memcpy(buf + pos, ev.chunk, copy);
+                pos += copy;
+                buf[pos] = '\0';
+            }
+            if (ev.kind == REV_PHASE && ev.phase == target)
+                return true;
+        }
+        sleep_ms(1);
+    }
+    return false;
+}
+
+/* 3. Build failure (non-zero exit from build step, no pgid marker).
+   The setsid help block must appear in the build log before the
+   RUN_BUILD_FAILED phase event. */
 static int test_build_failure(void)
 {
     stub_run_reset();
     g_run_resp[0] = (StubRunResp){
         k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
     g_run_resp[1] = (StubRunResp){
-        "build error\n", 12, 1, false, false };  /* exit 1 → build fail */
+        "build error\n", 12, 1, false, false };  /* exit 1, no pgid marker */
     g_run_resp_count = 2;
 
     Session *s = NULL;
@@ -277,8 +304,17 @@ static int test_build_failure(void)
     SessionRunCmd cmd = make_execute_cmd();
     ASSERT("submit execute", session_run_submit(s, &cmd));
 
-    RunPhase p = RUN_BUILD_FAILED;
-    ASSERT("phase build_failed", drain_until(s, phase_is, &p));
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("phase build_failed",
+           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
+                                         build_log, sizeof(build_log)));
+
+    /* Help block must be in the build log. */
+    ASSERT("help block header in build log",
+           strstr(build_log, "REMOTE MAC IS MISSING setsid.") != NULL);
+    ASSERT("ssh invocation in build log",
+           strstr(build_log, "ssh ") != NULL);
 
     /* Only 2 execs: settings + build; no install or launch. */
     ASSERT("only 2 execs for build fail", g_exec_next == 2);

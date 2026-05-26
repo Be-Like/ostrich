@@ -361,3 +361,24 @@ wrapper is `setsid`-specific.
       `tests/builddeploy_test.c`; no new test binary; no new
       smoke. Justification recorded above under Testing
       approach.
+
+## Amendment to ARD
+
+The IMPL added two items that this ARD's "Out of Scope" /
+"Failure-detection semantics" sections did not introduce:
+
+- `BD_ERR_SETSID_MISSING` — a new `BdStatus` enum value in
+  `include/builddeploy.h`, with matching `bd_status_str` and
+  `bd_reason_lex` coverage in `src/builddeploy/builddeploy.c`,
+  and a `runstate_reason_lex` mapping in `src/runstate/runstate.c`.
+- `LEX_REC_ERR_SETSID` — a new `LexKey` enum member in
+  `include/lexicon.h` with a matching table entry in
+  `src/lexicon.c`.
+
+These additions let the failure classification produced by the
+emission hook (T2) carry a distinct `BdStatus` value and lexicon
+key rather than reusing a generic `BD_ERR_BUILD`. The structural
+trigger condition (`build_pgid == 0 && exit_status != 0`) is
+unchanged from the ARD's "Failure-detection semantics" section.
+See `context/projects/setsid-install-help/impl.md` for the full
+rationale.

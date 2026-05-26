@@ -178,13 +178,10 @@ Removes the `build/` directory.
   command in `setsid sh -c '...'` so the worker can target the whole
   process group on abort. macOS doesn't ship `setsid`, which forces the
   Homebrew workaround documented under [Remote Mac](#remote-mac-ssh-target).
-  This needs to be revisited — likely options are a `perl -MPOSIX -e
-  'POSIX::setsid; exec @ARGV'` wrapper (perl ships on stock macOS), or a
-  different PGID-recovery mechanism that doesn't depend on `setsid` at
-  all. The current behavior, the design docs
-  (`context/projects/xcode-project-build-and-deploy/{ard,impl}.md`), and
-  the tests (`tests/builddeploy_test.c` asserts `setsid` is in the
-  command string) all hard-assume `setsid`, so the fix isn't local.
+  When `setsid` is missing the Build Log surfaces the install command and
+  the exact `ssh` invocation needed to fix it, so the failure is
+  self-documenting in-app. The dependency itself remains; see
+  `context/projects/setsid-install-help/` for the in-app guidance design.
 
 ## Repository layout
 

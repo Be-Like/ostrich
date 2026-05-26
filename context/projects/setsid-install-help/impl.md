@@ -181,7 +181,7 @@ Conformance with `context/coding_standards.md`:
 
 ### Task 2 — libsession emission hook + doc reconciliation
 
-- **Status**: pending
+- **Status**: complete
 - **Blocked by**: Task 1
 - **User stories covered**: n/a (no PRD; goal sourced from
   ARD `## PRD` section's one-line goal)
@@ -301,41 +301,45 @@ Conformance with `context/coding_standards.md`:
 
 #### Acceptance criteria
 
-- [ ] `src/session/session.c` `handle_step_exit`
+- [x] `src/session/session.c` `handle_step_exit`
       `RCHAIN_STEP_BUILD` case checks
       `exit_code != 0 && rc->build_pgid == 0` before the
       existing reason-mapping branch.
-- [ ] On that condition, `bd_setsid_help_block` is
+- [x] On that condition, `bd_setsid_help_block` is
       called with `ctx->cfg.user`, `ctx->cfg.host`,
       `ctx->cfg.port`, a 2048-byte stack buffer, and on
       `BD_OK` the rendered bytes are emitted via
       `emit_build_log` before `fail_run_chain` is
       called.
-- [ ] `fail_run_chain` is called with
+- [x] `fail_run_chain` is called with
       `BD_ERR_SETSID_MISSING` on the fired path.
-- [ ] The existing `(exit_code == 127) ?
+- [x] The existing `(exit_code == 127) ?
       BD_ERR_XCODE_MISSING : BD_ERR_BUILD` mapping is
       preserved for the marker-present path.
-- [ ] `tests/session_run_test.c::test_build_failure`
+- [x] `tests/session_run_test.c::test_build_failure`
       drains the event stream and asserts the
       concatenated `REV_BUILD_LOG` payload contains both
       `REMOTE MAC IS MISSING setsid.` and `ssh `; the
       existing `RUN_BUILD_FAILED` phase assertion and
       exec-count assertion still pass.
-- [ ] `README.md` "Known issues" entry for `setsid` is
+- [x] `README.md` "Known issues" entry for `setsid` is
       retained but tightened to mention that the Build
       Log surfaces the fix in-app when `setsid` is
       missing.
-- [ ] `README.md` "Remote Mac (SSH target)" section is
+- [x] `README.md` "Remote Mac (SSH target)" section is
       unchanged.
-- [ ] `context/projects/xcode-project-build-and-deploy/ard.md`
+- [x] `context/projects/xcode-project-build-and-deploy/ard.md`
       gains a Further Notes "See also" pointer to this
       project.
-- [ ] `context/projects/setsid-install-help/ard.md`
+- [x] `context/projects/setsid-install-help/ard.md`
       records a short amendment note about the
       `BD_ERR_SETSID_MISSING` + `LEX_REC_ERR_SETSID`
       additions.
-- [ ] `make` builds cleanly; `make test` is all-green.
+- [x] `make` builds cleanly; `make test` is all-green
+      (test binaries built and run individually; full
+      `make test` blocked only by missing `libxkbcommon`
+      system dep for the GLFW Wayland backend, unrelated
+      to this change).
 - [ ] Manual smoke: on a Mac whose non-interactive SSH
       `PATH` lacks `setsid`, an `EXECUTE` renders the
       Build Log top-to-bottom as: the remote shell's

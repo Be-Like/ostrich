@@ -508,6 +508,16 @@ static void handle_step_exit(WorkerCtx *ctx, int exit_code)
         break;
     }
     case RCHAIN_STEP_BUILD: {
+        if (exit_code != 0 && rc->build_pgid == 0) {
+            char block[2048];
+            if (bd_setsid_help_block(ctx->cfg.user, ctx->cfg.host,
+                                     ctx->cfg.port,
+                                     block, sizeof(block)) == BD_OK) {
+                emit_build_log(ctx, block, strlen(block));
+            }
+            fail_run_chain(ctx, RUN_EV_BUILD_FAIL, BD_ERR_SETSID_MISSING);
+            return;
+        }
         if (exit_code != 0) {
             BdStatus r = (exit_code == 127) ? BD_ERR_XCODE_MISSING : BD_ERR_BUILD;
             fail_run_chain(ctx, RUN_EV_BUILD_FAIL, r);

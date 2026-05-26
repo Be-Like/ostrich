@@ -427,6 +427,15 @@ indicator, new camp copy). These are recorded in the PRD; the
 upstream docs should be reconciled the way connection and discovery
 did.
 
+### See also
+
+- `context/projects/setsid-install-help/` — in-app remediation for the
+  missing-`setsid` failure mode. When the `setsid` wrapper exits before
+  emitting its PID marker (`build_pgid == 0`), the Build Log surfaces the
+  `brew install util-linux` command and the exact `ssh user@host`
+  invocation for the failing Mac. The `setsid` wrapper design and
+  two-pronged kill described in this ARD are unchanged.
+
 ### Testing approach (per library)
 
 - **`runstate_test.c`** (black-box): every transition incl.
