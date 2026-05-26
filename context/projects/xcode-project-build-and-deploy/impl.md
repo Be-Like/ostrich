@@ -238,25 +238,25 @@ discovery) for the settings parse. Black-box tested through
 
 #### Acceptance criteria
 
-- [ ] `include/builddeploy.h` declares `BdStatus`, the nine command
+- [x] `include/builddeploy.h` declares `BdStatus`, the nine command
       builders, the two parsers, and the two classification calls
       exactly as ARD §"Interfaces (`builddeploy.h`)" specifies.
-- [ ] Device vs. simulator command and `-destination` construction
+- [x] Device vs. simulator command and `-destination` construction
       diverge correctly by `Target` kind (devicectl vs simctl;
       device-id vs simulator-id destination); a no-target COMPILE
       yields the generic destination (stories 4, 5, 8).
-- [ ] All paths/identifiers are single-quote-escaped; a value with a
+- [x] All paths/identifiers are single-quote-escaped; a value with a
       space or quote is shell-safe — verified by `builddeploy_test`.
-- [ ] `bd_build_cmd` produces a `setsid`-wrapped command with a
+- [x] `bd_build_cmd` produces a `setsid`-wrapped command with a
       parseable PID marker, and `bd_parse_pid_marker` recovers the
       pgid from a representative marker line.
-- [ ] `bd_parse_product_path` extracts the `.app` path from a
+- [x] `bd_parse_product_path` extracts the `.app` path from a
       canonical `-showBuildSettings -json` fixture and returns
       `BD_ERR_PARSE` (never a crash) on malformed input.
-- [ ] `bd_reason_lex` maps each `BdStatus` to its `LexKey`,
+- [x] `bd_reason_lex` maps each `BdStatus` to its `LexKey`,
       distinguishing a build failure from a deploy failure
       (story 30).
-- [ ] `build/libbuilddeploy.a` builds clean on Linux and macOS,
+- [x] `build/libbuilddeploy.a` builds clean on Linux and macOS,
       `tests/builddeploy_test.c` links the archive, and `make test`
       passes host-free.
 
