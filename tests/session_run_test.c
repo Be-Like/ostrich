@@ -324,6 +324,47 @@ static int test_build_failure(void)
     return 0;
 }
 
+/* 3b. EXECUTE with a SETTINGS-step failure (e.g. xcodebuild can't resolve
+   the destination from id=<udid>).  The user must still see *some*
+   diagnostic in the build log — not just the EXPLOIT FAILED banner.
+
+   Currently fails: SETTINGS stdout/stderr is buffered into settings_buf
+   for bd_parse_product_path and never reaches REV_BUILD_LOG, so when
+   SETTINGS exits non-zero the build log panel is empty.  Fixing this
+   means teeing SETTINGS bytes into emit_build_log as they stream. */
+static int test_execute_settings_failure_shows_log(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        "xcodebuild: error: Unable to find a destination matching id=...\n",
+        64, 1, false, false };  /* exit 1, settings step only */
+    g_run_resp_count = 1;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();  /* has_target=true */
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("phase build_failed",
+           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
+                                         build_log, sizeof(build_log)));
+
+    /* Only SETTINGS ran; BUILD never started. */
+    ASSERT("only 1 exec for settings fail", g_exec_next == 1);
+
+    /* The xcodebuild error must be surfaced to the user. */
+    ASSERT("settings stderr surfaced in build log",
+           strstr(build_log, "Unable to find") != NULL);
+
+    session_close(s);
+    PASS("execute_settings_failure_shows_log");
+    return 0;
+}
+
 /* 4. Install failure (non-zero exit from install step). */
 static int test_install_failure(void)
 {
@@ -950,6 +991,7 @@ int main(void)
     rc |= test_execute_happy_path();
     rc |= test_compile_only();
     rc |= test_build_failure();
+    rc |= test_execute_settings_failure_shows_log();
     rc |= test_install_failure();
     rc |= test_launch_nonzero_exit();
     rc |= test_console_eof();

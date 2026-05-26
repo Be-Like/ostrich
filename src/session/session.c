@@ -586,6 +586,7 @@ static void process_run_chunk(WorkerCtx *ctx, const char *buf, size_t n)
     RunChain *rc = &ctx->run_chain;
     switch (rc->step) {
     case RCHAIN_STEP_SETTINGS:
+        emit_build_log(ctx, buf, n);
         if (rc->settings_buf && rc->settings_len + n <= RUN_SETTINGS_BUF_CAP) {
             memcpy(rc->settings_buf + rc->settings_len, buf, n);
             rc->settings_len += n;

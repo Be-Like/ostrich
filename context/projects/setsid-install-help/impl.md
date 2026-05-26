@@ -374,7 +374,7 @@ Conformance with `context/coding_standards.md`:
 
 ### Task 3 — SETTINGS-step output → Build Log (EXECUTE reachability fix)
 
-- **Status**: not started
+- **Status**: complete
 - **Blocked by**: Task 2 (sequencing only — see T3 entry in
   "Task Dependency Relationships")
 - **User stories covered**: n/a (no PRD; bug discovered in
@@ -461,23 +461,23 @@ Conformance with `context/coding_standards.md`:
 
 #### Acceptance criteria
 
-- [ ] `src/session/session.c` `process_run_chunk`'s
+- [x] `src/session/session.c` `process_run_chunk`'s
       `RCHAIN_STEP_SETTINGS` case emits every chunk via
       `emit_build_log(ctx, buf, n)` in addition to the
       `settings_buf` memcpy; the emit is not gated on
       buffer-capacity availability.
-- [ ] `tests/session_run_test.c::test_execute_settings_failure_shows_log`
+- [x] `tests/session_run_test.c::test_execute_settings_failure_shows_log`
       is unstashed, wired into `main()` next to
       `test_build_failure`, and passes; it asserts
       (a) `g_exec_next == 1` after `RUN_BUILD_FAILED`
       (only SETTINGS ran) and (b) the drained
       `REV_BUILD_LOG` payload contains
       `"Unable to find"`.
-- [ ] `tests/session_run_test.c::test_execute_happy_path`
+- [x] `tests/session_run_test.c::test_execute_happy_path`
       still passes (sanity-check that teeing the
       settings-JSON success blob doesn't break the
       happy-path drain).
-- [ ] `make` builds cleanly; `make test` is all-green
+- [x] `make` builds cleanly; `make test` is all-green
       (same `libxkbcommon` caveat as T2).
 - [ ] Manual smoke: on the same Mac used for the T2
       smoke, an `EXECUTE` whose SETTINGS step fails
