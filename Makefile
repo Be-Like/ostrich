@@ -335,7 +335,7 @@ $(BUILD)/session_smoke: tools/session_smoke.c $(BUILD)/libsession.a \
                         $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
                         $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
                         $(SRC)/log.c | $(BUILD)
-	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
+	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/session_smoke.c \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c $(SRC)/log.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
@@ -351,7 +351,7 @@ $(BUILD)/run_smoke: tools/run_smoke.c $(BUILD)/libsession.a \
                     $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
                     $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
                     $(SRC)/log.c | $(BUILD)
-	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
+	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/run_smoke.c \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c $(SRC)/log.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
@@ -367,7 +367,7 @@ $(BUILD)/discovery_smoke: tools/discovery_smoke.c $(BUILD)/libsession.a \
                           $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
                           $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
                           $(SRC)/log.c | $(BUILD)
-	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
+	$(CC) $(CFLAGS) -DOSTRICH_DEBUG -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/discovery_smoke.c \
 	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c $(SRC)/log.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \

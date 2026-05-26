@@ -427,9 +427,19 @@ SshStatus ssh_probe_step(Ssh *s, int *exit_code)
 
 SshStatus ssh_channel_open(Ssh *s, SshChannel **out)
 {
-    SshChannel *ch = arena_alloc(s->arena, sizeof(SshChannel),
-                                 _Alignof(SshChannel));
-    if (!ch) return SSH_ERR_OOM;
+    /* Idempotent on retry: allocate the SshChannel slot once on the first
+       call, then reuse it across SSH_AGAIN retries. libssh2 tracks open-
+       session progress internally — each retry only needs the same handle
+       to write the result into. Without this, the caller's tight retry
+       loop leaks an 8-byte arena allocation per call and exhausts the
+       worker arena (see ssh_channel_open callers in session.c). */
+    SshChannel *ch = *out;
+    if (!ch) {
+        ch = arena_alloc(s->arena, sizeof(SshChannel), _Alignof(SshChannel));
+        if (!ch) return SSH_ERR_OOM;
+        ch->channel = NULL;
+        *out = ch;
+    }
 
     ch->channel = libssh2_channel_open_session(s->session);
     if (!ch->channel) {
@@ -437,8 +447,6 @@ SshStatus ssh_channel_open(Ssh *s, SshChannel **out)
             return SSH_AGAIN;
         return SSH_ERR_IO;
     }
-
-    *out = ch;
     return SSH_OK;
 }
 
