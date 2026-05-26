@@ -66,6 +66,21 @@ both Linux and macOS.
 9. **UI slice B: Device Log + stale indicator** — the Device Log
    panel with the NEW PAYLOAD demarcation at the launch→running
    edge, and the stale indicator. Closes the loop.
+10. **Build Log surfacing fix** — production bug fix: merge libssh2
+    extended-data (stderr) into stdout so xcodebuild's stderr-bound
+    warnings/diagnostics actually reach the Build Log instead of
+    silently filling libssh2's window and stalling the build channel;
+    render the EXPLOIT FAILED / DEPLOYMENT FAILED header even when the
+    line buffer is empty so a pre-output failure is no longer invisible.
+11. **Per-step command demarcation in the Build Log** — emit an
+    ostrich-voice demarcation line (the same `> ── … ──` pattern the
+    Device Log already uses for `NEW PAYLOAD`) into the Build Log at
+    the start of each chain step, carrying the exact command that was
+    dispatched. Fills the otherwise-blank SETTINGS dwell, makes
+    "what ostrich actually ran" visible without breaking the
+    raw-output contract, and gives every subsequent block of tool
+    output an unambiguous header. New event kind on the run ring,
+    one new lexicon group, no changes to `runstate`/`builddeploy`.
 
 ## Task Dependency Relationships
 
@@ -95,6 +110,18 @@ ABORT (T6), plus the phase machine (T1), the line buffer (T3), and
 the lexicon (T4). T9 needs the controls/Build-Log slice (T8) and the
 stale logic (T7). The strict landing order is T1 → T2 → T3 → T4 →
 T5 → T6 → T7 → T8 → T9.
+
+T10 is an independent follow-up fix landing after the original nine
+ship. It touches `libssh` (one libssh2 call after channel open) and
+`libui` (the empty-state branch of `draw_build_log`); it does not
+depend on, and is not depended on by, any of T1–T9, and can be picked
+up at any time once a real-Mac symptom has been observed.
+
+T11 builds on T5 (the worker run subsystem, which owns the per-step
+command construction site) and on T8 (the UI's Build Log drain and
+`logbuf_mark` call site). It is a UX increment, not a bug fix, and is
+sequenced after T10 because the demarcation only pays off once the
+underlying tool output it labels is actually reaching the panel.
 
 ## Detailed Tasks
 
@@ -713,3 +740,230 @@ palette discipline holds. `ui_test.c` keeps passing headless.
       shows a NEW PAYLOAD separator per run; a COMPILE while running
       shows two live streams and lights the stale indicator; an
       hours-long session stays bounded and the window stays smooth.
+
+### Task 10 - Build Log surfacing fix
+
+- **Status**: not started
+- **Blocked by**: 5, 8
+- **User stories covered**: 22, 23, 27, 29, 30, 43, 46
+
+#### What to build
+
+A production bug fix surfaced by an operator running EXECUTE against
+a real Mac: the run-state label sits on `COMPILING EXPLOIT…` while
+xcodebuild appears to do real work on the remote, but the Build Log
+panel stays on its empty-state wordmark indefinitely — story 22 (watch
+xcodebuild stream live) is silently broken. The root cause is two
+independent gaps in the path bytes take from the remote process to the
+panel, plus one display invariant that hides the resulting failure:
+
+1. **libssh2 extended-data stalls the build channel.** `ssh_channel_read`
+   is `libssh2_channel_read(ch->channel, ...)`, which reads stream 0
+   (stdout) only. libssh2's default extended-data mode is
+   `LIBSSH2_CHANNEL_EXTENDED_DATA_NORMAL` — stderr is buffered in a
+   separate per-channel queue that nothing in ostrich ever drains. Once
+   that queue fills libssh2's flow-control window (~32 KB on a typical
+   build), the server stops sending the stdout side too and the remote
+   xcodebuild blocks on its next stderr write. The Build Log stays
+   empty, the chain never progresses, and the only thing that ends it
+   is the 120 s stall watchdog (story 46) firing as `EXPLOIT FAILED`.
+   Stories 22, 23 (build/install/launch tooling output in the log),
+   27 (raw output of what xcodebuild *said*), and 43 (window stays
+   smooth) all depend on stderr being captured.
+2. **Pre-output failures vanish.** `draw_build_log` (`src/ui/ui.cpp`)
+   renders the EXPLOIT FAILED / DEPLOYMENT FAILED header only inside
+   the `count > 0` branch. A failure that resolves before any chunk
+   reaches `logbuf` — e.g. a SETTINGS-step `xcodebuild -showBuildSettings`
+   non-zero exit, a `BD_ERR_PARSE` on truncated JSON, or the stall
+   watchdog firing during the symptom above — leaves the panel on its
+   themed empty state with no failure indication, contradicting
+   stories 29 and 30.
+
+This task fixes both. It does not change the PRD's "raw, never
+recolored" contract for tool output, and it does not add error
+parsing — it only makes the bytes that are already produced actually
+reach the panel, and makes a no-output failure visible.
+
+#### Technical Details
+
+**(1) Merge extended-data on every opened channel.** In
+`src/ssh/ssh.c`, immediately after `libssh2_channel_open_session` in
+`ssh_channel_open` returns a non-NULL channel, call
+`libssh2_channel_handle_extended_data2(ch->channel,
+LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE)`. This is the standard libssh2
+configuration for non-interactive command execution: stderr is folded
+into the stdout stream so a single `libssh2_channel_read` drains both.
+The MERGE call returns `LIBSSH2_ERROR_EAGAIN` in non-blocking mode if
+it would block, so it must be inside the same idempotent-retry block
+the recent memory-leak fix introduced — set a "merge applied" flag on
+the `SshChannel` once it succeeds, retry on EAGAIN, fail the open on
+any hard error. The merge applies to every channel the run subsystem
+opens (settings, build, prime, install, launch/DevConsole, terminate,
+kill) and every channel discovery opens, so the fix lives in the
+single ssh.c seam — no per-call-site changes in `libsession`.
+Apply the same `libssh2_channel_handle_extended_data2` to the probe
+channel for consistency (the probe is a `true` exec and unlikely to
+emit stderr, but the symmetry is worth more than the saved call).
+
+**(2) Render the failure header on an empty Build Log.** In
+`src/ui/ui.cpp` `draw_build_log`, when `count == 0` and the mirrored
+phase is `RUN_BUILD_FAILED` or `RUN_DEPLOY_FAILED`, render the
+lexicon-mapped phase label (`runstate_phase_lex(rv->phase)`) centered
+in `C_FAIL` *in place of* the wordmark + themed empty-state caption.
+The empty-state branch already centers a two-line block, so the
+change is one extra conditional that picks which text to draw. The
+non-empty branch is unchanged — it already prints the failure header
+above the lines.
+
+No new lexicon keys; no PRD/ARD revisions; no changes to `logbuf`,
+`runstate`, or `builddeploy`. The fix is invariant under the existing
+acceptance criteria of T5 and T8 and adds two new ones below.
+
+#### Acceptance criteria
+
+- [ ] After `ssh_channel_open` returns `SSH_OK`, the channel has
+      extended-data MERGE applied (idempotent across EAGAIN retries);
+      `ssh_channel_open` fails closed on a hard error from the MERGE
+      call rather than silently leaving the channel in NORMAL mode.
+- [ ] The merge is applied to every channel the worker opens
+      (run-chain steps, DevConsole, abort terminate/kill, discovery
+      jobs, probe) — verified by inspection of the single shared
+      `ssh_channel_open` seam, not per-call-site.
+- [ ] `draw_build_log` renders the EXPLOIT FAILED /
+      DEPLOYMENT FAILED header (in `C_FAIL`) when `count == 0` and the
+      phase is `RUN_BUILD_FAILED` or `RUN_DEPLOY_FAILED`, replacing
+      the wordmark + empty-state block; the non-empty branch is
+      unchanged and the IDLE / running empty state still shows the
+      themed wordmark + caption.
+- [ ] `make test` passes on both Linux and macOS (`session_run_test`
+      uses the SSH stub and is unaffected by libssh2 extended-data
+      semantics; `ui_test` headless picks up the new conditional but
+      asserts no new behavior).
+- [ ] Manually via the app against a real Mac that previously
+      reproduced the symptom: pressing EXECUTE produces visible Build
+      Log output (the PGID marker line and subsequent xcodebuild
+      stdout/stderr) instead of staying on the empty state; a build
+      whose only diagnostic is an stderr-bound warning surfaces that
+      warning in the Build Log rather than hanging the channel; a
+      SETTINGS-step failure resolves to `EXPLOIT FAILED` visible in
+      the panel rather than the empty state.
+
+### Task 11 - Per-step command demarcation in the Build Log
+
+- **Status**: not started
+- **Blocked by**: 5, 8, 10
+- **User stories covered**: 22, 23, 51 (extension), 53
+
+#### What to build
+
+A surface improvement on top of T10's bug fix: at the start of every
+chain step the worker has just dispatched a real command on the Mac,
+and the operator currently has no way to see what got run. SETTINGS
+in particular produces zero Build Log output by design (its bytes go
+to `settings_buf` for parsing only), so on a slow `-showBuildSettings`
+query the panel sits blank for many seconds even though the chain is
+working. Subsequent steps (build, install, launch) do stream raw
+output but with no visible header telling the operator which command
+that block belongs to — a 200-line install/launch interleave can be
+hard to read without per-step demarcation.
+
+This task lands a single ostrich-voice demarcation line at the start
+of each step, carrying the exact command string. It follows the same
+pattern the Device Log already uses for `> ── NEW PAYLOAD // <time> ──`
+(story 35) — separator glyphs + `>` voice — extended to the Build Log
+so the operator gets the same "you can always tell which run a line
+belongs to" guarantee on the build side. Format candidate (theme.md
+owns final wording):
+
+```
+> ── COMPILING EXPLOIT // xcodebuild -showBuildSettings -json … ──
+> ── COMPILING EXPLOIT // xcodebuild -workspace … -scheme … ──
+> ── PRIMING TARGET // xcrun simctl boot <udid> ──
+> ── DEPLOYING PAYLOAD // xcrun simctl install <udid> <app> ──
+> ── EXECUTING PAYLOAD // xcrun simctl launch --console <udid> <bundle> ──
+```
+
+The phase label on the left makes it scannable; the command tail on
+the right is the debugging payload. The PRD's "logs are raw, ostrich
+voice only on separators and headers" contract (stories 27, 51) is
+*preserved*: the demarcation is structurally a separator, not a tool
+output line, and lives next to the existing NEW PAYLOAD separator
+in the lexicon's Build/deploy group.
+
+#### Technical Details
+
+Per ARD §"Interfaces (`session.h`)" — the run event family is the
+extension seam, mirroring the existing `REV_PHASE` / `REV_BUILD_LOG`
+shape:
+
+1. **New event kind: `REV_BUILD_MARK`.** Add to `SessionRunEventKind`
+   alongside the existing four. It carries a fixed-size command-summary
+   field (`char cmd[RUN_CMD_SUMMARY_CAP]`, e.g. 256 bytes, copied by
+   value — thread-confinement preserved) and the `RunPhase` of the
+   step being entered (so the UI can render the phase label
+   consistently with the rest of the chain). No new ring; reuses
+   `run_event_ring`.
+2. **Worker emit site.** In `src/session/session.c` `drive_run_chain`,
+   immediately after `build_step_cmd(ctx, cmd, sizeof(cmd))` succeeds
+   and before `ssh_channel_exec`, push a `REV_BUILD_MARK` event with
+   the command summary (truncate-with-ellipsis if longer than
+   `RUN_CMD_SUMMARY_CAP - 1` — never split a UTF-8 sequence in the
+   middle; ASCII-only command strings are the actual case so a byte
+   truncate is safe). Emit for every step: settings, build, prime-boot,
+   prime-status, install, launch. The launch event fires before the
+   channel is handed to the DevConsole, so the demarcation lands in
+   the Build Log, not the Device Log.
+3. **App drain + insertion.** In `src/app/app.c` extend the
+   `session_run_poll` switch with a `REV_BUILD_MARK` arm that formats
+   the line from the lexicon template and the carried command, then
+   calls `logbuf_mark(app->build_log, line)`. The format goes through
+   one new lexicon key (a printf-style template like
+   `"> ── %s // %s ──"` taking the phase label and the command) so a
+   future straight-mode swap stays a no-UI change.
+4. **Lexicon group.** One new `LexKey` (e.g. `LEX_RUN_STEP_HEADER_FMT`)
+   in `include/lexicon.h` + `src/lexicon.c`, asserted in
+   `tests/lexicon_test.c`. No new phase or status keys.
+5. **No changes to `librunstate` or `libbuilddeploy`.** Both are
+   passive participants — runstate provides `runstate_phase_lex` for
+   the formatter, builddeploy already constructs the exact command
+   string the worker captures.
+6. **`logbuf` contract reuse.** `logbuf_mark` already flushes any
+   pending partial line before inserting a complete demarcation line
+   (T3 acceptance criterion); calling it from the build-log path is a
+   pure reuse of the existing primitive — no `logbuf` changes.
+7. **Tests.** Extend `tests/session_run_test.c` to assert that a
+   `REV_BUILD_MARK` fires before the first `REV_BUILD_LOG` of every
+   step on the happy path, and that it carries the right phase and a
+   non-empty command. Extend `tests/lexicon_test.c` to assert the new
+   key resolves. `ui_test` stays headless and unaffected.
+
+#### Acceptance criteria
+
+- [ ] `session.h` declares `REV_BUILD_MARK` with a phase field and a
+      fixed-size command-summary field; `SessionRunEvent` remains a
+      tagged union with no pointers crossing the worker↔UI boundary.
+- [ ] The worker emits exactly one `REV_BUILD_MARK` per step, before
+      the step's first `REV_BUILD_LOG` chunk and before the SSH exec;
+      asserted in `session_run_test.c` for settings/build/install/launch
+      on the device-target happy path and for settings/build on the
+      compile-only path.
+- [ ] The app's `REV_BUILD_MARK` handler calls `logbuf_mark` exactly
+      once per event, formatting through the new lexicon template; the
+      line is the only Build Log entry that begins with `> ──` (mirrors
+      the Device Log's NEW PAYLOAD invariant).
+- [ ] A SETTINGS step long enough to be perceptible shows its
+      demarcation line in the Build Log immediately on dispatch,
+      eliminating the formerly-blank dwell.
+- [ ] In a COMPILE-while-running scenario the COMPILE's demarcation
+      lands in the Build Log (where the new compile streams) and the
+      Device Log keeps streaming with no interference (T7 invariant
+      preserved).
+- [ ] `make test` passes on both Linux and macOS (`session_run_test`,
+      `lexicon_test`, headless `ui_test`).
+- [ ] Manually against a live Mac: every chain step on EXECUTE and
+      COMPILE shows its `> ── PHASE // cmd ──` demarcation before its
+      tool output; the operator can read the panel as a sequence of
+      labeled blocks; copy-to-clipboard via the COPY button includes
+      the demarcation lines verbatim; the demarcations render in the
+      decorative cyan/magenta voice (not semantic green/red), matching
+      the existing NEW PAYLOAD line.
