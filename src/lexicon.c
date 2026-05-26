@@ -58,6 +58,7 @@ static const char *s_table[LEX__COUNT] = {
     /* LEX_REC_NO_OP          */ "// NO OPERATION CONFIGURED",
     /* LEX_REC_READY          */ "READY",
     /* LEX_REC_ERR_XCODE      */ "XCODE NOT FOUND",
+    /* LEX_REC_ERR_SETSID     */ "SETSID NOT FOUND",
     /* LEX_REC_ERR_INVENTORY  */ "COULD NOT READ INVENTORY",
 
     /* LEX_REC_FIELD_SCAN_ROOT */ "SCAN ROOT",

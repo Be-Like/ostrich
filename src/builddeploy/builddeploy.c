@@ -371,30 +371,78 @@ bool bd_parse_pid_marker(Str chunk, long *out_pgid) {
     return false;
 }
 
+/* ── remediation text ────────────────────────────────────────────── */
+
+BdStatus bd_setsid_help_block(const char *user, const char *host, int port,
+                               char *buf, size_t cap) {
+    int n;
+    if (port == 22) {
+        n = snprintf(buf, cap,
+            "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
+            "REMOTE MAC IS MISSING setsid.\n"
+            "\n"
+            "To install, connect to the Mac:\n"
+            "    ssh %s@%s\n"
+            "\n"
+            "Then on the Mac, run:\n"
+            "    brew install util-linux\n"
+            "    echo 'export PATH=\"'\"$(brew --prefix util-linux)\"'/bin:$PATH\"' >> ~/.zshenv\n"
+            "\n"
+            "Verify the fix with (from this host):\n"
+            "    ssh %s@%s 'command -v setsid'\n"
+            "\n"
+            "(See README \"Remote Mac (SSH target)\" for context.)\n"
+            "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
+            user, host, user, host);
+    } else {
+        n = snprintf(buf, cap,
+            "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
+            "REMOTE MAC IS MISSING setsid.\n"
+            "\n"
+            "To install, connect to the Mac:\n"
+            "    ssh -p %d %s@%s\n"
+            "\n"
+            "Then on the Mac, run:\n"
+            "    brew install util-linux\n"
+            "    echo 'export PATH=\"'\"$(brew --prefix util-linux)\"'/bin:$PATH\"' >> ~/.zshenv\n"
+            "\n"
+            "Verify the fix with (from this host):\n"
+            "    ssh -p %d %s@%s 'command -v setsid'\n"
+            "\n"
+            "(See README \"Remote Mac (SSH target)\" for context.)\n"
+            "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
+            port, user, host, port, user, host);
+    }
+    if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
+    return BD_OK;
+}
+
 /* ── classification ──────────────────────────────────────────────── */
 
 LexKey bd_reason_lex(BdStatus st) {
     switch (st) {
-    case BD_ERR_XCODE_MISSING: return LEX_REC_ERR_XCODE;
-    case BD_ERR_BUILD:         return LEX_RUN_BUILD_FAILED;
-    case BD_ERR_PARSE:         return LEX_RUN_BUILD_FAILED;
+    case BD_ERR_XCODE_MISSING:  return LEX_REC_ERR_XCODE;
+    case BD_ERR_SETSID_MISSING: return LEX_REC_ERR_SETSID;
+    case BD_ERR_BUILD:          return LEX_RUN_BUILD_FAILED;
+    case BD_ERR_PARSE:          return LEX_RUN_BUILD_FAILED;
     case BD_ERR_BOOT:
     case BD_ERR_INSTALL:
-    case BD_ERR_LAUNCH:        return LEX_RUN_DEPLOY_FAILED;
-    default:                   return LEX_RUN_BUILD_FAILED;
+    case BD_ERR_LAUNCH:         return LEX_RUN_DEPLOY_FAILED;
+    default:                    return LEX_RUN_BUILD_FAILED;
     }
 }
 
 const char *bd_status_str(BdStatus st) {
     switch (st) {
-    case BD_OK:                return "ok";
-    case BD_ERR_XCODE_MISSING: return "xcode not found";
-    case BD_ERR_BUILD:         return "build failed";
-    case BD_ERR_BOOT:          return "boot failed";
-    case BD_ERR_INSTALL:       return "install failed";
-    case BD_ERR_LAUNCH:        return "launch failed";
-    case BD_ERR_PARSE:         return "parse error";
-    case BD_ERR_OOM:           return "out of memory";
-    default:                   return "(unknown)";
+    case BD_OK:                 return "ok";
+    case BD_ERR_XCODE_MISSING:  return "xcode not found";
+    case BD_ERR_SETSID_MISSING: return "setsid not found";
+    case BD_ERR_BUILD:          return "build failed";
+    case BD_ERR_BOOT:           return "boot failed";
+    case BD_ERR_INSTALL:        return "install failed";
+    case BD_ERR_LAUNCH:         return "launch failed";
+    case BD_ERR_PARSE:          return "parse error";
+    case BD_ERR_OOM:            return "out of memory";
+    default:                    return "(unknown)";
     }
 }

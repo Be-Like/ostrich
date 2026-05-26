@@ -177,7 +177,8 @@ LexKey runstate_phase_lex(RunPhase p) {
 LexKey runstate_reason_lex(RunPhase p, BdStatus st) {
     switch (p) {
     case RUN_BUILD_FAILED:
-        if (st == BD_ERR_XCODE_MISSING) return LEX_REC_ERR_XCODE;
+        if (st == BD_ERR_XCODE_MISSING)  return LEX_REC_ERR_XCODE;
+        if (st == BD_ERR_SETSID_MISSING) return LEX_REC_ERR_SETSID;
         return LEX_RUN_BUILD_FAILED;
     case RUN_DEPLOY_FAILED:
         return LEX_RUN_DEPLOY_FAILED;

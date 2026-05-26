@@ -554,6 +554,11 @@ static int test_reason_lex(void) {
     ASSERT("xcode_missing no stray (?)",    strcmp(s, "(?)") != 0);
     ASSERT("xcode_missing → rec_err_xcode", k == LEX_REC_ERR_XCODE);
 
+    k = runstate_reason_lex(RUN_BUILD_FAILED, BD_ERR_SETSID_MISSING);
+    s = lex(k);
+    ASSERT("setsid_missing no stray (?)",     strcmp(s, "(?)") != 0);
+    ASSERT("setsid_missing → rec_err_setsid", k == LEX_REC_ERR_SETSID);
+
     /* deploy failures */
     k = runstate_reason_lex(RUN_DEPLOY_FAILED, BD_ERR_INSTALL);
     s = lex(k);

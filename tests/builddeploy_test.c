@@ -390,15 +390,58 @@ static int test_parse_pid_marker_partial_prefix(void) {
     return 0;
 }
 
+/* ── bd_setsid_help_block ────────────────────────────────────────── */
+
+static int test_setsid_help_block_default_port(void) {
+    char buf[2048];
+    BdStatus s = bd_setsid_help_block("jake", "mac.local", 22, buf, sizeof(buf));
+    ASSERT("default port ok",        s == BD_OK);
+    ASSERT("header present",         has(buf, "REMOTE MAC IS MISSING setsid."));
+    ASSERT("ssh user@host",          has(buf, "ssh jake@mac.local"));
+    ASSERT("no -p flag",             !has(buf, "ssh -p"));
+    ASSERT("brew install",           has(buf, "brew install util-linux"));
+    ASSERT("zshenv",                 has(buf, ".zshenv"));
+    ASSERT("command -v setsid",      has(buf, "command -v setsid"));
+    ASSERT("remediation opener",     has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("remediation closer",     has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("nul-terminated",         buf[strlen(buf)] == '\0');
+    PASS("setsid_help_block_default_port");
+    return 0;
+}
+
+static int test_setsid_help_block_nondefault_port(void) {
+    char buf[2048];
+    BdStatus s = bd_setsid_help_block("jake", "mac.local", 2222, buf, sizeof(buf));
+    ASSERT("nondefault port ok",     s == BD_OK);
+    ASSERT("header present",         has(buf, "REMOTE MAC IS MISSING setsid."));
+    ASSERT("ssh -p port user@host",  has(buf, "ssh -p 2222 jake@mac.local"));
+    ASSERT("brew install",           has(buf, "brew install util-linux"));
+    ASSERT("zshenv",                 has(buf, ".zshenv"));
+    ASSERT("command -v setsid",      has(buf, "command -v setsid"));
+    ASSERT("remediation opener",     has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("remediation closer",     has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    PASS("setsid_help_block_nondefault_port");
+    return 0;
+}
+
+static int test_setsid_help_block_oom(void) {
+    char buf[10];
+    BdStatus s = bd_setsid_help_block("u", "h", 22, buf, sizeof(buf));
+    ASSERT("small cap → oom", s == BD_ERR_OOM);
+    PASS("setsid_help_block_oom");
+    return 0;
+}
+
 /* ── bd_reason_lex ───────────────────────────────────────────────── */
 
 static int test_reason_lex(void) {
-    ASSERT("xcode missing → rec err", bd_reason_lex(BD_ERR_XCODE_MISSING) == LEX_REC_ERR_XCODE);
-    ASSERT("build → build failed",    bd_reason_lex(BD_ERR_BUILD) == LEX_RUN_BUILD_FAILED);
-    ASSERT("parse → build failed",    bd_reason_lex(BD_ERR_PARSE) == LEX_RUN_BUILD_FAILED);
-    ASSERT("boot → deploy failed",    bd_reason_lex(BD_ERR_BOOT)    == LEX_RUN_DEPLOY_FAILED);
-    ASSERT("install → deploy failed", bd_reason_lex(BD_ERR_INSTALL) == LEX_RUN_DEPLOY_FAILED);
-    ASSERT("launch → deploy failed",  bd_reason_lex(BD_ERR_LAUNCH)  == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("xcode missing → rec err",  bd_reason_lex(BD_ERR_XCODE_MISSING)  == LEX_REC_ERR_XCODE);
+    ASSERT("setsid missing → setsid",  bd_reason_lex(BD_ERR_SETSID_MISSING) == LEX_REC_ERR_SETSID);
+    ASSERT("build → build failed",     bd_reason_lex(BD_ERR_BUILD) == LEX_RUN_BUILD_FAILED);
+    ASSERT("parse → build failed",     bd_reason_lex(BD_ERR_PARSE) == LEX_RUN_BUILD_FAILED);
+    ASSERT("boot → deploy failed",     bd_reason_lex(BD_ERR_BOOT)    == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("install → deploy failed",  bd_reason_lex(BD_ERR_INSTALL) == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("launch → deploy failed",   bd_reason_lex(BD_ERR_LAUNCH)  == LEX_RUN_DEPLOY_FAILED);
     /* build vs deploy are distinct */
     ASSERT("build != deploy", bd_reason_lex(BD_ERR_BUILD) != bd_reason_lex(BD_ERR_INSTALL));
     PASS("reason_lex");
@@ -410,6 +453,7 @@ static int test_reason_lex(void) {
 static int test_status_str(void) {
     ASSERT("ok str",      bd_status_str(BD_OK)[0] != '\0');
     ASSERT("xcode str",   bd_status_str(BD_ERR_XCODE_MISSING)[0] != '\0');
+    ASSERT("setsid str",  bd_status_str(BD_ERR_SETSID_MISSING)[0] != '\0');
     ASSERT("build str",   bd_status_str(BD_ERR_BUILD)[0] != '\0');
     ASSERT("boot str",    bd_status_str(BD_ERR_BOOT)[0] != '\0');
     ASSERT("install str", bd_status_str(BD_ERR_INSTALL)[0] != '\0');
@@ -480,6 +524,10 @@ int main(void) {
     failures += test_parse_pid_marker_at_start();
     failures += test_parse_pid_marker_empty_chunk();
     failures += test_parse_pid_marker_partial_prefix();
+
+    failures += test_setsid_help_block_default_port();
+    failures += test_setsid_help_block_nondefault_port();
+    failures += test_setsid_help_block_oom();
 
     failures += test_reason_lex();
     failures += test_status_str();
