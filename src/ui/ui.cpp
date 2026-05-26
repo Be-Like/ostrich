@@ -950,24 +950,40 @@ static void draw_build_log(const UiRunView *rv, UiRunIntents *ri,
 
     int count = rv->build_log ? logbuf_count(rv->build_log) : 0;
     if (count == 0) {
-        const char  *wm     = lex(LEX_WORDMARK);
-        const char  *cap    = lex(LEX_RUN_BUILD_EMPTY);
-        const ImVec2 wm_sz  = ImGui::CalcTextSize(wm);
-        const ImVec2 cap_sz = ImGui::CalcTextSize(cap);
-        const float  gap    = ImGui::GetTextLineHeightWithSpacing() * 0.5f;
-        const float  blk_h  = wm_sz.y + gap + cap_sz.y;
-        const ImVec2 avail  = ImGui::GetContentRegionAvail();
-        const float  x_wm   = center_offset(avail.x, wm_sz.x);
-        const float  x_cap  = center_offset(avail.x, cap_sz.x);
-        const float  y0     = center_offset(avail.y, blk_h);
-        ImGui::SetCursorPos({x_wm, y0});
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN);
-        ImGui::TextUnformatted(wm);
-        ImGui::PopStyleColor();
-        ImGui::SetCursorPos({x_cap, y0 + wm_sz.y + gap});
-        ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
-        ImGui::TextUnformatted(cap);
-        ImGui::PopStyleColor();
+        if (failed) {
+            /* Pre-output failure: no chunks arrived yet but the chain
+               already resolved to a terminal state.  Show the failure
+               label instead of the wordmark so the operator can see the
+               result rather than the (misleading) idle empty state. */
+            const char  *label  = lex(runstate_phase_lex(rv->phase));
+            const ImVec2 lbl_sz = ImGui::CalcTextSize(label);
+            const ImVec2 avail  = ImGui::GetContentRegionAvail();
+            const float  x_lbl  = center_offset(avail.x, lbl_sz.x);
+            const float  y_lbl  = center_offset(avail.y, lbl_sz.y);
+            ImGui::SetCursorPos({x_lbl, y_lbl});
+            ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);
+            ImGui::TextUnformatted(label);
+            ImGui::PopStyleColor();
+        } else {
+            const char  *wm     = lex(LEX_WORDMARK);
+            const char  *cap    = lex(LEX_RUN_BUILD_EMPTY);
+            const ImVec2 wm_sz  = ImGui::CalcTextSize(wm);
+            const ImVec2 cap_sz = ImGui::CalcTextSize(cap);
+            const float  gap    = ImGui::GetTextLineHeightWithSpacing() * 0.5f;
+            const float  blk_h  = wm_sz.y + gap + cap_sz.y;
+            const ImVec2 avail  = ImGui::GetContentRegionAvail();
+            const float  x_wm   = center_offset(avail.x, wm_sz.x);
+            const float  x_cap  = center_offset(avail.x, cap_sz.x);
+            const float  y0     = center_offset(avail.y, blk_h);
+            ImGui::SetCursorPos({x_wm, y0});
+            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN);
+            ImGui::TextUnformatted(wm);
+            ImGui::PopStyleColor();
+            ImGui::SetCursorPos({x_cap, y0 + wm_sz.y + gap});
+            ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+            ImGui::TextUnformatted(cap);
+            ImGui::PopStyleColor();
+        }
     } else {
         if (failed) {
             ImGui::PushStyleColor(ImGuiCol_Text, C_FAIL);

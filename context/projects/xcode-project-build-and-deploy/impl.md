@@ -743,7 +743,7 @@ palette discipline holds. `ui_test.c` keeps passing headless.
 
 ### Task 10 - Build Log surfacing fix
 
-- **Status**: not started
+- **Status**: done
 - **Blocked by**: 5, 8
 - **User stories covered**: 22, 23, 27, 29, 30, 43, 46
 
@@ -821,21 +821,21 @@ acceptance criteria of T5 and T8 and adds two new ones below.
 
 #### Acceptance criteria
 
-- [ ] After `ssh_channel_open` returns `SSH_OK`, the channel has
+- [x] After `ssh_channel_open` returns `SSH_OK`, the channel has
       extended-data MERGE applied (idempotent across EAGAIN retries);
       `ssh_channel_open` fails closed on a hard error from the MERGE
       call rather than silently leaving the channel in NORMAL mode.
-- [ ] The merge is applied to every channel the worker opens
+- [x] The merge is applied to every channel the worker opens
       (run-chain steps, DevConsole, abort terminate/kill, discovery
       jobs, probe) — verified by inspection of the single shared
       `ssh_channel_open` seam, not per-call-site.
-- [ ] `draw_build_log` renders the EXPLOIT FAILED /
+- [x] `draw_build_log` renders the EXPLOIT FAILED /
       DEPLOYMENT FAILED header (in `C_FAIL`) when `count == 0` and the
       phase is `RUN_BUILD_FAILED` or `RUN_DEPLOY_FAILED`, replacing
       the wordmark + empty-state block; the non-empty branch is
       unchanged and the IDLE / running empty state still shows the
       themed wordmark + caption.
-- [ ] `make test` passes on both Linux and macOS (`session_run_test`
+- [x] `make test` passes on both Linux and macOS (`session_run_test`
       uses the SSH stub and is unaffected by libssh2 extended-data
       semantics; `ui_test` headless picks up the new conditional but
       asserts no new behavior).

@@ -55,6 +55,7 @@ struct Ssh {
 
 struct SshChannel {
     LIBSSH2_CHANNEL *channel;
+    bool             merge_applied;
 };
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
@@ -437,16 +438,36 @@ SshStatus ssh_channel_open(Ssh *s, SshChannel **out)
     if (!ch) {
         ch = arena_alloc(s->arena, sizeof(SshChannel), _Alignof(SshChannel));
         if (!ch) return SSH_ERR_OOM;
-        ch->channel = NULL;
+        ch->channel       = NULL;
+        ch->merge_applied = false;
         *out = ch;
     }
 
-    ch->channel = libssh2_channel_open_session(s->session);
+    /* Step 1: open the session channel (idempotent: skip if already open). */
     if (!ch->channel) {
-        if (libssh2_session_last_errno(s->session) == LIBSSH2_ERROR_EAGAIN)
-            return SSH_AGAIN;
-        return SSH_ERR_IO;
+        ch->channel = libssh2_channel_open_session(s->session);
+        if (!ch->channel) {
+            if (libssh2_session_last_errno(s->session) == LIBSSH2_ERROR_EAGAIN)
+                return SSH_AGAIN;
+            return SSH_ERR_IO;
+        }
     }
+
+    /* Step 2: merge stderr into stdout so xcodebuild's stderr-bound
+       diagnostics reach the Build Log and don't stall the channel's
+       flow-control window. Applied once; retried idempotently on EAGAIN. */
+    if (!ch->merge_applied) {
+        int rc = libssh2_channel_handle_extended_data2(
+                     ch->channel, LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE);
+        if (rc == LIBSSH2_ERROR_EAGAIN) return SSH_AGAIN;
+        if (rc != 0) {
+            libssh2_channel_free(ch->channel);
+            ch->channel = NULL;
+            return SSH_ERR_IO;
+        }
+        ch->merge_applied = true;
+    }
+
     return SSH_OK;
 }
 

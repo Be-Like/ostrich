@@ -1637,6 +1637,101 @@ int main(void) {
         arena_destroy(test_arena);
     }
 
+    /* ── T10: Build Log empty-state failure header ──────────────────── */
+
+    /* T10: RUN_BUILD_FAILED with empty Build Log renders without crash and
+     * emits no spurious intents (failure header is shown in place of the
+     * wordmark; no copy/clear intent fires). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        /* build_log intentionally left empty — count == 0 */
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_BUILD_FAILED;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log; /* non-null, empty */
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T10: RUN_DEPLOY_FAILED with empty Build Log renders without crash and
+     * emits no spurious intents. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+        /* build_log intentionally left empty — count == 0 */
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_DEPLOY_FAILED;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log; /* non-null, empty */
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T10: IDLE with empty Build Log still shows wordmark (not the failure
+     * header) — the non-failed empty-state branch is unaffected. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            assert(!run_ri.build_log_copy);
+            assert(!run_ri.build_log_clear);
+        }
+        arena_destroy(test_arena);
+    }
+
     /* ── T3: Compact config internals ───────────────────────────────── */
 
     /* T3: compact layout — all slices fully populated renders without crash
