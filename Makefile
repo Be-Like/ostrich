@@ -333,10 +333,11 @@ $(BUILD)/session_smoke: tools/session_smoke.c $(BUILD)/libsession.a \
                         $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
                         $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
                         $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
-                        $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+                        $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+                        $(SRC)/log.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/session_smoke.c \
-	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c $(SRC)/log.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
 	    $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
 	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
@@ -348,10 +349,11 @@ $(BUILD)/run_smoke: tools/run_smoke.c $(BUILD)/libsession.a \
                     $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
                     $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
                     $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
-                    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+                    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+                    $(SRC)/log.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/run_smoke.c \
-	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c $(SRC)/log.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
 	    $(BUILD)/librunstate.a $(BUILD)/libbuilddeploy.a \
 	    $(BUILD)/libdiscovery.a $(BUILD)/liblibssh2.a \
@@ -363,10 +365,11 @@ $(BUILD)/discovery_smoke: tools/discovery_smoke.c $(BUILD)/libsession.a \
                           $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
                           $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
                           $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
-                          $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c | $(BUILD)
+                          $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+                          $(SRC)/log.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(INCLUDE) $(SSH_CFLAGS) \
 	    -o $@ tools/discovery_smoke.c \
-	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c \
+	    $(SRC)/arena.c $(SRC)/spsc_ring.c $(SRC)/lexicon.c $(SRC)/log.c \
 	    $(BUILD)/libsession.a $(BUILD)/libssh.a $(BUILD)/libconnstate.a \
 	    $(BUILD)/libdiscovery.a $(BUILD)/librunstate.a \
 	    $(BUILD)/libbuilddeploy.a $(BUILD)/liblibssh2.a \
