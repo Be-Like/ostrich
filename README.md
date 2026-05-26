@@ -61,6 +61,26 @@ development headers for both display stacks:
   build falls back to the Homebrew prefix automatically if pkg-config can't
   find OpenSSL.
 
+### Remote Mac (SSH target)
+
+The Mac that ostrich drives over SSH needs `setsid` available on the
+non-interactive SSH PATH — the build/launch commands wrap `xcodebuild` in
+`setsid sh -c '...'` so the worker can `kill -- -<pgid>` the whole process
+tree on abort. macOS does **not** ship `setsid`, so install it from
+util-linux and put it on the non-interactive PATH:
+
+```sh
+brew install util-linux
+# util-linux is keg-only on macOS — expose setsid to non-interactive SSH:
+echo 'export PATH="'"$(brew --prefix util-linux)"'/bin:$PATH"' >> ~/.zshenv
+```
+
+`~/.zshenv` (not `~/.zshrc`) is what zsh sources for non-interactive,
+non-login sessions like `ssh host 'cmd'`. Confirm it took with
+`ssh <user>@<host> 'command -v setsid'`. If this isn't set up you'll see
+`Export failed` (the EXPLOIT FAILED header) in the Build Log along with
+`command not found: setsid` when you click Execute.
+
 ## Getting the source
 
 The third-party dependencies live under `third_party/` as git submodules. Clone
@@ -150,6 +170,21 @@ make clean
 ```
 
 Removes the `build/` directory.
+
+## Known issues
+
+- **`setsid` dependency on the remote Mac.** `bd_build_cmd` and
+  `bd_launch_cmd` (see `src/builddeploy/builddeploy.c`) wrap the remote
+  command in `setsid sh -c '...'` so the worker can target the whole
+  process group on abort. macOS doesn't ship `setsid`, which forces the
+  Homebrew workaround documented under [Remote Mac](#remote-mac-ssh-target).
+  This needs to be revisited — likely options are a `perl -MPOSIX -e
+  'POSIX::setsid; exec @ARGV'` wrapper (perl ships on stock macOS), or a
+  different PGID-recovery mechanism that doesn't depend on `setsid` at
+  all. The current behavior, the design docs
+  (`context/projects/xcode-project-build-and-deploy/{ard,impl}.md`), and
+  the tests (`tests/builddeploy_test.c` asserts `setsid` is in the
+  command string) all hard-assume `setsid`, so the fix isn't local.
 
 ## Repository layout
 

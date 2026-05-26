@@ -809,14 +809,14 @@ static void drive_run_chain(WorkerCtx *ctx)
                 return;
             }
 
-            emit_build_mark(ctx, ctx->rs.phase, cmd);
-
             SshStatus st = ssh_channel_exec(rc->ch, cmd);
             if (st == SSH_AGAIN) return;
             if (st != SSH_OK) {
                 fail_run_chain(ctx, step_to_fail_ev(rc->step), BD_ERR_BUILD);
                 return;
             }
+
+            emit_build_mark(ctx, ctx->rs.phase, cmd);
 
             LOG_INFO(LG_RUN, "exec step=%s", rchain_step_str(rc->step));
 
