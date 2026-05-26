@@ -432,6 +432,14 @@ bool app_tick(App *app) {
         case REV_STALE:
             app->run_stale = rev.stale;
             break;
+        case REV_BUILD_MARK: {
+            char line[512];
+            const char *phase_label = lex(runstate_phase_lex(rev.phase));
+            snprintf(line, sizeof(line), lex(LEX_RUN_STEP_HEADER_FMT),
+                     phase_label, rev.cmd_summary);
+            logbuf_mark(app->build_log, line);
+            break;
+        }
         }
     }
 

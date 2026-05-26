@@ -288,9 +288,21 @@ static int test_run_log_empty_keys(void) {
     return 0;
 }
 
+static int test_run_step_header_fmt(void) {
+    const char *s = lex(LEX_RUN_STEP_HEADER_FMT);
+    ASSERT("step_header_fmt non-NULL", s != NULL);
+    ASSERT("step_header_fmt non-empty", s[0] != '\0');
+    /* must contain two %s placeholders */
+    const char *first = strstr(s, "%s");
+    ASSERT("step_header_fmt has first %s", first != NULL);
+    ASSERT("step_header_fmt has second %s", first && strstr(first + 2, "%s") != NULL);
+    PASS("run_step_header_fmt");
+    return 0;
+}
+
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
-    ASSERT("LEX__COUNT is 71", LEX__COUNT == 71);
+    ASSERT("LEX__COUNT is 72", LEX__COUNT == 72);
     PASS("lex_count_consistency");
     return 0;
 }
@@ -317,6 +329,7 @@ int main(void) {
     failures += test_run_state_label_keys();
     failures += test_run_device_log_keys();
     failures += test_run_log_empty_keys();
+    failures += test_run_step_header_fmt();
     failures += test_lex_count_consistency();
 
     if (failures == 0) {

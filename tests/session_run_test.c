@@ -784,6 +784,123 @@ static int test_stale_clears_on_execute(void)
     return 0;
 }
 
+/* 14. Build marks: REV_BUILD_MARK fires for every chain step with non-empty
+   command, and precedes that step's first REV_BUILD_LOG chunk.
+   Also verifies compile-only path emits marks for settings and build only. */
+static int test_build_marks(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[3] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp_count = 4;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    /* Collect all events from EXECUTE until RUNNING into a buffer. */
+#define MARK_TEST_EV_CAP 256
+    static SessionRunEvent collected[MARK_TEST_EV_CAP];
+    int nev = 0;
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    /* Drain until RUN_RUNNING, collecting all events. */
+    bool reached_running = false;
+    for (int i = 0; i < POLL_MAX && !reached_running; i++) {
+        SessionRunEvent ev;
+        if (session_run_poll(s, &ev)) {
+            if (nev < MARK_TEST_EV_CAP) collected[nev++] = ev;
+            if (ev.kind == REV_PHASE && ev.phase == RUN_RUNNING)
+                reached_running = true;
+        } else {
+            sleep_ms(1);
+        }
+    }
+    ASSERT("reached running", reached_running);
+
+    /* Verify ordering: for each REV_BUILD_LOG, a REV_BUILD_MARK with a
+       non-empty command must have appeared earlier in the sequence. */
+    bool mark_seen = false;
+    for (int i = 0; i < nev; i++) {
+        if (collected[i].kind == REV_BUILD_MARK) {
+            ASSERT("build mark has non-empty command",
+                   collected[i].cmd_summary[0] != '\0');
+            mark_seen = true;
+        }
+        if (collected[i].kind == REV_BUILD_LOG && collected[i].len > 0) {
+            ASSERT("build log preceded by a build mark", mark_seen);
+        }
+        /* Reset mark_seen on each INSTALLING/LAUNCHING phase transition
+           to enforce per-step ordering. */
+        if (collected[i].kind == REV_PHASE &&
+            (collected[i].phase == RUN_INSTALLING ||
+             collected[i].phase == RUN_LAUNCHING)) {
+            mark_seen = false;
+        }
+    }
+
+    /* Count marks: expect settings, build, install, launch = 4. */
+    int mark_count = 0;
+    for (int i = 0; i < nev; i++)
+        if (collected[i].kind == REV_BUILD_MARK) mark_count++;
+    ASSERT("four marks for execute (settings, build, install, launch)",
+           mark_count == 4);
+
+    g_run_stop_stream = 1;
+    session_close(s);
+    PASS("build_marks_execute");
+
+    /* Part 2: compile-only should emit exactly 2 marks (settings + build). */
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp_count = 2;
+
+    ASSERT("session open compile", session_open(&s) == SSH_OK);
+    ASSERT("online compile", connect_and_wait_online(s));
+
+    SessionRunCmd compile_cmd = make_compile_cmd();
+    ASSERT("submit compile", session_run_submit(s, &compile_cmd));
+
+    nev = 0;
+    bool reached_idle = false;
+    for (int i = 0; i < POLL_MAX && !reached_idle; i++) {
+        SessionRunEvent ev;
+        if (session_run_poll(s, &ev)) {
+            if (nev < MARK_TEST_EV_CAP) collected[nev++] = ev;
+            if (ev.kind == REV_PHASE && ev.phase == RUN_IDLE)
+                reached_idle = true;
+        } else {
+            sleep_ms(1);
+        }
+    }
+    ASSERT("compile reached idle", reached_idle);
+
+    mark_count = 0;
+    for (int i = 0; i < nev; i++)
+        if (collected[i].kind == REV_BUILD_MARK) mark_count++;
+    ASSERT("two marks for compile (settings, build)", mark_count == 2);
+
+    for (int i = 0; i < nev; i++) {
+        if (collected[i].kind == REV_BUILD_MARK)
+            ASSERT("compile mark non-empty cmd", collected[i].cmd_summary[0] != '\0');
+    }
+
+    session_close(s);
+    PASS("build_marks_compile");
+    return 0;
+}
+
 /* ── main ─────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -807,6 +924,7 @@ int main(void)
     rc |= test_drop_mid_run();
     rc |= test_compile_while_running();
     rc |= test_stale_clears_on_execute();
+    rc |= test_build_marks();
 
     log_shutdown();
     unlink("/tmp/ostrich_session_run_test.log");

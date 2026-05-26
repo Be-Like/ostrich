@@ -850,7 +850,7 @@ acceptance criteria of T5 and T8 and adds two new ones below.
 
 ### Task 11 - Per-step command demarcation in the Build Log
 
-- **Status**: not started
+- **Status**: done
 - **Blocked by**: 5, 8, 10
 - **User stories covered**: 22, 23, 51 (extension), 53
 
@@ -939,15 +939,15 @@ shape:
 
 #### Acceptance criteria
 
-- [ ] `session.h` declares `REV_BUILD_MARK` with a phase field and a
+- [x] `session.h` declares `REV_BUILD_MARK` with a phase field and a
       fixed-size command-summary field; `SessionRunEvent` remains a
       tagged union with no pointers crossing the worker↔UI boundary.
-- [ ] The worker emits exactly one `REV_BUILD_MARK` per step, before
+- [x] The worker emits exactly one `REV_BUILD_MARK` per step, before
       the step's first `REV_BUILD_LOG` chunk and before the SSH exec;
       asserted in `session_run_test.c` for settings/build/install/launch
       on the device-target happy path and for settings/build on the
       compile-only path.
-- [ ] The app's `REV_BUILD_MARK` handler calls `logbuf_mark` exactly
+- [x] The app's `REV_BUILD_MARK` handler calls `logbuf_mark` exactly
       once per event, formatting through the new lexicon template; the
       line is the only Build Log entry that begins with `> ──` (mirrors
       the Device Log's NEW PAYLOAD invariant).
@@ -958,7 +958,7 @@ shape:
       lands in the Build Log (where the new compile streams) and the
       Device Log keeps streaming with no interference (T7 invariant
       preserved).
-- [ ] `make test` passes on both Linux and macOS (`session_run_test`,
+- [x] `make test` passes on both Linux and macOS (`session_run_test`,
       `lexicon_test`, headless `ui_test`).
 - [ ] Manually against a live Mac: every chain step on EXECUTE and
       COMPILE shows its `> ── PHASE // cmd ──` demarcation before its

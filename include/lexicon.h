@@ -106,6 +106,9 @@ typedef enum {
     LEX_RUN_BUILD_EMPTY,     /* "// NO PAYLOAD COMPILED"                   */
     LEX_RUN_DEVICE_EMPTY,    /* "// NO SIGNAL \xe2\x80\x94 TARGET DARK"    */
 
+    /* ── build log step demarcation ────────────────────────────────────── */
+    LEX_RUN_STEP_HEADER_FMT, /* "> \xe2\x94\x80\xe2\x94\x80 %s // %s \xe2\x94\x80\xe2\x94\x80" */
+
     LEX__COUNT
 } LexKey;
 

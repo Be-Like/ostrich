@@ -86,7 +86,8 @@ typedef struct {
 
 /* ── run command/event family ─────────────────────────────────────── */
 
-#define RUN_CHUNK_CAP 4096
+#define RUN_CHUNK_CAP       4096
+#define RUN_CMD_SUMMARY_CAP  256
 
 typedef enum {
     RCMD_EXECUTE,
@@ -105,7 +106,8 @@ typedef enum {
     REV_PHASE,
     REV_BUILD_LOG,
     REV_DEVICE_LOG,
-    REV_STALE
+    REV_STALE,
+    REV_BUILD_MARK
 } SessionRunEventKind;
 
 typedef struct {
@@ -115,6 +117,7 @@ typedef struct {
     bool                stale;
     int                 len;
     char                chunk[RUN_CHUNK_CAP];
+    char                cmd_summary[RUN_CMD_SUMMARY_CAP];
 } SessionRunEvent;
 
 bool session_run_submit(Session *s, const SessionRunCmd *cmd);

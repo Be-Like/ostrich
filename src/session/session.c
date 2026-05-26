@@ -331,6 +331,19 @@ static void emit_build_log(WorkerCtx *ctx, const char *bytes, size_t n)
     }
 }
 
+static void emit_build_mark(WorkerCtx *ctx, RunPhase phase, const char *cmd)
+{
+    SessionRunEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.kind  = REV_BUILD_MARK;
+    ev.phase = phase;
+    size_t n = strlen(cmd);
+    if (n >= RUN_CMD_SUMMARY_CAP) n = RUN_CMD_SUMMARY_CAP - 1;
+    memcpy(ev.cmd_summary, cmd, n);
+    ev.cmd_summary[n] = '\0';
+    push_run_ev(ctx, &ev);
+}
+
 static void emit_device_log(WorkerCtx *ctx, const char *bytes, size_t n)
 {
     while (n > 0) {
@@ -795,6 +808,8 @@ static void drive_run_chain(WorkerCtx *ctx)
                 fail_run_chain(ctx, step_to_fail_ev(rc->step), bs);
                 return;
             }
+
+            emit_build_mark(ctx, ctx->rs.phase, cmd);
 
             SshStatus st = ssh_channel_exec(rc->ch, cmd);
             if (st == SSH_AGAIN) return;
