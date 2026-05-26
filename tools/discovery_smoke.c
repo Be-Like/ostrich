@@ -6,6 +6,7 @@
 #define _DEFAULT_SOURCE
 #include "session.h"
 #include "connstate.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,8 @@ int main(int argc, char **argv)
                 max_depth = v;
         }
     }
+
+    log_init();
 
     Session  *s  = NULL;
     SshStatus st = session_open(&s);
