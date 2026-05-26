@@ -18,6 +18,17 @@
    the help-block bytes land in `REV_BUILD_LOG`. Tighten the
    README "Known issues" entry and add the cross-ARD "See
    also" pointer.
+3. **T3 — surface SETTINGS step output in the Build Log so
+   `EXECUTE` failures aren't silent.** Tee
+   `RCHAIN_STEP_SETTINGS` stdout/stderr into `emit_build_log`
+   while still buffering for `bd_parse_product_path`, and land
+   the stashed regression test
+   `tests/session_run_test.c::test_execute_settings_failure_shows_log`
+   that proves the bug. Post-T2 follow-up: on `EXECUTE`
+   (`has_target=true`) the chain typically fails at SETTINGS
+   before reaching BUILD, so the T2 help block never fires
+   and the user sees an empty Build Log with only the
+   `EXPLOIT FAILED` banner.
 
 ## ARD amendment note
 
@@ -42,12 +53,23 @@ T1 (libbuilddeploy: helper + enum + lexicon plumbing)
         │
         ▼
 T2 (libsession hook + session test + docs)
+        │
+        ▼
+T3 (SETTINGS-step output → Build Log; EXECUTE reachability)
 ```
 
 T2 is blocked by T1 because the session hook calls
 `bd_setsid_help_block` and passes `BD_ERR_SETSID_MISSING`
 into `fail_run_chain`; both must exist in `libbuilddeploy`
 and the lexicon table before the hook compiles.
+
+T3 is blocked by T2 only by sequencing — the bug it fixes is
+a post-T2 discovery and its regression test (stashed at
+`stash@{0}` on the implementer's checkout) was authored
+against T2's emission path. T3 does not touch
+`libbuilddeploy` and could in principle ship independently;
+keeping it after T2 preserves the narrative "T2 made the
+help block emittable; T3 made it reachable from EXECUTE."
 
 ## Detailed Tasks
 
@@ -349,3 +371,117 @@ Conformance with `context/coding_standards.md`:
       only when `cfg.port != 22`), the
       `── END REMEDIATION ──` closer, and the EXPLOIT
       FAILED banner.
+
+### Task 3 — SETTINGS-step output → Build Log (EXECUTE reachability fix)
+
+- **Status**: not started
+- **Blocked by**: Task 2 (sequencing only — see T3 entry in
+  "Task Dependency Relationships")
+- **User stories covered**: n/a (no PRD; bug discovered in
+  manual T2 smoke on a Mac missing `setsid`)
+
+#### What to build
+
+A one-line tee in `process_run_chunk`'s
+`RCHAIN_STEP_SETTINGS` case so SETTINGS stdout/stderr also
+lands in `REV_BUILD_LOG` events. The existing
+`settings_buf` copy stays — `bd_parse_product_path` still
+consumes the buffered JSON on success.
+
+End-to-end behavior after T3: when `EXECUTE`
+(`has_target=true`) submits a destination string that
+`xcodebuild -showBuildSettings -destination id=<udid>`
+can't resolve, the Build Log shows xcodebuild's actual
+error text before the `EXPLOIT FAILED` banner — same
+visibility the BUILD step already has. When SETTINGS
+succeeds and BUILD then fails on missing `setsid`, the T2
+help block fires as it does today.
+
+#### Technical Details
+
+Root cause: `tests/session_run_test.c::test_build_failure`
+(added in T2) exercises the BUILD-step setsid path with
+`has_target=true` but uses a stub that returns success at
+SETTINGS. On a real Mac without `setsid`, COMPILE
+(`has_target=false`, destination `generic/platform=iOS`)
+still reaches BUILD and shows the help block — but EXECUTE
+(`has_target=true`, destination `id=<udid>`) often fails at
+SETTINGS first because the device isn't resolvable in that
+xcodebuild invocation context. `process_run_chunk`'s
+SETTINGS case at `src/session/session.c:588-592` copies
+bytes into `rc->settings_buf` only, so when SETTINGS exits
+non-zero the Build Log panel is empty and `fail_run_chain`
+emits only the `RUN_BUILD_FAILED` phase event.
+
+Trade-off accepted (per design Q&A 2026-05-26): with the
+tee, the SETTINGS JSON blob also appears in the Build Log
+on the success path. We're taking that visual noise to
+keep the fix a one-line change and to make the data path
+symmetric with BUILD/INSTALL output. If the JSON noise
+proves annoying in practice, a follow-up can swap the tee
+for a "flush settings_buf only on SETTINGS failure" guard
+in `handle_step_exit`.
+
+Files touched:
+
+- `src/session/session.c` — inside `process_run_chunk`'s
+  `RCHAIN_STEP_SETTINGS` case
+  (`src/session/session.c:588-592`), add
+  `emit_build_log(ctx, buf, n);` alongside the existing
+  `settings_buf` memcpy. Position the call so SETTINGS
+  bytes reach the Build Log even when `settings_buf` is
+  full (don't gate the emit on the same `settings_len + n
+  <= RUN_SETTINGS_BUF_CAP` check).
+
+- `tests/session_run_test.c` — unstash and land
+  `test_execute_settings_failure_shows_log` (currently at
+  `stash@{0}`: "repro: EXECUTE settings-step failure
+  leaves build log empty (setsid-install-help)"). The
+  test scripts SETTINGS to exit 1 with the substring
+  `"Unable to find a destination matching id=..."`,
+  submits an `EXECUTE` (`has_target=true`), waits for
+  `RUN_BUILD_FAILED`, and asserts the concatenated
+  `REV_BUILD_LOG` payload contains `"Unable to find"`.
+  Pre-fix it fails on that assertion; post-fix it passes.
+
+Conformance with `context/coding_standards.md`:
+
+- **Arenas / allocation:** no new allocators.
+  `emit_build_log` copies bytes into existing SPSC event
+  records, same as every BUILD chunk today.
+- **Thread confinement:** `process_run_chunk` already runs
+  on the worker thread that owns the Build Log emission
+  path; no new cross-thread data.
+- **Module → library:** change contained to
+  `src/session/session.c`; no public-header change to
+  `libsession`.
+- **C/C++ seam:** untouched; pure C11 edit.
+- **Testing:** black-box, public-API only, uses the
+  existing `ssh_stub_run.c` configurable stub.
+
+#### Acceptance criteria
+
+- [ ] `src/session/session.c` `process_run_chunk`'s
+      `RCHAIN_STEP_SETTINGS` case emits every chunk via
+      `emit_build_log(ctx, buf, n)` in addition to the
+      `settings_buf` memcpy; the emit is not gated on
+      buffer-capacity availability.
+- [ ] `tests/session_run_test.c::test_execute_settings_failure_shows_log`
+      is unstashed, wired into `main()` next to
+      `test_build_failure`, and passes; it asserts
+      (a) `g_exec_next == 1` after `RUN_BUILD_FAILED`
+      (only SETTINGS ran) and (b) the drained
+      `REV_BUILD_LOG` payload contains
+      `"Unable to find"`.
+- [ ] `tests/session_run_test.c::test_execute_happy_path`
+      still passes (sanity-check that teeing the
+      settings-JSON success blob doesn't break the
+      happy-path drain).
+- [ ] `make` builds cleanly; `make test` is all-green
+      (same `libxkbcommon` caveat as T2).
+- [ ] Manual smoke: on the same Mac used for the T2
+      smoke, an `EXECUTE` whose SETTINGS step fails
+      renders the xcodebuild error text in the Build Log
+      before the `EXPLOIT FAILED` banner; a COMPILE on
+      the same Mac still shows the T2 help block as
+      before.
