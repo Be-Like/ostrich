@@ -312,7 +312,7 @@ Conformance with `context/coding_standards.md`:
 
 ### Task 2 — libstore: `Conn` record extension
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: n/a (no PRD; goal sourced from
   ARD `## PRD` section's one-line goal)

@@ -64,6 +64,11 @@ static StoreStatus write_conn(FILE *f, const Conn *c) {
         if (fprintf(f, "remember=1\n") < 0) return STORE_ERR_IO;
         if (fprintf(f, "passkey=%s\n", c->passkey) < 0) return STORE_ERR_IO;
     }
+    /* keychain passkey is independent of SSH auth method */
+    if (c->kc_remember && c->kc_passkey[0] != '\0') {
+        if (fprintf(f, "kc_remember=1\n") < 0) return STORE_ERR_IO;
+        if (fprintf(f, "kc_passkey=%s\n", c->kc_passkey) < 0) return STORE_ERR_IO;
+    }
     return STORE_OK;
 }
 
@@ -181,6 +186,10 @@ StoreStatus store_load(Arena *a, ConnList *out) {
             cur.remember = (strcmp(val, "1") == 0);
         } else if (strcmp(key, "passkey") == 0) {
             strncpy(cur.passkey, val, sizeof(cur.passkey) - 1);
+        } else if (strcmp(key, "kc_remember") == 0) {
+            cur.kc_remember = (strcmp(val, "1") == 0);
+        } else if (strcmp(key, "kc_passkey") == 0) {
+            strncpy(cur.kc_passkey, val, sizeof(cur.kc_passkey) - 1);
         }
         /* unknown keys are silently ignored for forward compatibility */
     }

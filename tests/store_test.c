@@ -779,6 +779,164 @@ static int test_recon_file_permissions(void) {
     return 0;
 }
 
+/* ── kc_remember=true + kc_passkey round-trip ────────────────────────── */
+
+static int test_kc_passkey_roundtrip(void) {
+    setup();
+
+    Conn c;
+    memset(&c, 0, sizeof(c));
+    strncpy(c.host, "mac.local", sizeof(c.host) - 1);
+    c.port = 22;
+    strncpy(c.user, "alice", sizeof(c.user) - 1);
+    c.auth       = SSH_AUTH_PASSWORD;
+    c.remember   = true;
+    strncpy(c.passkey, "sshpass", sizeof(c.passkey) - 1);
+    c.kc_remember = true;
+    strncpy(c.kc_passkey, "keychainpass", sizeof(c.kc_passkey) - 1);
+
+    ConnList in_list = { &c, 1, 0 };
+    StoreStatus s = store_save(&in_list);
+    ASSERT("kc roundtrip save → OK", s == STORE_OK);
+
+    ConnList out = {0};
+    s = store_load(g_arena, &out);
+    ASSERT("kc roundtrip load → OK",       s == STORE_OK);
+    ASSERT("kc roundtrip count",           out.count == 1);
+    ASSERT("kc roundtrip kc_remember",     out.items[0].kc_remember == true);
+    ASSERT("kc roundtrip kc_passkey",      strcmp(out.items[0].kc_passkey, "keychainpass") == 0);
+    ASSERT("kc roundtrip ssh passkey",     strcmp(out.items[0].passkey, "sshpass") == 0);
+
+    PASS("kc_passkey_roundtrip");
+    return 0;
+}
+
+/* ── kc_remember=false: kc_passkey is empty after round-trip ─────────── */
+
+static int test_kc_passkey_off_by_default(void) {
+    setup();
+
+    Conn c;
+    memset(&c, 0, sizeof(c));
+    strncpy(c.host, "mac.local", sizeof(c.host) - 1);
+    c.port = 22;
+    strncpy(c.user, "alice", sizeof(c.user) - 1);
+    c.auth        = SSH_AUTH_AGENT;
+    c.kc_remember = false;
+    strncpy(c.kc_passkey, "shouldnotbesaved", sizeof(c.kc_passkey) - 1);
+
+    ConnList in_list = { &c, 1, 0 };
+    store_save(&in_list);
+
+    ConnList out = {0};
+    store_load(g_arena, &out);
+    ASSERT("kc off kc_remember false",   out.items[0].kc_remember == false);
+    ASSERT("kc off kc_passkey empty",    out.items[0].kc_passkey[0] == '\0');
+
+    FILE *f = fopen(g_conn_path, "r");
+    ASSERT("file exists", f != NULL);
+    char buf[4096];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    ASSERT("kc_passkey key absent from file",    strstr(buf, "kc_passkey") == NULL);
+    ASSERT("kc_passkey value absent from file",  strstr(buf, "shouldnotbesaved") == NULL);
+
+    PASS("kc_passkey_off_by_default");
+    return 0;
+}
+
+/* ── agent conn with kc_remember=true round-trips correctly ──────────── */
+
+static int test_kc_passkey_with_agent_auth(void) {
+    setup();
+
+    Conn c;
+    memset(&c, 0, sizeof(c));
+    strncpy(c.host, "mac.local", sizeof(c.host) - 1);
+    c.port = 22;
+    strncpy(c.user, "alice", sizeof(c.user) - 1);
+    c.auth        = SSH_AUTH_AGENT;
+    c.kc_remember = true;
+    strncpy(c.kc_passkey, "keychainonly", sizeof(c.kc_passkey) - 1);
+
+    ConnList in_list = { &c, 1, 0 };
+    StoreStatus s = store_save(&in_list);
+    ASSERT("agent kc save → OK", s == STORE_OK);
+
+    ConnList out = {0};
+    s = store_load(g_arena, &out);
+    ASSERT("agent kc load → OK",        s == STORE_OK);
+    ASSERT("agent kc auth",             out.items[0].auth == SSH_AUTH_AGENT);
+    ASSERT("agent kc_remember",         out.items[0].kc_remember == true);
+    ASSERT("agent kc_passkey",          strcmp(out.items[0].kc_passkey, "keychainonly") == 0);
+    ASSERT("agent ssh passkey empty",   out.items[0].passkey[0] == '\0');
+    ASSERT("agent ssh remember false",  out.items[0].remember == false);
+
+    PASS("kc_passkey_with_agent_auth");
+    return 0;
+}
+
+/* ── legacy file (pre-T2, no kc fields) loads with safe defaults ─────── */
+
+static int test_kc_passkey_legacy_compat(void) {
+    setup();
+
+    /* Ensure the ostrich dir exists before writing directly */
+    char ostrich_dir[600];
+    snprintf(ostrich_dir, sizeof(ostrich_dir), "%s/ostrich", g_xdg_dir);
+    mkdir(ostrich_dir, 0700);
+
+    /* Write a hand-crafted pre-T2 record (no kc_remember / kc_passkey) */
+    FILE *f = fopen(g_conn_path, "w");
+    ASSERT("open legacy conn file", f != NULL);
+    fprintf(f, "host=mac.local\n");
+    fprintf(f, "port=22\n");
+    fprintf(f, "user=alice\n");
+    fprintf(f, "auth=password\n");
+    fprintf(f, "remember=1\n");
+    fprintf(f, "passkey=sshsecret\n");
+    fclose(f);
+
+    ConnList out = {0};
+    StoreStatus s = store_load(g_arena, &out);
+    ASSERT("legacy load → OK",           s == STORE_OK);
+    ASSERT("legacy count",               out.count == 1);
+    ASSERT("legacy host",                strcmp(out.items[0].host, "mac.local") == 0);
+    ASSERT("legacy ssh passkey intact",  strcmp(out.items[0].passkey, "sshsecret") == 0);
+    ASSERT("legacy kc_remember false",   out.items[0].kc_remember == false);
+    ASSERT("legacy kc_passkey empty",    out.items[0].kc_passkey[0] == '\0');
+
+    PASS("kc_passkey_legacy_compat");
+    return 0;
+}
+
+/* ── 0600 permissions hold after format extension ─────────────────────── */
+
+static int test_kc_passkey_file_permissions(void) {
+    setup();
+
+    Conn c;
+    memset(&c, 0, sizeof(c));
+    strncpy(c.host, "mac.local", sizeof(c.host) - 1);
+    c.port = 22;
+    strncpy(c.user, "alice", sizeof(c.user) - 1);
+    c.auth        = SSH_AUTH_AGENT;
+    c.kc_remember = true;
+    strncpy(c.kc_passkey, "keychainpass", sizeof(c.kc_passkey) - 1);
+
+    ConnList in_list = { &c, 1, 0 };
+    StoreStatus s = store_save(&in_list);
+    ASSERT("kc perms save → OK", s == STORE_OK);
+
+    struct stat st;
+    ASSERT("kc stat succeeds",  stat(g_conn_path, &st) == 0);
+    ASSERT("kc file is 0600",  (st.st_mode & 0777) == 0600);
+
+    PASS("kc_passkey_file_permissions");
+    return 0;
+}
+
 /* ── cleanup temp dir ─────────────────────────────────────────────────── */
 
 static void cleanup(void) {
@@ -826,6 +984,12 @@ int main(void) {
     failures += test_scanroot_no_file();
     failures += test_scanroot_isolation();
     failures += test_recon_file_permissions();
+    /* keychain passkey (T2) */
+    failures += test_kc_passkey_roundtrip();
+    failures += test_kc_passkey_off_by_default();
+    failures += test_kc_passkey_with_agent_auth();
+    failures += test_kc_passkey_legacy_compat();
+    failures += test_kc_passkey_file_permissions();
 
     cleanup();
     arena_destroy(g_arena);

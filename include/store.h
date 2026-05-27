@@ -16,8 +16,10 @@ typedef struct {
     int     port;
     char    user[128];
     SshAuth auth;
-    bool    remember;     /* opt-in passkey persistence */
-    char    passkey[256]; /* empty unless remember && auth==password */
+    bool    remember;        /* opt-in SSH passkey persistence */
+    char    passkey[256];    /* empty unless remember && auth==password */
+    bool    kc_remember;     /* opt-in keychain passkey persistence */
+    char    kc_passkey[256]; /* empty unless kc_remember */
 } Conn;
 
 typedef struct {

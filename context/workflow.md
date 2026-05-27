@@ -330,6 +330,10 @@ ostrich persists, in local configuration:
 - **Last-used target per connection** — the most recently selected
   device/simulator, remembered **separately** from any preset (it is
   re-validated against a fresh sweep on connect, not blindly trusted).
+- **Per-connection opt-in remembered keychain passkey** — paired with
+  the existing SSH `REMEMBER PASSKEY` opt-in; off by default; plaintext
+  with `0600`. The keychain passkey is independent of SSH auth method
+  (an ssh-agent connection may still remember a keychain passkey).
 
 The *intent* to persist is fixed here; the concrete on-disk format and
 config-persistence mechanism remain design-deferred and belong in a
@@ -348,7 +352,8 @@ MVP scope**:
 - **Build-error parsing** (structured errors / jump-to) — raw output
   only in MVP.
 - **Keychain-backed password storage** (macOS Keychain / libsecret) as
-  the hardened replacement for opt-in plaintext.
+  the hardened replacement for opt-in plaintext — covers both the SSH
+  passkey and the per-connection keychain passkey.
 - **Advanced run-config inputs** — launch arguments, environment
   variables, extra `xcodebuild` flags.
 - **Multiple named presets switching UX** richness beyond MVP basics.
