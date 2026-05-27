@@ -509,6 +509,67 @@ static int test_compile_from_terminal(void) {
     return 0;
 }
 
+/* ── unlock events ───────────────────────────────────────────────── */
+
+static int test_unlock_ok_stays_building(void) {
+    RunState rs;
+    RunAction act;
+
+    runstate_init(&rs);
+    step(&rs, RUN_EV_EXECUTE);
+    ASSERT("precondition: building",  rs.phase == RUN_BUILDING);
+
+    act = step(&rs, RUN_EV_UNLOCK_OK);
+    ASSERT("unlock_ok stays building",  rs.phase == RUN_BUILDING);
+    ASSERT("unlock_ok → none",          act      == RUN_ACT_NONE);
+
+    PASS("unlock_ok_stays_building");
+    return 0;
+}
+
+static int test_unlock_fail_to_build_failed(void) {
+    RunState rs;
+    RunAction act;
+
+    runstate_init(&rs);
+    step(&rs, RUN_EV_EXECUTE);
+    ASSERT("precondition: building",  rs.phase == RUN_BUILDING);
+
+    act = step(&rs, RUN_EV_UNLOCK_FAIL);
+    ASSERT("unlock_fail → build_failed",  rs.phase == RUN_BUILD_FAILED);
+    ASSERT("unlock_fail → done",          act      == RUN_ACT_DONE);
+
+    PASS("unlock_fail_to_build_failed");
+    return 0;
+}
+
+static int test_unlock_reason_lex(void) {
+    LexKey k = runstate_reason_lex(RUN_BUILD_FAILED, BD_ERR_UNLOCK_FAILED);
+    const char *s = lex(k);
+    ASSERT("unlock_failed reason key",     k == LEX_REC_ERR_KC_UNLOCK);
+    ASSERT("unlock_failed reason non-empty", s != NULL && s[0] != '\0');
+    ASSERT("no stray (?)",                  strcmp(s, "(?)") != 0);
+    PASS("unlock_reason_lex");
+    return 0;
+}
+
+static int test_existing_build_ok_unchanged(void) {
+    RunState rs;
+    RunAction act;
+
+    runstate_init(&rs);
+    rs.target_is_sim = false;
+    step(&rs, RUN_EV_EXECUTE);
+    step(&rs, RUN_EV_SETTINGS_OK);
+
+    act = step(&rs, RUN_EV_BUILD_OK);
+    ASSERT("build_ok still → installing",  rs.phase == RUN_INSTALLING);
+    ASSERT("build_ok still → install",     act      == RUN_ACT_INSTALL);
+
+    PASS("existing_build_ok_unchanged");
+    return 0;
+}
+
 /* ── phase lex ───────────────────────────────────────────────────── */
 
 static int test_phase_lex(void) {
@@ -716,6 +777,10 @@ int main(void) {
     ret |= test_retry_from_deploy_failed();
     ret |= test_retry_from_aborted();
     ret |= test_compile_from_terminal();
+    ret |= test_unlock_ok_stays_building();
+    ret |= test_unlock_fail_to_build_failed();
+    ret |= test_unlock_reason_lex();
+    ret |= test_existing_build_ok_unchanged();
     ret |= test_phase_lex();
     ret |= test_reason_lex();
     ret |= test_phase_str();

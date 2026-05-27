@@ -87,7 +87,7 @@ becomes visible) and by T1 (uses
 
 ### Task 1 — Data plumbing (libbuilddeploy + librunstate + liblexicon)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: n/a (no PRD; goal sourced from
   ARD `## PRD` section's one-line goal)

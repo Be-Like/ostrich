@@ -24,6 +24,11 @@ RunAction runstate_step(RunState *rs, RunEvent ev) {
 
     case RUN_BUILDING:
         switch (ev) {
+        case RUN_EV_UNLOCK_OK:
+            return RUN_ACT_NONE;
+        case RUN_EV_UNLOCK_FAIL:
+            rs->phase = RUN_BUILD_FAILED;
+            return RUN_ACT_DONE;
         case RUN_EV_SETTINGS_OK:
             return RUN_ACT_BUILD;
         case RUN_EV_BUILD_OK:
@@ -177,8 +182,9 @@ LexKey runstate_phase_lex(RunPhase p) {
 LexKey runstate_reason_lex(RunPhase p, BdStatus st) {
     switch (p) {
     case RUN_BUILD_FAILED:
-        if (st == BD_ERR_XCODE_MISSING)  return LEX_REC_ERR_XCODE;
-        if (st == BD_ERR_SETSID_MISSING) return LEX_REC_ERR_SETSID;
+        if (st == BD_ERR_XCODE_MISSING)   return LEX_REC_ERR_XCODE;
+        if (st == BD_ERR_SETSID_MISSING)  return LEX_REC_ERR_SETSID;
+        if (st == BD_ERR_UNLOCK_FAILED)   return LEX_REC_ERR_KC_UNLOCK;
         return LEX_RUN_BUILD_FAILED;
     case RUN_DEPLOY_FAILED:
         return LEX_RUN_DEPLOY_FAILED;

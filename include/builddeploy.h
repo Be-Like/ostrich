@@ -17,6 +17,7 @@ typedef enum {
     BD_ERR_INSTALL,         /* install non-zero     → deploy fail    */
     BD_ERR_LAUNCH,          /* launch non-zero      → deploy fail    */
     BD_ERR_PARSE,           /* settings did not parse                */
+    BD_ERR_UNLOCK_FAILED,   /* security unlock-keychain non-zero     */
     BD_ERR_OOM
 } BdStatus;
 
@@ -44,6 +45,11 @@ bool     bd_parse_pid_marker  (Str chunk, long *out_pgid);
 /* remediation text */
 BdStatus bd_setsid_help_block(const char *user, const char *host, int port,
                                char *buf, size_t cap);
+BdStatus bd_unlock_cmd(const char *kc_pass, char *buf, size_t cap);
+BdStatus bd_unlock_help_block(const char *user, const char *host, int port,
+                               char *buf, size_t cap);
+BdStatus bd_codesign_hint_block(const char *user, const char *host, int port,
+                                 char *buf, size_t cap);
 
 /* classification */
 LexKey      bd_reason_lex (BdStatus st);

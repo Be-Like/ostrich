@@ -432,16 +432,136 @@ static int test_setsid_help_block_oom(void) {
     return 0;
 }
 
+/* ── bd_unlock_cmd ───────────────────────────────────────────────── */
+
+static int test_unlock_cmd_basics(void) {
+    char buf[4096];
+    BdStatus s = bd_unlock_cmd("mypassword", buf, sizeof(buf));
+    ASSERT("unlock cmd ok",        s == BD_OK);
+    ASSERT("has setsid",           has(buf, "setsid"));
+    ASSERT("has sh -c",            has(buf, "sh -c"));
+    ASSERT("has marker",           has(buf, "__OSTRICH_PGID__"));
+    ASSERT("has security",         has(buf, "security unlock-keychain"));
+    ASSERT("has keychain path",    has(buf, "login.keychain-db"));
+    ASSERT("has env var",          has(buf, "__BD_KC_PASS="));
+    PASS("unlock_cmd_basics");
+    return 0;
+}
+
+static int test_unlock_cmd_quote_escape(void) {
+    char buf[4096];
+    BdStatus s = bd_unlock_cmd("pass'word", buf, sizeof(buf));
+    ASSERT("quote escape ok",  s == BD_OK);
+    ASSERT("escaped quote",    has(buf, "'\\''"));
+    PASS("unlock_cmd_quote_escape");
+    return 0;
+}
+
+static int test_unlock_cmd_empty_passkey(void) {
+    char buf[4096];
+    BdStatus s = bd_unlock_cmd("", buf, sizeof(buf));
+    ASSERT("empty passkey ok",    s == BD_OK);
+    ASSERT("still has setsid",    has(buf, "setsid"));
+    ASSERT("still has marker",    has(buf, "__OSTRICH_PGID__"));
+    ASSERT("still has security",  has(buf, "security unlock-keychain"));
+    PASS("unlock_cmd_empty_passkey");
+    return 0;
+}
+
+static int test_unlock_cmd_oom(void) {
+    char buf[10];
+    BdStatus s = bd_unlock_cmd("pass", buf, sizeof(buf));
+    ASSERT("small cap → oom",  s == BD_ERR_OOM);
+    PASS("unlock_cmd_oom");
+    return 0;
+}
+
+/* ── bd_unlock_help_block ────────────────────────────────────────── */
+
+static int test_unlock_help_block_default_port(void) {
+    char buf[2048];
+    BdStatus s = bd_unlock_help_block("jake", "mac.local", 22, buf, sizeof(buf));
+    ASSERT("default port ok",        s == BD_OK);
+    ASSERT("header present",         has(buf, "KEYCHAIN UNLOCK REJECTED."));
+    ASSERT("ssh user@host",          has(buf, "ssh jake@mac.local"));
+    ASSERT("no -p flag",             !has(buf, "ssh -p"));
+    ASSERT("security cmd present",   has(buf, "security unlock-keychain"));
+    ASSERT("keychain path present",  has(buf, "~/Library/Keychains/login.keychain-db"));
+    ASSERT("remediation opener",     has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("remediation closer",     has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("nul-terminated",         buf[strlen(buf)] == '\0');
+    PASS("unlock_help_block_default_port");
+    return 0;
+}
+
+static int test_unlock_help_block_nondefault_port(void) {
+    char buf[2048];
+    BdStatus s = bd_unlock_help_block("jake", "mac.local", 2222, buf, sizeof(buf));
+    ASSERT("nondefault port ok",      s == BD_OK);
+    ASSERT("header present",          has(buf, "KEYCHAIN UNLOCK REJECTED."));
+    ASSERT("ssh -p port user@host",   has(buf, "ssh -p 2222 jake@mac.local"));
+    ASSERT("security cmd present",    has(buf, "security unlock-keychain"));
+    ASSERT("keychain path present",   has(buf, "~/Library/Keychains/login.keychain-db"));
+    ASSERT("remediation opener",      has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("remediation closer",      has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    PASS("unlock_help_block_nondefault_port");
+    return 0;
+}
+
+static int test_unlock_help_block_oom(void) {
+    char buf[10];
+    BdStatus s = bd_unlock_help_block("u", "h", 22, buf, sizeof(buf));
+    ASSERT("small cap → oom",  s == BD_ERR_OOM);
+    PASS("unlock_help_block_oom");
+    return 0;
+}
+
+/* ── bd_codesign_hint_block ──────────────────────────────────────── */
+
+static int test_codesign_hint_block(void) {
+    char buf[1024];
+    BdStatus s = bd_codesign_hint_block("jake", "mac.local", 22, buf, sizeof(buf));
+    ASSERT("hint ok",                  s == BD_OK);
+    ASSERT("errSecInternalComponent",  has(buf, "errSecInternalComponent"));
+    ASSERT("keychain may be locked",   has(buf, "keychain may be locked"));
+    ASSERT("hint opener",              has(buf, "\xe2\x94\x80\xe2\x94\x80 HINT \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("hint closer",              has(buf, "\xe2\x94\x80\xe2\x94\x80 END HINT \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("nul-terminated",           buf[strlen(buf)] == '\0');
+    PASS("codesign_hint_block");
+    return 0;
+}
+
+static int test_codesign_hint_block_oom(void) {
+    char buf[10];
+    BdStatus s = bd_codesign_hint_block("u", "h", 22, buf, sizeof(buf));
+    ASSERT("small cap → oom",  s == BD_ERR_OOM);
+    PASS("codesign_hint_block_oom");
+    return 0;
+}
+
+/* ── BD_ERR_UNLOCK_FAILED coverage ───────────────────────────────── */
+
+static int test_unlock_failed_status(void) {
+    const char *str = bd_status_str(BD_ERR_UNLOCK_FAILED);
+    ASSERT("unlock_failed str non-empty",  str != NULL && str[0] != '\0');
+    ASSERT("unlock_failed str not unknown", strcmp(str, "(unknown)") != 0);
+    ASSERT("unlock_failed reason lex",
+           bd_reason_lex(BD_ERR_UNLOCK_FAILED) == LEX_REC_ERR_KC_UNLOCK);
+    PASS("unlock_failed_status");
+    return 0;
+}
+
 /* ── bd_reason_lex ───────────────────────────────────────────────── */
 
 static int test_reason_lex(void) {
-    ASSERT("xcode missing → rec err",  bd_reason_lex(BD_ERR_XCODE_MISSING)  == LEX_REC_ERR_XCODE);
-    ASSERT("setsid missing → setsid",  bd_reason_lex(BD_ERR_SETSID_MISSING) == LEX_REC_ERR_SETSID);
-    ASSERT("build → build failed",     bd_reason_lex(BD_ERR_BUILD) == LEX_RUN_BUILD_FAILED);
-    ASSERT("parse → build failed",     bd_reason_lex(BD_ERR_PARSE) == LEX_RUN_BUILD_FAILED);
-    ASSERT("boot → deploy failed",     bd_reason_lex(BD_ERR_BOOT)    == LEX_RUN_DEPLOY_FAILED);
-    ASSERT("install → deploy failed",  bd_reason_lex(BD_ERR_INSTALL) == LEX_RUN_DEPLOY_FAILED);
-    ASSERT("launch → deploy failed",   bd_reason_lex(BD_ERR_LAUNCH)  == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("xcode missing → rec err",    bd_reason_lex(BD_ERR_XCODE_MISSING)  == LEX_REC_ERR_XCODE);
+    ASSERT("setsid missing → setsid",    bd_reason_lex(BD_ERR_SETSID_MISSING) == LEX_REC_ERR_SETSID);
+    ASSERT("unlock failed → kc_unlock",  bd_reason_lex(BD_ERR_UNLOCK_FAILED)  == LEX_REC_ERR_KC_UNLOCK);
+    ASSERT("build → build failed",       bd_reason_lex(BD_ERR_BUILD) == LEX_RUN_BUILD_FAILED);
+    ASSERT("parse → build failed",       bd_reason_lex(BD_ERR_PARSE) == LEX_RUN_BUILD_FAILED);
+    ASSERT("boot → deploy failed",       bd_reason_lex(BD_ERR_BOOT)    == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("install → deploy failed",    bd_reason_lex(BD_ERR_INSTALL) == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("launch → deploy failed",     bd_reason_lex(BD_ERR_LAUNCH)  == LEX_RUN_DEPLOY_FAILED);
     /* build vs deploy are distinct */
     ASSERT("build != deploy", bd_reason_lex(BD_ERR_BUILD) != bd_reason_lex(BD_ERR_INSTALL));
     PASS("reason_lex");
@@ -451,15 +571,16 @@ static int test_reason_lex(void) {
 /* ── bd_status_str ───────────────────────────────────────────────── */
 
 static int test_status_str(void) {
-    ASSERT("ok str",      bd_status_str(BD_OK)[0] != '\0');
-    ASSERT("xcode str",   bd_status_str(BD_ERR_XCODE_MISSING)[0] != '\0');
-    ASSERT("setsid str",  bd_status_str(BD_ERR_SETSID_MISSING)[0] != '\0');
-    ASSERT("build str",   bd_status_str(BD_ERR_BUILD)[0] != '\0');
-    ASSERT("boot str",    bd_status_str(BD_ERR_BOOT)[0] != '\0');
-    ASSERT("install str", bd_status_str(BD_ERR_INSTALL)[0] != '\0');
-    ASSERT("launch str",  bd_status_str(BD_ERR_LAUNCH)[0] != '\0');
-    ASSERT("parse str",   bd_status_str(BD_ERR_PARSE)[0] != '\0');
-    ASSERT("oom str",     bd_status_str(BD_ERR_OOM)[0] != '\0');
+    ASSERT("ok str",            bd_status_str(BD_OK)[0] != '\0');
+    ASSERT("xcode str",         bd_status_str(BD_ERR_XCODE_MISSING)[0] != '\0');
+    ASSERT("setsid str",        bd_status_str(BD_ERR_SETSID_MISSING)[0] != '\0');
+    ASSERT("build str",         bd_status_str(BD_ERR_BUILD)[0] != '\0');
+    ASSERT("boot str",          bd_status_str(BD_ERR_BOOT)[0] != '\0');
+    ASSERT("install str",       bd_status_str(BD_ERR_INSTALL)[0] != '\0');
+    ASSERT("launch str",        bd_status_str(BD_ERR_LAUNCH)[0] != '\0');
+    ASSERT("parse str",         bd_status_str(BD_ERR_PARSE)[0] != '\0');
+    ASSERT("unlock_failed str", bd_status_str(BD_ERR_UNLOCK_FAILED)[0] != '\0');
+    ASSERT("oom str",           bd_status_str(BD_ERR_OOM)[0] != '\0');
     PASS("status_str");
     return 0;
 }
@@ -528,6 +649,20 @@ int main(void) {
     failures += test_setsid_help_block_default_port();
     failures += test_setsid_help_block_nondefault_port();
     failures += test_setsid_help_block_oom();
+
+    failures += test_unlock_cmd_basics();
+    failures += test_unlock_cmd_quote_escape();
+    failures += test_unlock_cmd_empty_passkey();
+    failures += test_unlock_cmd_oom();
+
+    failures += test_unlock_help_block_default_port();
+    failures += test_unlock_help_block_nondefault_port();
+    failures += test_unlock_help_block_oom();
+
+    failures += test_codesign_hint_block();
+    failures += test_codesign_hint_block_oom();
+
+    failures += test_unlock_failed_status();
 
     failures += test_reason_lex();
     failures += test_status_str();

@@ -431,32 +431,103 @@ BdStatus bd_setsid_help_block(const char *user, const char *host, int port,
     return BD_OK;
 }
 
+BdStatus bd_unlock_cmd(const char *kc_pass, char *buf, size_t cap) {
+    char qkc_pass[1024];
+    BdStatus s = bd_quote(kc_pass, qkc_pass, sizeof(qkc_pass));
+    if (s != BD_OK) return s;
+
+    int n = snprintf(buf, cap,
+        "__BD_KC_PASS=%s "
+        "setsid sh -c "
+        "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
+        "exec security unlock-keychain -p \"$__BD_KC_PASS\""
+        " \"$HOME/Library/Keychains/login.keychain-db\"'",
+        qkc_pass);
+    if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
+    return BD_OK;
+}
+
+BdStatus bd_unlock_help_block(const char *user, const char *host, int port,
+                               char *buf, size_t cap) {
+    int n;
+    if (port == 22) {
+        n = snprintf(buf, cap,
+            "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
+            "KEYCHAIN UNLOCK REJECTED.\n"
+            "\n"
+            "The keychain passkey was rejected by the Mac. Likely causes:\n"
+            "    - wrong passkey (try again)\n"
+            "    - login.keychain is corrupt or missing\n"
+            "\n"
+            "Verify manually from this host:\n"
+            "    ssh %s@%s 'security unlock-keychain"
+            " ~/Library/Keychains/login.keychain-db'\n"
+            "\n"
+            "Press EXECUTE again; the keychain passkey modal will appear.\n"
+            "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
+            user, host);
+    } else {
+        n = snprintf(buf, cap,
+            "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
+            "KEYCHAIN UNLOCK REJECTED.\n"
+            "\n"
+            "The keychain passkey was rejected by the Mac. Likely causes:\n"
+            "    - wrong passkey (try again)\n"
+            "    - login.keychain is corrupt or missing\n"
+            "\n"
+            "Verify manually from this host:\n"
+            "    ssh -p %d %s@%s 'security unlock-keychain"
+            " ~/Library/Keychains/login.keychain-db'\n"
+            "\n"
+            "Press EXECUTE again; the keychain passkey modal will appear.\n"
+            "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
+            port, user, host);
+    }
+    if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
+    return BD_OK;
+}
+
+BdStatus bd_codesign_hint_block(const char *user, const char *host, int port,
+                                 char *buf, size_t cap) {
+    (void)user; (void)host; (void)port;
+    int n = snprintf(buf, cap,
+        "> \xe2\x94\x80\xe2\x94\x80 HINT \xe2\x94\x80\xe2\x94\x80\n"
+        "If this was a codesign / errSecInternalComponent failure, the\n"
+        "Mac's keychain may be locked. Press EXECUTE; the keychain\n"
+        "passkey modal will appear.\n"
+        "> \xe2\x94\x80\xe2\x94\x80 END HINT \xe2\x94\x80\xe2\x94\x80\n");
+    if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
+    return BD_OK;
+}
+
 /* ── classification ──────────────────────────────────────────────── */
 
 LexKey bd_reason_lex(BdStatus st) {
     switch (st) {
-    case BD_ERR_XCODE_MISSING:  return LEX_REC_ERR_XCODE;
-    case BD_ERR_SETSID_MISSING: return LEX_REC_ERR_SETSID;
-    case BD_ERR_BUILD:          return LEX_RUN_BUILD_FAILED;
-    case BD_ERR_PARSE:          return LEX_RUN_BUILD_FAILED;
+    case BD_ERR_XCODE_MISSING:   return LEX_REC_ERR_XCODE;
+    case BD_ERR_SETSID_MISSING:  return LEX_REC_ERR_SETSID;
+    case BD_ERR_UNLOCK_FAILED:   return LEX_REC_ERR_KC_UNLOCK;
+    case BD_ERR_BUILD:           return LEX_RUN_BUILD_FAILED;
+    case BD_ERR_PARSE:           return LEX_RUN_BUILD_FAILED;
     case BD_ERR_BOOT:
     case BD_ERR_INSTALL:
-    case BD_ERR_LAUNCH:         return LEX_RUN_DEPLOY_FAILED;
-    default:                    return LEX_RUN_BUILD_FAILED;
+    case BD_ERR_LAUNCH:          return LEX_RUN_DEPLOY_FAILED;
+    default:                     return LEX_RUN_BUILD_FAILED;
     }
 }
 
 const char *bd_status_str(BdStatus st) {
     switch (st) {
-    case BD_OK:                 return "ok";
-    case BD_ERR_XCODE_MISSING:  return "xcode not found";
-    case BD_ERR_SETSID_MISSING: return "setsid not found";
-    case BD_ERR_BUILD:          return "build failed";
-    case BD_ERR_BOOT:           return "boot failed";
-    case BD_ERR_INSTALL:        return "install failed";
-    case BD_ERR_LAUNCH:         return "launch failed";
-    case BD_ERR_PARSE:          return "parse error";
-    case BD_ERR_OOM:            return "out of memory";
-    default:                    return "(unknown)";
+    case BD_OK:                  return "ok";
+    case BD_ERR_XCODE_MISSING:   return "xcode not found";
+    case BD_ERR_SETSID_MISSING:  return "setsid not found";
+    case BD_ERR_BUILD:           return "build failed";
+    case BD_ERR_BOOT:            return "boot failed";
+    case BD_ERR_INSTALL:         return "install failed";
+    case BD_ERR_LAUNCH:          return "launch failed";
+    case BD_ERR_PARSE:           return "parse error";
+    case BD_ERR_UNLOCK_FAILED:   return "keychain unlock failed";
+    case BD_ERR_OOM:             return "out of memory";
+    default:                     return "(unknown)";
     }
 }
