@@ -26,6 +26,36 @@ typedef enum {
 /* Pure form helpers — no I/O or threads; testable without a session. */
 void app_form_to_ssh_config(const ConnForm *form, SshConfig *cfg);
 
+/* ── keychain passkey cascade helpers (pure; no I/O) ──────────────── */
+
+typedef enum {
+    KC_SUBMIT_EMPTY, /* simulator or deferred-clear: send "" to session */
+    KC_SUBMIT_PASS,  /* cache or persisted passkey hit: send kc_pass_out */
+    KC_SHOW_MODAL,   /* no passkey available: open modal, defer submit    */
+} KcCascadeAction;
+
+/* Decide what the cascade should do on EXECUTE / COMPILE for the given
+   target.  On KC_SUBMIT_PASS, kc_pass_out (256 bytes) is filled with
+   the passkey to send (caller should sync back to kc_pass_cache when
+   promoting from persisted storage).  On KC_SUBMIT_EMPTY or
+   KC_SHOW_MODAL, kc_pass_out is zeroed. */
+KcCascadeAction app_kc_cascade(bool        is_simulator,
+                                const char *kc_pass_cache,
+                                bool        kc_remember,
+                                const char *kc_passkey,
+                                char        kc_pass_out[256]);
+
+/* Process modal ENTER: copy form_passkey into kc_pass_cache; if
+   form_remember and active_conn is non-NULL, set active_conn->kc_remember
+   and copy form_passkey into active_conn->kc_passkey, then set
+   *conn_mutated = true (caller should call store_save).  Safe when
+   active_conn is NULL (conn_mutated stays false). */
+void app_kc_commit_enter(const char *form_passkey,
+                          bool        form_remember,
+                          char        kc_pass_cache[256],
+                          Conn       *active_conn,
+                          bool       *conn_mutated);
+
 /* Compute the overlay reason string from the current phase and last
    SSH error.  Returns lex(LEX_CONN_SEVERED) when SEVERED, the matching
    failure string when DISCONNECTED with a non-OK reason, and NULL

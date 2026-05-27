@@ -394,6 +394,108 @@ static void test_conn_to_form_preserves_passkey_for_password_auth(void) {
     assert(form.auth == SSH_AUTH_PASSWORD);
 }
 
+/* ── app_kc_cascade tests ─────────────────────────────────────────── */
+
+static void test_kc_cascade_simulator_returns_empty(void) {
+    char out[256] = {0};
+    KcCascadeAction a = app_kc_cascade(true, "", false, "", out);
+    assert(a == KC_SUBMIT_EMPTY);
+    assert(out[0] == '\0');
+}
+
+static void test_kc_cascade_simulator_ignores_cache_and_persist(void) {
+    char out[256] = {0};
+    KcCascadeAction a = app_kc_cascade(true, "cached", true, "persisted", out);
+    assert(a == KC_SUBMIT_EMPTY);
+    assert(out[0] == '\0');
+}
+
+static void test_kc_cascade_device_cache_hit(void) {
+    char out[256] = {0};
+    KcCascadeAction a = app_kc_cascade(false, "cached", false, "", out);
+    assert(a == KC_SUBMIT_PASS);
+    assert(strcmp(out, "cached") == 0);
+}
+
+static void test_kc_cascade_device_persisted_hit(void) {
+    char out[256] = {0};
+    KcCascadeAction a = app_kc_cascade(false, "", true, "persisted", out);
+    assert(a == KC_SUBMIT_PASS);
+    assert(strcmp(out, "persisted") == 0);
+}
+
+static void test_kc_cascade_cache_beats_persisted(void) {
+    char out[256] = {0};
+    KcCascadeAction a = app_kc_cascade(false, "cached", true, "persisted", out);
+    assert(a == KC_SUBMIT_PASS);
+    assert(strcmp(out, "cached") == 0);
+}
+
+static void test_kc_cascade_device_no_pass_shows_modal(void) {
+    char out[256] = {0};
+    KcCascadeAction a = app_kc_cascade(false, "", false, "", out);
+    assert(a == KC_SHOW_MODAL);
+    assert(out[0] == '\0');
+}
+
+static void test_kc_cascade_remember_false_passkey_present_shows_modal(void) {
+    char out[256] = {0};
+    /* kc_remember=false so persisted passkey must not be used */
+    KcCascadeAction a = app_kc_cascade(false, "", false, "persisted", out);
+    assert(a == KC_SHOW_MODAL);
+    assert(out[0] == '\0');
+}
+
+/* ── app_kc_commit_enter tests ────────────────────────────────────── */
+
+static void test_kc_commit_enter_remember_true_updates_conn(void) {
+    Conn conn = {0};
+    char cache[256] = {0};
+    bool mutated = false;
+
+    app_kc_commit_enter("secret", true, cache, &conn, &mutated);
+
+    assert(strcmp(cache, "secret") == 0);
+    assert(conn.kc_remember == true);
+    assert(strcmp(conn.kc_passkey, "secret") == 0);
+    assert(mutated == true);
+}
+
+static void test_kc_commit_enter_remember_false_leaves_conn_unchanged(void) {
+    Conn conn = {0};
+    snprintf(conn.kc_passkey, sizeof(conn.kc_passkey), "old");
+    conn.kc_remember = false;
+    char cache[256] = {0};
+    bool mutated = false;
+
+    app_kc_commit_enter("typed", false, cache, &conn, &mutated);
+
+    assert(strcmp(cache, "typed") == 0);
+    assert(mutated == false);
+    assert(strcmp(conn.kc_passkey, "old") == 0);
+    assert(conn.kc_remember == false);
+}
+
+static void test_kc_commit_enter_null_conn_is_safe(void) {
+    char cache[256] = {0};
+    bool mutated = false;
+
+    app_kc_commit_enter("typed", true, cache, NULL, &mutated);
+
+    assert(strcmp(cache, "typed") == 0);
+    assert(mutated == false);
+}
+
+static void test_kc_commit_enter_fills_cache_regardless_of_remember(void) {
+    char cache[256] = {0};
+    bool mutated = false;
+
+    app_kc_commit_enter("pass123", false, cache, NULL, &mutated);
+
+    assert(strcmp(cache, "pass123") == 0);
+    assert(mutated == false);
+}
+
 /* ── app_phase_reason tests ──────────────────────────────────────────── */
 
 static void test_phase_reason_severed_returns_link_severed(void) {
@@ -459,6 +561,18 @@ int main(void) {
     test_save_password_not_persisted_without_remember();
     test_save_remember_disabled_clears_stored_passkey();
     test_save_oom_returns_minus1();
+
+    test_kc_cascade_simulator_returns_empty();
+    test_kc_cascade_simulator_ignores_cache_and_persist();
+    test_kc_cascade_device_cache_hit();
+    test_kc_cascade_device_persisted_hit();
+    test_kc_cascade_cache_beats_persisted();
+    test_kc_cascade_device_no_pass_shows_modal();
+    test_kc_cascade_remember_false_passkey_present_shows_modal();
+    test_kc_commit_enter_remember_true_updates_conn();
+    test_kc_commit_enter_remember_false_leaves_conn_unchanged();
+    test_kc_commit_enter_null_conn_is_safe();
+    test_kc_commit_enter_fills_cache_regardless_of_remember();
 
     test_phase_reason_severed_returns_link_severed();
     test_phase_reason_severed_regardless_of_last_reason();

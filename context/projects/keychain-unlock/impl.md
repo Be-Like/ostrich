@@ -888,7 +888,7 @@ Conformance with `context/coding_standards.md`:
 
 ### Task 5 — app: gating cascade + lifecycle wiring
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 2, Task 3, Task 4
 - **User stories covered**: n/a (no PRD; goal sourced from
   ARD `## PRD` section's one-line goal)

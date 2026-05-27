@@ -83,6 +83,14 @@ struct App {
     RunPhase  run_phase;
     bool      run_stale;
 
+    /* keychain passkey cascade state */
+    bool          show_kc_prompt;
+    char          kc_pass_cache[256];
+    struct {
+        bool          pending;
+        SessionRunCmd rcmd;
+    } deferred_run;
+
     /* keychain passkey modal form; app owns it across frames */
     KcForm    kc_form;
 };
@@ -239,6 +247,9 @@ bool app_tick(App *app) {
             app->target_selected = -1;
             app->run_phase       = RUN_IDLE;
             app->run_stale       = false;
+            memset(app->kc_pass_cache, 0, sizeof(app->kc_pass_cache));
+            app->show_kc_prompt       = false;
+            app->deferred_run.pending = false;
         }
     }
 
@@ -422,6 +433,11 @@ bool app_tick(App *app) {
                 logbuf_clear(app->build_log);
             if (rev.phase == RUN_RUNNING)
                 logbuf_mark(app->device_log, lex(LEX_RUN_NEW_PAYLOAD));
+            if (rev.phase == RUN_BUILD_FAILED &&
+                rev.reason == BD_ERR_UNLOCK_FAILED) {
+                memset(app->kc_pass_cache, 0, sizeof(app->kc_pass_cache));
+                session_set_kc_pass(app->session, "");
+            }
             app->run_phase = rev.phase;
             break;
         case REV_BUILD_LOG:
@@ -479,11 +495,12 @@ bool app_tick(App *app) {
                                               app->target_selected >= 0);
 
     UiRunView rrv = {0};
-    rrv.phase      = app->run_phase;
-    rrv.stale      = app->run_stale;
-    rrv.readiness  = disc_readiness(&app->run_cfg, app->target_selected >= 0);
-    rrv.build_log  = app->build_log;
-    rrv.device_log = app->device_log;
+    rrv.phase          = app->run_phase;
+    rrv.stale          = app->run_stale;
+    rrv.readiness      = disc_readiness(&app->run_cfg, app->target_selected >= 0);
+    rrv.build_log      = app->build_log;
+    rrv.device_log     = app->device_log;
+    rrv.show_kc_prompt = app->show_kc_prompt;
 
     UiIntents     intents = {0};
     UiReconIntents ri     = {0};
@@ -779,22 +796,80 @@ bool app_tick(App *app) {
     }
 
     /* ── run intents ─────────────────────────────────────────────────── */
-    if (rri.execute && online) {
-        bool has_target = (app->target_selected >= 0 &&
-                           app->target_selected < app->targets.count);
-        SessionRunCmd rcmd = {0};
-        rcmd.kind       = RCMD_EXECUTE;
-        rcmd.cfg        = app->run_cfg;
-        rcmd.has_target = has_target;
-        if (has_target)
-            rcmd.target = app->targets.items[app->target_selected];
-        session_run_submit(app->session, &rcmd);
+    if ((rri.execute || rri.compile) && online) {
+        SessionRunCmd rcmd  = {0};
+        bool          is_sim = true;
+
+        if (rri.execute) {
+            bool has_target = (app->target_selected >= 0 &&
+                               app->target_selected < app->targets.count);
+            rcmd.kind       = RCMD_EXECUTE;
+            rcmd.cfg        = app->run_cfg;
+            rcmd.has_target = has_target;
+            if (has_target) {
+                rcmd.target = app->targets.items[app->target_selected];
+                is_sim      = rcmd.target.is_simulator;
+            }
+        } else {
+            rcmd.kind = RCMD_COMPILE;
+            rcmd.cfg  = app->run_cfg;
+            if (app->target_selected >= 0 &&
+                app->target_selected < app->targets.count)
+                is_sim = app->targets.items[app->target_selected].is_simulator;
+        }
+
+        Conn *ac = (app->form.selected_known_host >= 0 &&
+                    app->form.selected_known_host < app->known_hosts.count)
+                   ? &app->known_hosts.items[app->form.selected_known_host] : NULL;
+        char kc_pass_out[256] = {0};
+        KcCascadeAction kca = app_kc_cascade(is_sim, app->kc_pass_cache,
+                                              ac ? ac->kc_remember : false,
+                                              ac ? ac->kc_passkey  : "",
+                                              kc_pass_out);
+        switch (kca) {
+        case KC_SUBMIT_EMPTY:
+            session_set_kc_pass(app->session, "");
+            session_run_submit(app->session, &rcmd);
+            break;
+        case KC_SUBMIT_PASS:
+            if (app->kc_pass_cache[0] == '\0')
+                snprintf(app->kc_pass_cache, sizeof(app->kc_pass_cache),
+                         "%s", kc_pass_out);
+            session_set_kc_pass(app->session, kc_pass_out);
+            session_run_submit(app->session, &rcmd);
+            break;
+        case KC_SHOW_MODAL:
+            app->show_kc_prompt       = true;
+            app->deferred_run.pending = true;
+            app->deferred_run.rcmd    = rcmd;
+            break;
+        }
     }
-    if (rri.compile && online) {
-        SessionRunCmd rcmd = {0};
-        rcmd.kind = RCMD_COMPILE;
-        rcmd.cfg  = app->run_cfg;
-        session_run_submit(app->session, &rcmd);
+    if (rri.kc_submit && app->show_kc_prompt) {
+        Conn *ac = (app->form.selected_known_host >= 0 &&
+                    app->form.selected_known_host < app->known_hosts.count)
+                   ? &app->known_hosts.items[app->form.selected_known_host] : NULL;
+        bool conn_mutated = false;
+        app_kc_commit_enter(app->kc_form.passkey, app->kc_form.remember,
+                             app->kc_pass_cache, ac, &conn_mutated);
+        memset(app->kc_form.passkey, 0, sizeof(app->kc_form.passkey));
+        if (conn_mutated)
+            store_save(&app->known_hosts);
+        session_set_kc_pass(app->session, app->kc_pass_cache);
+        if (app->deferred_run.pending) {
+            session_run_submit(app->session, &app->deferred_run.rcmd);
+            app->deferred_run.pending = false;
+        }
+        app->show_kc_prompt = false;
+    }
+    if (rri.kc_skip && app->show_kc_prompt) {
+        memset(app->kc_form.passkey, 0, sizeof(app->kc_form.passkey));
+        session_set_kc_pass(app->session, "");
+        if (app->deferred_run.pending) {
+            session_run_submit(app->session, &app->deferred_run.rcmd);
+            app->deferred_run.pending = false;
+        }
+        app->show_kc_prompt = false;
     }
     if (rri.abort_run) {
         SessionRunCmd rcmd = {.kind = RCMD_ABORT};

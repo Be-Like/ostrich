@@ -65,6 +65,40 @@ int app_save_to_list(ConnList *list, const ConnForm *form,
     return new_idx;
 }
 
+KcCascadeAction app_kc_cascade(bool is_simulator,
+                                const char *kc_pass_cache,
+                                bool kc_remember,
+                                const char *kc_passkey,
+                                char kc_pass_out[256]) {
+    memset(kc_pass_out, 0, 256);
+    if (is_simulator)
+        return KC_SUBMIT_EMPTY;
+    if (kc_pass_cache[0] != '\0') {
+        snprintf(kc_pass_out, 256, "%s", kc_pass_cache);
+        return KC_SUBMIT_PASS;
+    }
+    if (kc_remember && kc_passkey[0] != '\0') {
+        snprintf(kc_pass_out, 256, "%s", kc_passkey);
+        return KC_SUBMIT_PASS;
+    }
+    return KC_SHOW_MODAL;
+}
+
+void app_kc_commit_enter(const char *form_passkey,
+                          bool form_remember,
+                          char kc_pass_cache[256],
+                          Conn *active_conn,
+                          bool *conn_mutated) {
+    *conn_mutated = false;
+    snprintf(kc_pass_cache, 256, "%s", form_passkey);
+    if (form_remember && active_conn) {
+        active_conn->kc_remember = true;
+        snprintf(active_conn->kc_passkey, sizeof(active_conn->kc_passkey),
+                 "%s", form_passkey);
+        *conn_mutated = true;
+    }
+}
+
 const char *app_phase_reason(ConnPhase phase, SshStatus last_reason) {
     if (phase == CONN_SEVERED)
         return lex(LEX_CONN_SEVERED);
