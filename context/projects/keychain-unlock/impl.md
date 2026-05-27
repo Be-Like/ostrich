@@ -1175,7 +1175,7 @@ Conformance with `context/coding_standards.md`:
 
 ### Task 6 — H2 codesign hint emission + README
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 1, Task 5
 - **User stories covered**: n/a (no PRD; goal sourced from
   ARD `## PRD` section's one-line goal)

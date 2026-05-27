@@ -81,6 +81,17 @@ non-login sessions like `ssh host 'cmd'`. Confirm it took with
 `Export failed` (the EXPLOIT FAILED header) in the Build Log along with
 `command not found: setsid` when you click Execute.
 
+Device builds also require the remote Mac's `login.keychain` to be unlocked —
+`codesign` can't access the signing identity's private key through a locked
+keychain. ostrich handles this with a lazy modal: the first time you press
+EXECUTE against a device target in a session where the keychain is locked, a
+**KEYCHAIN PASSKEY** prompt appears. Enter the passkey and press `ENTER` to
+unlock the keychain for the rest of the session. Tick `REMEMBER KEYCHAIN` to
+save the passkey on the connection record (plaintext, `0600`) so future
+sessions skip the prompt automatically. Press `SKIP` to proceed without
+unlocking — the build will fail at the codesign step, but the Build Log will
+show a hint reminding you the modal is available on the next EXECUTE.
+
 ## Getting the source
 
 The third-party dependencies live under `third_party/` as git submodules. Clone
@@ -182,6 +193,16 @@ Removes the `build/` directory.
   the exact `ssh` invocation needed to fix it, so the failure is
   self-documenting in-app. The dependency itself remains; see
   `context/projects/setsid-install-help/` for the in-app guidance design.
+
+- **Remote Mac `login.keychain` must be unlocked for codesign.** Device
+  builds use `codesign` to sign the app; `codesign` needs the private key
+  from the Mac's `login.keychain`. On a headless Mac or after an auto-lock
+  the keychain is locked, causing a `codesign` failure
+  (`errSecInternalComponent`) at the very end of an otherwise-clean build.
+  ostrich surfaces an in-app keychain passkey modal on the first affected
+  EXECUTE — the failure is self-documenting in-app. ostrich does not modify
+  the Mac's keychain auto-lock policy; see
+  `context/projects/keychain-unlock/` for the in-app design.
 
 ## Repository layout
 

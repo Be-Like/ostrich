@@ -543,6 +543,14 @@ static void handle_step_exit(WorkerCtx *ctx, int exit_code)
             return;
         }
         if (exit_code != 0) {
+            if (!rc->target.is_simulator && ctx->kc_pass[0] == '\0') {
+                char hint[1024];
+                if (bd_codesign_hint_block(ctx->cfg.user, ctx->cfg.host,
+                                           ctx->cfg.port,
+                                           hint, sizeof(hint)) == BD_OK) {
+                    emit_build_log(ctx, hint, strlen(hint));
+                }
+            }
             BdStatus r = (exit_code == 127) ? BD_ERR_XCODE_MISSING : BD_ERR_BUILD;
             fail_run_chain(ctx, RUN_EV_BUILD_FAIL, r);
             return;

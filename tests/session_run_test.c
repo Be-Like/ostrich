@@ -1210,6 +1210,181 @@ static int test_kc_pass_not_inherited_across_sessions(void)
     return 0;
 }
 
+/* ── T6: H2 codesign hint tests ───────────────────────────────────── */
+
+/* Build output that has a pgid marker (so setsid branch does NOT fire)
+   but exits non-zero. */
+static const char k_build_fail_with_pgid[] =
+    "xcodebuild output\n__OSTRICH_PGID__99001\nbuild error\n";
+
+static SessionRunCmd make_sim_execute_cmd(void)
+{
+    SessionRunCmd cmd = make_execute_cmd();
+    cmd.target.is_simulator = true;
+    snprintf(cmd.target.udid, sizeof(cmd.target.udid), "SIM-UDID-001");
+    return cmd;
+}
+
+/* 21. Non-sim device, empty kc_pass, build fails with pgid marker →
+   H2 hint phrases appear in the build log before RUN_BUILD_FAILED. */
+static int test_h2_hint_fires_on_nonsim_build_failure(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1,
+        1, false, false };
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();  /* device, is_simulator = false */
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("phase build_failed",
+           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
+                                         build_log, sizeof(build_log)));
+
+    ASSERT("H2 hint: errSecInternalComponent present",
+           strstr(build_log, "errSecInternalComponent") != NULL);
+    ASSERT("H2 hint: keychain may be locked present",
+           strstr(build_log, "keychain may be locked") != NULL);
+    ASSERT("H2 hint: HINT rule present",
+           strstr(build_log, "── HINT ──") != NULL);
+
+    /* Only 2 execs: settings + build; no unlock since kc_pass was empty. */
+    ASSERT("only 2 execs (settings + build)", g_exec_next == 2);
+
+    session_close(s);
+    PASS("h2_hint_fires_on_nonsim_build_failure");
+    return 0;
+}
+
+/* 22. Simulator target, empty kc_pass, build fails → H2 hint NOT emitted. */
+static int test_h2_hint_absent_for_simulator(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1,
+        1, false, false };
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_sim_execute_cmd();  /* simulator target */
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("phase build_failed",
+           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
+                                         build_log, sizeof(build_log)));
+
+    ASSERT("H2 hint absent for simulator",
+           strstr(build_log, "errSecInternalComponent") == NULL);
+    ASSERT("H2 HINT rule absent for simulator",
+           strstr(build_log, "── HINT ──") == NULL);
+
+    session_close(s);
+    PASS("h2_hint_absent_for_simulator");
+    return 0;
+}
+
+/* 23. Non-sim device, kc_pass non-empty (unlock succeeds), build fails →
+   H2 hint NOT emitted (user already provided passkey; keychain isn't the issue). */
+static int test_h2_hint_absent_when_kc_pass_set(void)
+{
+    stub_run_reset();
+    /* slot 0: unlock step (exit 0) */
+    g_run_resp[0] = (StubRunResp){
+        k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false };
+    /* slot 1: settings */
+    g_run_resp[1] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    /* slot 2: build fails with pgid marker */
+    g_run_resp[2] = (StubRunResp){
+        k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1,
+        1, false, false };
+    g_run_resp_count = 3;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    ASSERT("set kc_pass", session_set_kc_pass(s, "mypasskey"));
+
+    SessionRunCmd cmd = make_execute_cmd();  /* device, is_simulator = false */
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("phase build_failed",
+           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
+                                         build_log, sizeof(build_log)));
+
+    ASSERT("H2 hint absent when kc_pass was set",
+           strstr(build_log, "errSecInternalComponent") == NULL);
+    ASSERT("H2 HINT rule absent when kc_pass was set",
+           strstr(build_log, "── HINT ──") == NULL);
+
+    /* 3 execs: unlock + settings + build */
+    ASSERT("3 execs (unlock + settings + build)", g_exec_next == 3);
+
+    session_close(s);
+    PASS("h2_hint_absent_when_kc_pass_set");
+    return 0;
+}
+
+/* 24. Cross-feature: setsid-missing failure (pgid == 0), non-sim, empty kc_pass →
+   setsid help block fires (not the H2 hint). The setsid branch returns before the
+   H2 hint check so both never fire together. */
+static int test_setsid_failure_not_h2_hint(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    /* Build output without pgid marker → triggers setsid-missing path */
+    g_run_resp[1] = (StubRunResp){
+        "build error\n", 12, 1, false, false };
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();  /* device, is_simulator = false */
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("phase build_failed",
+           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
+                                         build_log, sizeof(build_log)));
+
+    /* Setsid help block must appear (existing behavior). */
+    ASSERT("setsid help block in build log",
+           strstr(build_log, "REMOTE MAC IS MISSING setsid.") != NULL);
+
+    /* H2 hint must NOT appear (setsid branch returns before hint check). */
+    ASSERT("H2 hint absent on setsid-missing failure",
+           strstr(build_log, "errSecInternalComponent") == NULL);
+    ASSERT("H2 HINT rule absent on setsid-missing failure",
+           strstr(build_log, "── HINT ──") == NULL);
+
+    session_close(s);
+    PASS("setsid_failure_not_h2_hint");
+    return 0;
+}
+
 /* ── main ─────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -1240,6 +1415,10 @@ int main(void)
     rc |= test_unlock_success();
     rc |= test_unlock_failure();
     rc |= test_kc_pass_not_inherited_across_sessions();
+    rc |= test_h2_hint_fires_on_nonsim_build_failure();
+    rc |= test_h2_hint_absent_for_simulator();
+    rc |= test_h2_hint_absent_when_kc_pass_set();
+    rc |= test_setsid_failure_not_h2_hint();
 
     log_shutdown();
     unlink("/tmp/ostrich_session_run_test.log");
