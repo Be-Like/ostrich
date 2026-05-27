@@ -92,7 +92,8 @@ typedef struct {
 typedef enum {
     RCMD_EXECUTE,
     RCMD_COMPILE,
-    RCMD_ABORT
+    RCMD_ABORT,
+    RCMD_SET_KC_PASS   /* writes WorkerCtx.kc_pass; clears on empty string */
 } SessionRunCmdKind;
 
 typedef struct {
@@ -100,6 +101,7 @@ typedef struct {
     RunConfig         cfg;
     Target            target;
     bool              has_target;
+    char              kc_pass[256];   /* valid for RCMD_SET_KC_PASS */
 } SessionRunCmd;
 
 typedef enum {
@@ -120,8 +122,14 @@ typedef struct {
     char                cmd_summary[RUN_CMD_SUMMARY_CAP];
 } SessionRunEvent;
 
-bool session_run_submit(Session *s, const SessionRunCmd *cmd);
-bool session_run_poll  (Session *s, SessionRunEvent *out);
+bool session_run_submit  (Session *s, const SessionRunCmd *cmd);
+bool session_run_poll    (Session *s, SessionRunEvent *out);
+
+/* Enqueue RCMD_SET_KC_PASS with the given passkey (or clear with "").
+   Must be called before session_run_submit(EXECUTE/COMPILE, …) to take
+   effect on the next chain.  Returns false when the run command ring is
+   full. */
+bool session_set_kc_pass (Session *s, const char *kc_pass);
 
 /* ── connection API ───────────────────────────────────────────────── */
 

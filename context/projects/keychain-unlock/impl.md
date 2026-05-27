@@ -446,7 +446,7 @@ Conformance with `context/coding_standards.md`:
 
 ### Task 3 — libsession: `RCMD_SET_KC_PASS` + unlock chain step
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: Task 1
 - **User stories covered**: n/a (no PRD; goal sourced from
   ARD `## PRD` section's one-line goal)

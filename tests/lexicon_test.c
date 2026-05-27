@@ -302,7 +302,7 @@ static int test_run_step_header_fmt(void) {
 
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
-    ASSERT("LEX__COUNT is 72", LEX__COUNT == 72);
+    ASSERT("LEX__COUNT is 74", LEX__COUNT == 74);
     PASS("lex_count_consistency");
     return 0;
 }

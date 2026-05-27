@@ -64,13 +64,15 @@ structures in `WorkerCtx`:
 
 - **`RunChain`** — the sequential pipeline state for one EXECUTE or
   COMPILE: a state machine stepping through
-  `settings → build → (prime) → install → launch` (COMPILE stops
-  after `build`). It owns one channel at a time, reused across
-  steps, plus the per-run arena. The `settings` step is the only
-  request/response step (accumulate `xcodebuild -showBuildSettings
-  -json` to EOF, parse the product path); `build` streams; the
-  remaining steps are short streamed execs whose exit codes drive
-  the run-state machine.
+  `unlock → settings → build → (prime) → install → launch` (COMPILE
+  stops after `build`). The `unlock` step is gated on
+  `WorkerCtx.kc_pass != ""`; when empty it is skipped and the chain
+  starts at `settings` exactly as before. It owns one channel at a
+  time, reused across steps, plus the per-run arena. The `settings`
+  step is the only request/response step (accumulate
+  `xcodebuild -showBuildSettings -json` to EOF, parse the product
+  path); `build` streams; the remaining steps are short streamed execs
+  whose exit codes drive the run-state machine.
 - **`DevConsole`** — the persistent device-console stream. The
   `launch` step runs `… process launch --console` (device) or
   `simctl launch --console` (simulator); on success its channel is
@@ -435,6 +437,12 @@ did.
   `brew install util-linux` command and the exact `ssh user@host`
   invocation for the failing Mac. The `setsid` wrapper design and
   two-pronged kill described in this ARD are unchanged.
+- `context/projects/keychain-unlock/` — in-app remediation for the
+  locked-`login.keychain` failure mode. The `unlock` step added to the
+  front of `RunChain` runs `security unlock-keychain` on the remote Mac
+  when the user has supplied a keychain passkey; on failure the Build Log
+  surfaces the F1 help block and the chain aborts before any expensive
+  step runs.
 
 ### Testing approach (per library)
 

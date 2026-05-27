@@ -119,6 +119,7 @@ typedef struct {
 /* ── run chain types (worker-private) ────────────────────────────── */
 
 typedef enum {
+    RCHAIN_STEP_KC_UNLOCK,   /* unlock login.keychain; gated on kc_pass != "" */
     RCHAIN_STEP_SETTINGS,
     RCHAIN_STEP_BUILD,
     RCHAIN_STEP_PRIME_BOOT,
@@ -225,6 +226,7 @@ typedef struct {
     RunAbort         run_abort;
     RunState         rs;
     Arena           *run_arena;
+    char             kc_pass[256];  /* worker-confined; set by RCMD_SET_KC_PASS */
 } WorkerCtx;
 
 /* ── time helpers ─────────────────────────────────────────────────── */
@@ -373,6 +375,7 @@ static void emit_stale(WorkerCtx *ctx, bool stale)
 static RunEvent step_to_fail_ev(RChainStep step)
 {
     switch (step) {
+    case RCHAIN_STEP_KC_UNLOCK:                return RUN_EV_UNLOCK_FAIL;
     case RCHAIN_STEP_SETTINGS:
     case RCHAIN_STEP_BUILD:        return RUN_EV_BUILD_FAIL;
     case RCHAIN_STEP_PRIME_BOOT:
@@ -387,6 +390,7 @@ static RunEvent step_to_fail_ev(RChainStep step)
 static const char *rchain_step_str(RChainStep step)
 {
     switch (step) {
+    case RCHAIN_STEP_KC_UNLOCK:    return "kc-unlock";
     case RCHAIN_STEP_SETTINGS:     return "settings";
     case RCHAIN_STEP_BUILD:        return "build";
     case RCHAIN_STEP_PRIME_BOOT:   return "prime-boot";
@@ -410,7 +414,8 @@ static void start_run_chain(WorkerCtx *ctx, const SessionRunCmd *cmd, bool compi
     rc->has_target   = cmd->has_target;
     rc->compile_only = compile_only;
     ctx->rs.target_is_sim = (!compile_only) && cmd->has_target && cmd->target.is_simulator;
-    rc->step   = RCHAIN_STEP_SETTINGS;
+    rc->step   = (ctx->kc_pass[0] != '\0') ? RCHAIN_STEP_KC_UNLOCK
+                                            : RCHAIN_STEP_SETTINGS;
     rc->state  = RCHAIN_OPEN;
     rc->active = true;
 }
@@ -487,6 +492,25 @@ static void handle_step_exit(WorkerCtx *ctx, int exit_code)
     RunChain *rc = &ctx->run_chain;
 
     switch (rc->step) {
+    case RCHAIN_STEP_KC_UNLOCK: {
+        if (exit_code != 0) {
+            char block[2048];
+            if (bd_unlock_help_block(ctx->cfg.user, ctx->cfg.host,
+                                     ctx->cfg.port,
+                                     block, sizeof(block)) == BD_OK) {
+                emit_build_log(ctx, block, strlen(block));
+            }
+            fail_run_chain(ctx, RUN_EV_UNLOCK_FAIL, BD_ERR_UNLOCK_FAILED);
+            return;
+        }
+        static const char unlock_ok[] = "> KEYCHAIN UNLOCKED\n";
+        emit_build_log(ctx, unlock_ok, sizeof(unlock_ok) - 1);
+        RunAction act = runstate_step(&ctx->rs, RUN_EV_UNLOCK_OK);
+        (void)act;
+        rc->step  = RCHAIN_STEP_SETTINGS;
+        rc->state = RCHAIN_OPEN;
+        break;
+    }
     case RCHAIN_STEP_SETTINGS: {
         if (exit_code != 0) {
             BdStatus r = (exit_code == 127) ? BD_ERR_XCODE_MISSING : BD_ERR_BUILD;
@@ -585,6 +609,17 @@ static void process_run_chunk(WorkerCtx *ctx, const char *buf, size_t n)
 {
     RunChain *rc = &ctx->run_chain;
     switch (rc->step) {
+    case RCHAIN_STEP_KC_UNLOCK:
+        emit_build_log(ctx, buf, n);
+        {
+            Str chunk = { buf, n };
+            long pgid = 0;
+            if (bd_parse_pid_marker(chunk, &pgid) && pgid > 0) {
+                rc->build_pgid = pgid;
+                LOG_INFO(LG_RUN, "unlock pgid=%ld", pgid);
+            }
+        }
+        break;
     case RCHAIN_STEP_SETTINGS:
         emit_build_log(ctx, buf, n);
         if (rc->settings_buf && rc->settings_len + n <= RUN_SETTINGS_BUF_CAP) {
@@ -617,6 +652,8 @@ static BdStatus build_step_cmd(WorkerCtx *ctx, char *cmd, size_t cap)
 {
     RunChain *rc = &ctx->run_chain;
     switch (rc->step) {
+    case RCHAIN_STEP_KC_UNLOCK:
+        return bd_unlock_cmd(ctx->kc_pass, cmd, cap);
     case RCHAIN_STEP_SETTINGS:
         return bd_settings_cmd(&rc->cfg, &rc->target, rc->has_target, cmd, cap);
     case RCHAIN_STEP_BUILD:
@@ -963,14 +1000,23 @@ static void handle_run_compile(WorkerCtx *ctx, const SessionRunCmd *cmd)
     LOG_INFO(LG_RUN, "compile project=\"%.64s\"", cmd->cfg.project);
 }
 
+static void handle_set_kc_pass(WorkerCtx *ctx, const SessionRunCmd *cmd)
+{
+    size_t n = strnlen(cmd->kc_pass, sizeof(cmd->kc_pass) - 1);
+    memcpy(ctx->kc_pass, cmd->kc_pass, n);
+    ctx->kc_pass[n] = '\0';
+    LOG_INFO(LG_RUN, "kc_pass %s", n > 0 ? "set" : "cleared");
+}
+
 static void drain_run_cmds(WorkerCtx *ctx)
 {
     SessionRunCmd cmd;
     while (spsc_pop(ctx->s->run_cmd_ring, &cmd)) {
         switch (cmd.kind) {
-        case RCMD_EXECUTE: handle_run_execute(ctx, &cmd); break;
-        case RCMD_COMPILE: handle_run_compile(ctx, &cmd); break;
-        case RCMD_ABORT:   handle_run_abort(ctx); break;
+        case RCMD_EXECUTE:      handle_run_execute(ctx, &cmd); break;
+        case RCMD_COMPILE:      handle_run_compile(ctx, &cmd); break;
+        case RCMD_ABORT:        handle_run_abort(ctx); break;
+        case RCMD_SET_KC_PASS:  handle_set_kc_pass(ctx, &cmd); break;
         }
     }
 }
@@ -1934,6 +1980,7 @@ static void *worker_fn(void *arg)
 
     LOG_INFO(LG_SESS, "worker stopped");
 
+    memset(ctx.kc_pass, 0, sizeof(ctx.kc_pass));
     if (ctx.ssh) ssh_disconnect(ctx.ssh);
     for (int i = 0; i < DISC_MAX_JOBS; i++) {
         if (ctx.disc_arenas[i]) arena_destroy(ctx.disc_arenas[i]);
@@ -2100,4 +2147,21 @@ bool session_run_submit(Session *s, const SessionRunCmd *cmd)
 bool session_run_poll(Session *s, SessionRunEvent *out)
 {
     return spsc_pop(s->run_event_ring, out);
+}
+
+bool session_set_kc_pass(Session *s, const char *kc_pass)
+{
+    SessionRunCmd cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.kind = RCMD_SET_KC_PASS;
+    size_t n = strlen(kc_pass);
+    if (n >= sizeof(cmd.kc_pass)) n = sizeof(cmd.kc_pass) - 1;
+    memcpy(cmd.kc_pass, kc_pass, n);
+    cmd.kc_pass[n] = '\0';
+    bool ok = spsc_push(s->run_cmd_ring, &cmd);
+    if (ok) {
+        char byte = 1;
+        (void)write(s->pipe_write, &byte, 1);
+    }
+    return ok;
 }

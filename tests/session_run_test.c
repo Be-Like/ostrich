@@ -978,6 +978,238 @@ static int test_build_marks(void)
     return 0;
 }
 
+/* ── T3: unlock step tests ────────────────────────────────────────── */
+
+/* Unlock output with embedded PID marker (mirrors bd_build_cmd pattern). */
+static const char k_unlock_output[] = "__OSTRICH_PGID__12345\n";
+
+/* 16. No RCMD_SET_KC_PASS → first exec must be xcodebuild -showBuildSettings. */
+static int test_no_kc_pass_skips_unlock(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_compile_cmd();
+    ASSERT("submit compile", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_IDLE;
+    ASSERT("phase idle", drain_until(s, phase_is, &p));
+
+    /* First exec must NOT contain security unlock-keychain. */
+    ASSERT("first exec is settings (no unlock)",
+           strstr(g_exec_cmds[0], "security unlock-keychain") == NULL);
+    ASSERT("first exec is xcodebuild settings",
+           strstr(g_exec_cmds[0], "xcodebuild") != NULL);
+    ASSERT("2 execs total (settings + build)", g_exec_next == 2);
+
+    session_close(s);
+    PASS("no_kc_pass_skips_unlock");
+    return 0;
+}
+
+/* 17. RCMD_SET_KC_PASS with empty string → same as no kc_pass. */
+static int test_empty_kc_pass_skips_unlock(void)
+{
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    ASSERT("set empty kc_pass", session_set_kc_pass(s, ""));
+
+    SessionRunCmd cmd = make_compile_cmd();
+    ASSERT("submit compile", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_IDLE;
+    ASSERT("phase idle", drain_until(s, phase_is, &p));
+
+    ASSERT("first exec is settings (no unlock)",
+           strstr(g_exec_cmds[0], "security unlock-keychain") == NULL);
+    ASSERT("2 execs total (settings + build)", g_exec_next == 2);
+
+    session_close(s);
+    PASS("empty_kc_pass_skips_unlock");
+    return 0;
+}
+
+/* 18. Non-empty kc_pass + EXECUTE: first exec must be the unlock command,
+   unlock exit 0 → chain proceeds; build log contains "> KEYCHAIN UNLOCKED". */
+static int test_unlock_success(void)
+{
+    stub_run_reset();
+    /* slot 0: unlock step (exit 0) */
+    g_run_resp[0] = (StubRunResp){
+        k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false };
+    /* slot 1: settings */
+    g_run_resp[1] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    /* slot 2: build */
+    g_run_resp[2] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp_count = 3;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    ASSERT("set kc_pass", session_set_kc_pass(s, "secretpasskey"));
+
+    /* compile-only to keep it simple (no install/launch) */
+    SessionRunCmd cmd = make_compile_cmd();
+    ASSERT("submit compile", session_run_submit(s, &cmd));
+
+    /* Collect all build log until IDLE (compile-only ends there). */
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("phase idle", collect_build_log_until_phase(s, RUN_IDLE,
+                                                       build_log,
+                                                       sizeof(build_log)));
+
+    /* First exec must be the unlock command. */
+    ASSERT("first exec is unlock",
+           strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
+    /* Second exec must be settings. */
+    ASSERT("second exec is settings",
+           strstr(g_exec_cmds[1], "xcodebuild") != NULL &&
+           strstr(g_exec_cmds[1], "showBuildSettings") != NULL);
+
+    /* Build log must contain the KEYCHAIN UNLOCKED confirmation. */
+    ASSERT("build log has KEYCHAIN UNLOCKED",
+           strstr(build_log, "> KEYCHAIN UNLOCKED") != NULL);
+
+    /* 3 execs: unlock + settings + build */
+    ASSERT("3 execs (unlock + settings + build)", g_exec_next == 3);
+
+    /* No RUN_BUILD_FAILED phase emitted. */
+    SessionRunEvent ev;
+    bool saw_build_failed = false;
+    while (session_run_poll(s, &ev)) {
+        if (ev.kind == REV_PHASE && ev.phase == RUN_BUILD_FAILED)
+            saw_build_failed = true;
+    }
+    ASSERT("no RUN_BUILD_FAILED on unlock success", !saw_build_failed);
+
+    session_close(s);
+    PASS("unlock_success");
+    return 0;
+}
+
+/* 19. Non-empty kc_pass, unlock exits non-zero → build log has
+   "KEYCHAIN UNLOCK REJECTED." before RUN_BUILD_FAILED(BD_ERR_UNLOCK_FAILED);
+   chain does not advance to SETTINGS. */
+static int test_unlock_failure(void)
+{
+    stub_run_reset();
+    /* slot 0: unlock step (exit 1) */
+    g_run_resp[0] = (StubRunResp){
+        "security: SecKeychainUnlock <SecKeychainRef: 0x7f>\n",
+        51, 1, false, false };
+    g_run_resp_count = 1;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    ASSERT("set kc_pass", session_set_kc_pass(s, "wrongpasskey"));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    /* Collect build log until RUN_BUILD_FAILED. */
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("phase build_failed",
+           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
+                                         build_log, sizeof(build_log)));
+
+    /* Build log must contain the F1 help block header. */
+    ASSERT("build log has KEYCHAIN UNLOCK REJECTED",
+           strstr(build_log, "KEYCHAIN UNLOCK REJECTED.") != NULL);
+    /* And the ssh remediation line. */
+    ASSERT("build log has ssh remediation",
+           strstr(build_log, "ssh ") != NULL);
+
+    /* Only 1 exec (the unlock); chain never reached settings. */
+    ASSERT("only 1 exec (unlock only)", g_exec_next == 1);
+    ASSERT("first exec is unlock",
+           strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
+
+    session_close(s);
+    PASS("unlock_failure");
+    return 0;
+}
+
+/* 20. kc_pass set in session A does NOT leak into session B.
+   After session A closes and session B opens without SET_KC_PASS, the
+   first exec in B is the settings step, not the unlock step. */
+static int test_kc_pass_not_inherited_across_sessions(void)
+{
+    /* Session A: set kc_pass and let it run one unlock+compile. */
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp_count = 3;
+
+    Session *sA = NULL;
+    ASSERT("session A open", session_open(&sA) == SSH_OK);
+    ASSERT("session A online", connect_and_wait_online(sA));
+    ASSERT("session A set kc_pass", session_set_kc_pass(sA, "sessionApass"));
+
+    SessionRunCmd cmd = make_compile_cmd();
+    ASSERT("session A compile", session_run_submit(sA, &cmd));
+
+    RunPhase p = RUN_IDLE;
+    ASSERT("session A idle", drain_until(sA, phase_is, &p));
+    ASSERT("session A first exec was unlock",
+           strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
+    session_close(sA);
+
+    /* Session B: no SET_KC_PASS; first exec must be settings. */
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp_count = 2;
+
+    Session *sB = NULL;
+    ASSERT("session B open", session_open(&sB) == SSH_OK);
+    ASSERT("session B online", connect_and_wait_online(sB));
+
+    cmd = make_compile_cmd();
+    ASSERT("session B compile", session_run_submit(sB, &cmd));
+
+    p = RUN_IDLE;
+    ASSERT("session B idle", drain_until(sB, phase_is, &p));
+
+    ASSERT("session B first exec is settings (kc_pass not inherited)",
+           strstr(g_exec_cmds[0], "security unlock-keychain") == NULL);
+    ASSERT("session B first exec is xcodebuild",
+           strstr(g_exec_cmds[0], "xcodebuild") != NULL);
+
+    session_close(sB);
+    PASS("kc_pass_not_inherited_across_sessions");
+    return 0;
+}
+
 /* ── main ─────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -1003,6 +1235,11 @@ int main(void)
     rc |= test_compile_while_running();
     rc |= test_stale_clears_on_execute();
     rc |= test_build_marks();
+    rc |= test_no_kc_pass_skips_unlock();
+    rc |= test_empty_kc_pass_skips_unlock();
+    rc |= test_unlock_success();
+    rc |= test_unlock_failure();
+    rc |= test_kc_pass_not_inherited_across_sessions();
 
     log_shutdown();
     unlink("/tmp/ostrich_session_run_test.log");
