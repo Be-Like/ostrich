@@ -701,7 +701,7 @@ Conformance with `context/coding_standards.md`:
 
 ### Task 4 — libui: keychain passkey modal
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: n/a (no PRD; goal sourced from
   ARD `## PRD` section's one-line goal)

@@ -82,6 +82,9 @@ struct App {
     LogBuf   *device_log; /* Device Log buffer; lives in app arena          */
     RunPhase  run_phase;
     bool      run_stale;
+
+    /* keychain passkey modal form; app owns it across frames */
+    KcForm    kc_form;
 };
 
 AppStatus app_init(Arena *a, AppOptions opts, App **out) {
@@ -491,7 +494,7 @@ bool app_tick(App *app) {
     ri.pick_target       = -1;
     bool keep_going = ui_frame(app->ui, &view, &app->form, &intents,
                                &rv, &app->run_cfg, &ri,
-                               &rrv, &rri);
+                               &rrv, &rri, &app->kc_form);
 
     bool connected = (app->phase == CONN_ONLINE ||
                       app->phase == CONN_REACQUIRING);

@@ -72,6 +72,7 @@ int main(void) {
     form.selected_known_host = -1;
     UiRunView    rrv = make_run_view(); /* shared across non-run tests */
     UiRunIntents rri = {0};
+    KcForm       kf  = {0}; /* shared kc form; show_kc_prompt stays false */
 
     for (int i = 0; i < 3; i++) {
         UiIntents    intents = {0};
@@ -79,7 +80,7 @@ int main(void) {
         RunConfig    rf      = {0};
         UiReconIntents ri    = make_recon_intents();
         intents.select_host  = -1;
-        int keep_going = ui_frame(ui, &view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+        int keep_going = ui_frame(ui, &view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
         (void)keep_going;
         /* Resting view emits no action intents. */
         assert(!intents.breach);
@@ -104,7 +105,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &tofu_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &tofu_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.trust);
             assert(!intents.decline);
             assert(!intents.breach);
@@ -124,7 +125,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &mismatch_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &mismatch_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.trust);
         }
     }
@@ -147,7 +148,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
         }
     }
@@ -170,7 +171,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
         }
     }
@@ -194,7 +195,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.save);
         }
@@ -220,7 +221,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
         }
         assert(pw_form.remember); /* flag must survive frames without interaction */
@@ -246,7 +247,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &connecting_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &connecting_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.abort); /* no keyboard Escape was pressed */
         }
@@ -265,7 +266,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.close);
             assert(!intents.update);
             assert(!intents.breach);
@@ -284,7 +285,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.close);
             assert(!intents.update);
         }
@@ -309,7 +310,7 @@ int main(void) {
                     RunConfig    rf      = {0};
                     UiReconIntents ri    = make_recon_intents();
                     intents.select_host  = -1;
-                    ui_frame(ui, &bar_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+                    ui_frame(ui, &bar_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
                     assert(!intents.close);
                     assert(!intents.update);
                     assert(!intents.breach);
@@ -335,7 +336,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &agent_view, &agent_form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &agent_view, &agent_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.abort);
         }
@@ -359,7 +360,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &pw_nav_view, &pw_nav_form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &pw_nav_view, &pw_nav_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.abort);
         }
@@ -384,7 +385,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &update_view, &update_form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &update_view, &update_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.close);
         }
@@ -405,7 +406,7 @@ int main(void) {
             RunConfig    rf      = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scan);
             assert(!ri.abort_scan);
             assert(ri.pick_blueprint == -1);
@@ -429,7 +430,7 @@ int main(void) {
             rv.scan_done         = true;
             rv.scan_err          = DISC_OK;
             rv.blueprints        = &empty_list;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scan);
             assert(ri.pick_blueprint == -1);
         }
@@ -460,7 +461,7 @@ int main(void) {
             rv.scan_done         = true;
             rv.scan_err          = DISC_OK;
             rv.blueprints        = &bp_list;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_blueprint == -1); /* no user interaction */
         }
     }
@@ -481,7 +482,7 @@ int main(void) {
             rv.scanning          = true;
             snprintf(rf.scan_root, sizeof(rf.scan_root),
                      "/Users/alice/Developer");
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.abort_scan); /* no keyboard/mouse */
             assert(!ri.scan);
         }
@@ -504,7 +505,7 @@ int main(void) {
             rv.scan_done         = true;
             rv.scan_err          = DISC_ERR_XCODE_MISSING;
             rv.blueprints        = &empty_list;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scan);
         }
     }
@@ -526,7 +527,7 @@ int main(void) {
             rv.scan_done         = true;
             rv.scan_err          = DISC_ERR_COMMAND_FAILED;
             rv.blueprints        = &empty_list;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scan);
         }
     }
@@ -545,7 +546,7 @@ int main(void) {
             UiIntents    intents = {0};
             UiReconIntents ri    = make_recon_intents();
             intents.select_host  = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             /* scan_root must not be corrupted by rendering */
             assert(strcmp(rf.scan_root, "/Users/alice/Developer") == 0);
         }
@@ -569,7 +570,7 @@ int main(void) {
             rv.reading_blueprint   = true;
             snprintf(rf.project, sizeof(rf.project),
                      "/Users/alice/App/App.xcworkspace");
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scheme_edited);
             assert(!ri.config_edited);
             assert(!ri.bundle_id_edited);
@@ -593,7 +594,7 @@ int main(void) {
                      "/Users/alice/App/App.xcworkspace");
             snprintf(rf.scheme, sizeof(rf.scheme), "MyApp");
             snprintf(rf.config, sizeof(rf.config), "Debug");
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scheme_edited);
             assert(!ri.config_edited);
         }
@@ -634,7 +635,7 @@ int main(void) {
                      "/Users/alice/App/App.xcworkspace");
             snprintf(rf.scheme,  sizeof(rf.scheme),  "MyApp");
             snprintf(rf.config,  sizeof(rf.config),  "Debug");
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scheme_edited);
             assert(!ri.config_edited);
             assert(!ri.bundle_id_edited);
@@ -659,7 +660,7 @@ int main(void) {
             UiIntents      intents = {0};
             UiReconIntents ri      = make_recon_intents();
             intents.select_host = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(strcmp(rf.scheme,    "MyApp")             == 0);
             assert(strcmp(rf.config,    "Debug")             == 0);
             assert(strcmp(rf.bundle_id, "com.example.myapp") == 0);
@@ -679,7 +680,7 @@ int main(void) {
             UiReconIntents ri      = make_recon_intents();
             intents.select_host  = -1;
             rv.blueprint_err     = DISC_ERR_XCODE_MISSING;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scheme_edited);
             assert(!ri.config_edited);
         }
@@ -703,7 +704,7 @@ int main(void) {
             intents.select_host    = -1;
             rv.presets             = &empty_presets;
             rv.preset_selected     = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.preset_new);
             assert(!ri.preset_rename);
             assert(!ri.preset_delete);
@@ -726,7 +727,7 @@ int main(void) {
             intents.select_host    = -1;
             rv.presets             = NULL;
             rv.preset_selected     = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.preset_new);
             assert(!ri.preset_rename);
             assert(!ri.preset_delete);
@@ -763,7 +764,7 @@ int main(void) {
             intents.select_host    = -1;
             rv.presets             = &presets;
             rv.preset_selected     = 0;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.preset_new);
             assert(!ri.preset_rename);
             assert(!ri.preset_delete);
@@ -791,7 +792,7 @@ int main(void) {
             intents.select_host    = -1;
             rv.presets             = &presets;
             rv.preset_selected     = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.preset_rename);
             assert(!ri.preset_delete);
             assert(ri.pick_preset == -1);
@@ -823,7 +824,7 @@ int main(void) {
             RunConfig      rf      = {0};
             UiReconIntents ri      = make_recon_intents();
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(strcmp(preset_arr[0].name, "staging") == 0);
         }
     }
@@ -845,7 +846,7 @@ int main(void) {
             intents.select_host   = -1;
             rv.targets            = NULL;
             rv.target_selected    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
         }
@@ -865,7 +866,7 @@ int main(void) {
             UiReconIntents ri      = make_recon_intents();
             intents.select_host   = -1;
             rv.sweeping           = true;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
         }
@@ -889,7 +890,7 @@ int main(void) {
             rv.sweep_err          = DISC_OK;
             rv.targets            = &empty_targets;
             rv.target_selected    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
         }
     }
@@ -930,7 +931,7 @@ int main(void) {
             rv.sweep_err          = DISC_OK;
             rv.targets            = &targets;
             rv.target_selected    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
         }
     }
@@ -965,7 +966,7 @@ int main(void) {
             rv.sweep_err          = DISC_OK;
             rv.targets            = &targets;
             rv.target_selected    = 0; /* first target selected */
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
         }
     }
@@ -985,7 +986,7 @@ int main(void) {
             intents.select_host   = -1;
             rv.sweep_done         = true;
             rv.sweep_err          = DISC_ERR_COMMAND_FAILED;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
         }
     }
@@ -1019,7 +1020,7 @@ int main(void) {
             snprintf(rf.scheme,    sizeof(rf.scheme),    "App");
             snprintf(rf.config,    sizeof(rf.config),    "Debug");
             snprintf(rf.bundle_id, sizeof(rf.bundle_id), "com.acme.app");
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
             assert(!ri.sweep);
         }
@@ -1044,7 +1045,7 @@ int main(void) {
                 UiReconIntents ri      = make_recon_intents();
                 intents.select_host   = -1;
                 rv.readiness          = states[s];
-                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri);
+                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
                 assert(ri.pick_target == -1);
             }
         }
@@ -1067,7 +1068,7 @@ int main(void) {
             UiRunView      run_rv  = make_run_view(); /* IDLE, READY_NO_PROJECT */
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
             assert(!run_ri.abort_run);
@@ -1090,7 +1091,7 @@ int main(void) {
             run_rv.readiness       = READY_OK;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
             assert(!run_ri.abort_run);
@@ -1114,7 +1115,7 @@ int main(void) {
             run_rv.readiness       = READY_OK;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.abort_run);
             assert(!run_ri.execute);
         }
@@ -1137,7 +1138,7 @@ int main(void) {
             run_rv.readiness       = READY_OK;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
         }
@@ -1161,7 +1162,7 @@ int main(void) {
             run_rv.stale           = true;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
             assert(!run_ri.build_log_copy);
@@ -1186,7 +1187,7 @@ int main(void) {
             run_rv.readiness       = READY_OK;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.abort_run);
             assert(!run_ri.execute);
         }
@@ -1215,7 +1216,7 @@ int main(void) {
                 run_rv.readiness       = READY_OK;
                 UiRunIntents   run_ri  = {0};
                 intents.select_host    = -1;
-                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
                 assert(!run_ri.abort_run);
                 assert(!run_ri.execute);
             }
@@ -1239,7 +1240,7 @@ int main(void) {
             run_rv.build_log       = NULL;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
         }
@@ -1262,7 +1263,7 @@ int main(void) {
             run_rv.device_log      = NULL;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.device_log_copy);
             assert(!run_ri.device_log_clear);
         }
@@ -1293,7 +1294,7 @@ int main(void) {
             run_rv.device_log      = dev_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.device_log_copy);
             assert(!run_ri.device_log_clear);
         }
@@ -1325,7 +1326,7 @@ int main(void) {
             run_rv.device_log      = dev_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.device_log_copy);
             assert(!run_ri.device_log_clear);
         }
@@ -1357,7 +1358,7 @@ int main(void) {
             run_rv.device_log      = dev_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
             assert(!run_ri.device_log_copy);
@@ -1384,7 +1385,7 @@ int main(void) {
             run_rv.readiness       = READY_NO_PROJECT;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
             assert(!run_ri.abort_run);
@@ -1424,7 +1425,7 @@ int main(void) {
             run_rv.build_log       = build_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
             assert(!run_ri.abort_run);
@@ -1464,7 +1465,7 @@ int main(void) {
             run_rv.device_log      = dev_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
             assert(!run_ri.build_log_copy);
@@ -1491,7 +1492,7 @@ int main(void) {
             run_rv.readiness       = READY_OK;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
             assert(!run_ri.abort_run);
@@ -1525,7 +1526,7 @@ int main(void) {
             run_rv.build_log       = build_log; /* non-null, empty */
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
         }
@@ -1556,7 +1557,7 @@ int main(void) {
             run_rv.device_log      = dev_log; /* non-null, empty */
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.device_log_copy);
             assert(!run_ri.device_log_clear);
         }
@@ -1591,7 +1592,7 @@ int main(void) {
             run_rv.device_log      = dev_log;   /* empty → wordmark */
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
             assert(!run_ri.device_log_copy);
@@ -1628,7 +1629,7 @@ int main(void) {
             run_rv.device_log      = dev_log;   /* populated */
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
             assert(!run_ri.device_log_copy);
@@ -1664,7 +1665,7 @@ int main(void) {
             run_rv.build_log       = build_log; /* non-null, empty */
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
         }
@@ -1695,7 +1696,7 @@ int main(void) {
             run_rv.build_log       = build_log; /* non-null, empty */
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
         }
@@ -1725,7 +1726,7 @@ int main(void) {
             run_rv.build_log       = build_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
         }
@@ -1806,7 +1807,7 @@ int main(void) {
             snprintf(rf.config,    sizeof(rf.config),    "Debug");
             snprintf(rf.bundle_id, sizeof(rf.bundle_id), "com.alice.myapp");
             snprintf(rf.scan_root, sizeof(rf.scan_root), "/Users/alice");
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.scan);
             assert(!ri.abort_scan);
             assert(ri.pick_blueprint == -1);
@@ -1842,7 +1843,7 @@ int main(void) {
             intents.select_host    = -1;
             rv.presets             = NULL;
             rv.preset_selected     = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.preset_new);
             assert(!ri.preset_rename);
             assert(!ri.preset_delete);
@@ -1874,7 +1875,7 @@ int main(void) {
             intents.select_host    = -1;
             rv.presets             = &presets;
             rv.preset_selected     = 1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(ri.pick_preset == -1);
             assert(!ri.preset_delete);
         }
@@ -1898,7 +1899,7 @@ int main(void) {
             rv.sweep_done          = false;
             rv.targets             = NULL;
             rv.target_selected     = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
         }
@@ -1936,7 +1937,7 @@ int main(void) {
             rv.sweep_err           = DISC_OK;
             rv.targets             = &targets;
             rv.target_selected     = 0;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
         }
@@ -1958,7 +1959,7 @@ int main(void) {
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
             rv.sweeping            = true;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
         }
@@ -1980,7 +1981,7 @@ int main(void) {
             run_rv.readiness       = READY_OK;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
             assert(!run_ri.abort_run);
@@ -2009,7 +2010,7 @@ int main(void) {
                 run_rv.readiness       = states[s];
                 UiRunIntents   run_ri  = {0};
                 intents.select_host    = -1;
-                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
                 assert(!run_ri.execute);
                 assert(!run_ri.compile);
                 assert(!run_ri.abort_run);
@@ -2047,7 +2048,7 @@ int main(void) {
             run_rv.device_log      = dev_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
             assert(!run_ri.build_log_copy);
@@ -2085,7 +2086,7 @@ int main(void) {
             run_rv.device_log      = dev_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
             assert(!run_ri.device_log_copy);
@@ -2123,7 +2124,7 @@ int main(void) {
             run_rv.device_log      = dev_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.device_log_copy);
         }
@@ -2155,11 +2156,143 @@ int main(void) {
             run_rv.device_log      = dev_log;
             UiRunIntents   run_ri  = {0};
             intents.select_host    = -1;
-            ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri);
+            ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
             assert(!run_ri.abort_run);
         }
+        arena_destroy(test_arena);
+    }
+
+    /* ── T4: Keychain passkey modal ────────────────────────────────────── */
+
+    /* T4: show_kc_prompt = false — modal does not render; kc_submit and
+     * kc_skip stay false (no spurious intent without a button press). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        KcForm kc = {0};
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.show_kc_prompt  = false;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
+            assert(!run_ri.kc_submit);
+            assert(!run_ri.kc_skip);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T4: show_kc_prompt = true — modal opens; without a button press,
+     * kc_submit and kc_skip remain false across multiple frames. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        KcForm kc = {0};
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.show_kc_prompt  = true;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
+            assert(!run_ri.kc_submit);
+            assert(!run_ri.kc_skip);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T4: KcForm.remember = false initially — value is unchanged after
+     * frames without user interaction (default-off invariant). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        KcForm kc = {0};
+        kc.remember = false;
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.show_kc_prompt  = true;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
+        }
+        assert(!kc.remember); /* default-off invariant: unchanged without interaction */
+        arena_destroy(test_arena);
+    }
+
+    /* T4: KcForm.remember = true initially — value preserved across frames
+     * without user interaction (state is not corrupted by rendering). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase      = CONN_ONLINE;
+        online_view.user_host  = "alice@mac.local";
+
+        KcForm kc = {0};
+        kc.remember = true;
+
+        Arena  *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents      intents = {0};
+            UiReconView    rv      = make_recon_view();
+            RunConfig      rf      = {0};
+            UiReconIntents ri      = make_recon_intents();
+            UiRunView      run_rv  = make_run_view();
+            run_rv.phase           = RUN_IDLE;
+            run_rv.readiness       = READY_OK;
+            run_rv.build_log       = build_log;
+            run_rv.show_kc_prompt  = true;
+            UiRunIntents   run_ri  = {0};
+            intents.select_host    = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
+        }
+        assert(kc.remember); /* flag must survive frames without interaction */
         arena_destroy(test_arena);
     }
 

@@ -278,6 +278,16 @@ passkey).
 | Build (build-only) | `COMPILE` | |
 | Stop | `■ ABORT` | consistent with `OPERATION ABORTED` |
 
+**Keychain passkey modal** (lexicon keys; canonical strings; theme owner's call on final wording)
+
+| Key | Placeholder string | Use |
+| --- | --- | --- |
+| `LEX_KC_MODAL_TITLE` | `KEYCHAIN VAULT // PASSKEY` | modal header / title line |
+| `LEX_KC_FIELD_PASSKEY` | `KEYCHAIN PASSKEY` | masked input field label |
+| `LEX_KC_CHECKBOX_REMEMBER` | `REMEMBER KEYCHAIN` | opt-in remember checkbox (off by default) |
+| `LEX_KC_BUTTON_ENTER` | `ENTER` | submit button |
+| `LEX_KC_BUTTON_SKIP` | `SKIP` | skip-this-build button (C1) |
+
 **Device Log header (while streaming):** `LIVE FEED // INTERCEPTING`
 
 **Device Log run separator (each new launch):**

@@ -300,9 +300,27 @@ static int test_run_step_header_fmt(void) {
     return 0;
 }
 
+static int test_kc_modal_keys(void) {
+    ASSERT("kc_modal_title non-empty", lex(LEX_KC_MODAL_TITLE)[0] != '\0');
+    ASSERT("kc_field_passkey non-empty", lex(LEX_KC_FIELD_PASSKEY)[0] != '\0');
+    ASSERT("kc_checkbox_remember non-empty",
+           lex(LEX_KC_CHECKBOX_REMEMBER)[0] != '\0');
+    ASSERT("kc_button_enter non-empty", lex(LEX_KC_BUTTON_ENTER)[0] != '\0');
+    ASSERT("kc_button_skip non-empty", lex(LEX_KC_BUTTON_SKIP)[0] != '\0');
+    ASSERT("kc_modal_title contains PASSKEY",
+           strstr(lex(LEX_KC_MODAL_TITLE), "PASSKEY") != NULL);
+    ASSERT("kc_checkbox_remember contains REMEMBER",
+           strstr(lex(LEX_KC_CHECKBOX_REMEMBER), "REMEMBER") != NULL);
+    /* ENTER and SKIP must be distinct */
+    ASSERT("enter != skip",
+           strcmp(lex(LEX_KC_BUTTON_ENTER), lex(LEX_KC_BUTTON_SKIP)) != 0);
+    PASS("kc_modal_keys");
+    return 0;
+}
+
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
-    ASSERT("LEX__COUNT is 74", LEX__COUNT == 74);
+    ASSERT("LEX__COUNT is 79", LEX__COUNT == 79);
     PASS("lex_count_consistency");
     return 0;
 }
@@ -330,6 +348,7 @@ int main(void) {
     failures += test_run_device_log_keys();
     failures += test_run_log_empty_keys();
     failures += test_run_step_header_fmt();
+    failures += test_kc_modal_keys();
     failures += test_lex_count_consistency();
 
     if (failures == 0) {

@@ -1107,6 +1107,73 @@ static void draw_live_feed(const UiRunView *rv, UiRunIntents *ri,
     ImGui::End();
 }
 
+/* ── keychain passkey modal ──────────────────────────────────────────── */
+static void draw_kc_modal(const UiRunView *rv, KcForm *kf, UiRunIntents *ri) {
+    if (rv->show_kc_prompt)
+        ImGui::OpenPopup("##kc_vault");
+
+    const ImGuiIO &io = ImGui::GetIO();
+    const float    cx = io.DisplaySize.x * 0.5f;
+    const float    cy = io.DisplaySize.y * 0.5f;
+    ImGui::SetNextWindowPos({cx, cy}, ImGuiCond_Always, {0.5f, 0.5f});
+    ImGui::SetNextWindowSize({420.0f, 0.0f}, ImGuiCond_Always);
+    ImGui::PushStyleColor(ImGuiCol_Border, C_CYAN);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{16.0f, 12.0f});
+    bool open = ImGui::BeginPopupModal("##kc_vault", nullptr,
+                                       ImGuiWindowFlags_NoTitleBar |
+                                       ImGuiWindowFlags_AlwaysAutoResize |
+                                       ImGuiWindowFlags_NoMove |
+                                       ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+    if (!open)
+        return;
+
+    /* Title */
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN);
+    ImGui::TextUnformatted(lex(LEX_KC_MODAL_TITLE));
+    ImGui::PopStyleColor();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    /* KEYCHAIN PASSKEY field */
+    const float lw = 140.0f;
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_KC_FIELD_PASSKEY));
+    ImGui::PopStyleColor();
+    ImGui::SameLine(lw);
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+    ImGui::InputText("##kc_passkey", kf->passkey, sizeof(kf->passkey),
+                     ImGuiInputTextFlags_Password);
+
+    /* REMEMBER KEYCHAIN checkbox */
+    ImGui::Checkbox("##kc_remember", &kf->remember);
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Text, C_CYAN_DIM);
+    ImGui::TextUnformatted(lex(LEX_KC_CHECKBOX_REMEMBER));
+    ImGui::PopStyleColor();
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    /* ENTER button */
+    if (ImGui::Button(lex(LEX_KC_BUTTON_ENTER))) {
+        ri->kc_submit = true;
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    /* SKIP button */
+    if (ImGui::Button(lex(LEX_KC_BUTTON_SKIP))) {
+        ri->kc_skip = true;
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+}
+
 static void draw_conn_bar(const UiConnView *view, double online_since,
                           UiIntents *out) {
     const ImGuiIO &io     = ImGui::GetIO();
@@ -1294,7 +1361,8 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out) {
 bool ui_frame(Ui *ui,
               const UiConnView *cv, ConnForm *cf, UiIntents *ci,
               const UiReconView *rv, RunConfig *rf, UiReconIntents *ri,
-              const UiRunView *rrv, UiRunIntents *rri) {
+              const UiRunView *rrv, UiRunIntents *rri,
+              KcForm *kf) {
     *ci = {};
     ci->select_host = -1;
     if (ri) {
@@ -1451,6 +1519,11 @@ bool ui_frame(Ui *ui,
             ImGui::End();
         }
     }
+
+    /* ── keychain passkey modal ─────────────────────────────────────────── */
+    if (bar_phase && !view->overlay_open && rrv != nullptr && rri != nullptr &&
+        kf != nullptr)
+        draw_kc_modal(rrv, kf, rri);
 
     /* ── BREACH overlay (DISCONNECTED / CONNECTING / AWAITING_HOSTKEY /
           SEVERED — SEVERED shows reason + BREACH to re-connect;

@@ -111,6 +111,13 @@ typedef enum {
     /* ── build log step demarcation ────────────────────────────────────── */
     LEX_RUN_STEP_HEADER_FMT, /* "> \xe2\x94\x80\xe2\x94\x80 %s // %s \xe2\x94\x80\xe2\x94\x80" */
 
+    /* ── keychain passkey modal ─────────────────────────────────────────── */
+    LEX_KC_MODAL_TITLE,       /* "KEYCHAIN VAULT // PASSKEY"   */
+    LEX_KC_FIELD_PASSKEY,     /* "KEYCHAIN PASSKEY"            */
+    LEX_KC_CHECKBOX_REMEMBER, /* "REMEMBER KEYCHAIN"           */
+    LEX_KC_BUTTON_ENTER,      /* "ENTER"                       */
+    LEX_KC_BUTTON_SKIP,       /* "SKIP"                        */
+
     LEX__COUNT
 } LexKey;
 

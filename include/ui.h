@@ -118,6 +118,12 @@ typedef struct {
     int  pick_target;     /* -1 = no pick                                  */
 } UiReconIntents;
 
+/* Mutable keychain passkey form; app owns it across frames. */
+typedef struct {
+    char passkey[256];
+    bool remember;
+} KcForm;
+
 /* Read-only run view-model the app builds each frame. */
 typedef struct {
     RunPhase  phase;      /* mirrored run phase                            */
@@ -125,6 +131,7 @@ typedef struct {
     Readiness readiness;  /* for EXECUTE/COMPILE enablement                */
     LogBuf   *build_log;  /* Build Log buffer (never NULL after app init)  */
     LogBuf   *device_log; /* Device Log buffer (T9; may be NULL for now)   */
+    bool      show_kc_prompt; /* open keychain passkey modal               */
 } UiRunView;
 
 /* Discrete run intents returned by ui_frame each frame. */
@@ -136,6 +143,8 @@ typedef struct {
     bool build_log_clear;  /* user pressed CLEAR on Build Log              */
     bool device_log_copy;  /* (T9) user pressed COPY on Device Log         */
     bool device_log_clear; /* (T9) user pressed CLEAR on Device Log        */
+    bool kc_submit;        /* ENTER pressed in keychain modal               */
+    bool kc_skip;          /* SKIP pressed in keychain modal                */
 } UiRunIntents;
 
 /* Stand up window + GL + ImGui + theme + fonts. Allocates the
@@ -146,11 +155,13 @@ UiStatus ui_init(Arena *a, UiOptions opts, Ui **out);
    should close (close button or Ctrl-Q), true otherwise.
    Writes discrete intents to *out (zeroed then filled).
    rv/rf/ri handle the recon panel; rv may be NULL (no panel).
-   rrv/rri handle the run panel; rrv may be NULL (no panel). */
+   rrv/rri handle the run panel; rrv may be NULL (no panel).
+   kf is the mutable keychain form; may be NULL (no modal). */
 bool ui_frame(Ui *ui,
               const UiConnView *cv, ConnForm *cf, UiIntents *ci,
               const UiReconView *rv, RunConfig *rf, UiReconIntents *ri,
-              const UiRunView *rrv, UiRunIntents *rri);
+              const UiRunView *rrv, UiRunIntents *rri,
+              KcForm *kf);
 
 /* Tear down ImGui, the GL context, and GLFW cleanly. */
 void ui_shutdown(Ui *ui);

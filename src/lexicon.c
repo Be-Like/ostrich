@@ -94,6 +94,12 @@ static const char *s_table[LEX__COUNT] = {
     /* LEX_RUN_DEVICE_EMPTY       */ "// NO SIGNAL \xe2\x80\x94 TARGET DARK",
 
     /* LEX_RUN_STEP_HEADER_FMT    */ "> \xe2\x94\x80\xe2\x94\x80 %s // %s \xe2\x94\x80\xe2\x94\x80",
+
+    /* LEX_KC_MODAL_TITLE       */ "KEYCHAIN VAULT // PASSKEY",
+    /* LEX_KC_FIELD_PASSKEY     */ "KEYCHAIN PASSKEY",
+    /* LEX_KC_CHECKBOX_REMEMBER */ "REMEMBER KEYCHAIN",
+    /* LEX_KC_BUTTON_ENTER      */ "ENTER",
+    /* LEX_KC_BUTTON_SKIP       */ "SKIP",
 };
 
 const char *lex(LexKey key) {
