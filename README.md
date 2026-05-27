@@ -38,8 +38,9 @@ model, and [`context/theme.md`](context/theme.md) for the visual identity.
 - `pkg-config`
 - OpenSSL development headers (libssh2 is built against the OpenSSL backend)
 
-Dear ImGui, GLFW, and libssh2 are vendored as submodules and built from source,
-so you do **not** need system packages for them. On Linux, GLFW is built with
+Dear ImGui, GLFW, libssh2, and jsmn are vendored as submodules — Dear ImGui,
+GLFW, and libssh2 are built from source; jsmn is used header-only — so you do
+**not** need system packages for them. On Linux, GLFW is built with
 **both the X11 and Wayland backends** and selects one at runtime (based on
 `XDG_SESSION_TYPE` / `WAYLAND_DISPLAY` / `DISPLAY`), so the build needs the
 development headers for both display stacks:
@@ -182,26 +183,66 @@ make clean
 
 Removes the `build/` directory.
 
-## Known issues
+## Disclaimers
 
 - **`setsid` dependency on the remote Mac.** `bd_build_cmd` and
   `bd_launch_cmd` (see `src/builddeploy/builddeploy.c`) wrap the remote
   command in `setsid sh -c '...'` so the worker can target the whole
-  process group on abort. macOS doesn't ship `setsid`, which forces the
-  Homebrew workaround documented under [Remote Mac](#remote-mac-ssh-target).
-  When `setsid` is missing the Build Log surfaces the install command and
-  the exact `ssh` invocation needed to fix it, so the failure is
-  self-documenting in-app. The dependency itself remains; see
-  `context/projects/setsid-install-help/` for the in-app guidance design.
+  process group on abort. macOS doesn't ship `setsid`, so the remote Mac
+  needs it installed from Homebrew's `util-linux` keg and put on the
+  non-interactive SSH PATH. The Build Log surfaces the exact remediation
+  on the first failed EXECUTE; the same steps are reproduced here for
+  reference.
 
-- **Remote Mac `login.keychain` must be unlocked for codesign.** Device
-  builds use `codesign` to sign the app; `codesign` needs the private key
-  from the Mac's `login.keychain`. On a headless Mac or after an auto-lock
-  the keychain is locked, causing a `codesign` failure
-  (`errSecInternalComponent`) at the very end of an otherwise-clean build.
-  ostrich surfaces an in-app keychain passkey modal on the first affected
-  EXECUTE — the failure is self-documenting in-app. ostrich does not modify
-  the Mac's keychain auto-lock policy; see
+  Connect to the Mac (substitute your own user and host; add `-p <port>`
+  if you SSH on a non-default port):
+
+  ```sh
+  ssh <user>@<host>
+  ```
+
+  Then on the Mac, run:
+
+  ```sh
+  brew install util-linux
+  ```
+
+  Then add ONE of the following to `~/.zshenv`, matching your Mac:
+
+  ```sh
+  # Apple Silicon:
+  echo 'export PATH="/opt/homebrew/opt/util-linux/bin:$PATH"' >> ~/.zshenv
+  # Intel:
+  echo 'export PATH="/usr/local/opt/util-linux/bin:$PATH"' >> ~/.zshenv
+  ```
+
+  (Substitute your own path if `util-linux` is installed elsewhere.)
+
+  Verify the fix from your local host:
+
+  ```sh
+  ssh <user>@<host> 'command -v setsid'
+  ```
+
+  See `context/projects/setsid-install-help/` for the in-app guidance
+  design.
+
+- **Remote Mac `login.keychain` must be unlocked for device builds.**
+  Compiling and building to a physical device requires the remote Mac's
+  `login.keychain` to be unlocked at sign time — `codesign` pulls the
+  signing identity's private key from `login.keychain`, and on a headless
+  Mac or after an auto-lock the keychain is locked, causing a `codesign`
+  failure (`errSecInternalComponent`) at the very end of an otherwise-clean
+  build.
+
+  Ostrich surfaces an in-app **KEYCHAIN PASSKEY** modal on the first
+  affected EXECUTE and asks for the keychain password to unlock it. The
+  password is **not written to any drive** unless you explicitly tick
+  `REMEMBER KEYCHAIN`, in which case it is saved on the connection record
+  (plaintext, `0600`) so future sessions skip the prompt. By default the
+  password lives only in memory for the life of the running Ostrich
+  process and is destroyed when the application closes. Ostrich does not
+  modify the Mac's keychain auto-lock policy; see
   `context/projects/keychain-unlock/` for the in-app design.
 
 ## Repository layout
@@ -219,3 +260,47 @@ assets/        Bundled assets (fonts)
 scripts/       Helper scripts
 build/         Build artifacts (git-ignored)
 ```
+
+## Known Issues
+
+Ostrich is currently in beta. It connects to a remote host Mac, finds Xcode
+projects and devices (both physical and simulator) and provides an interface
+for project compilation and build/deployment.
+
+There are some known quirks with some of the buttons. Specifically with regard
+to some of their boolean state. 
+
+The logs are functional, and I identified several opportunities where I could
+provide more explicit messaging to the user to help them resolve common issues.
+There may be future opportunity to provide more clear guidance to the user, but
+that will require some more trial and error and research in terms of what may
+be common error cases.
+
+### Known Bugs
+
+* Device list contains physical devices that have been used previously but may not be
+accessible at this moment.
+
+    - This is actually how Xcode operates as well. While I don't think Xcode is
+      one to emulate I suspect that they are approaching the problem similarly
+      and it is just a reality of the CLI. It would require further research to
+      determine how I might be able to make this feel like a better user
+      experience.
+
+* There is an issue with the content of the project dropdown where two options
+  can contain the same naming. The result of this is that there are two options
+  within the dropdown that share an ID where that ID is meant to be unique.
+
+### Poor UX
+
+* Inconsistent keyboard shortcuts.
+
+* When building and deploying to a physical device, a user must have a valid
+  code signing which requires that they provide a password to unlock their
+  keychain. This is properly handled, but if the user exits out they will see
+  an error as produced by the deploy logs that feels somewhat vague. There is
+  an opportunity to capture that error and produce an error that is more user
+  friendly; it also provides an opportunity to communicate with the user the
+  reason we ask for the password to the keychain and how we handle that
+  securely.
+
