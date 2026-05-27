@@ -51,5 +51,8 @@ compile_commands.json
 .DS_Store
 Thumbs.db
 
+# Dear ImGui runtime state
+imgui.ini
+
 # Agentic workflows
 RALPH_PROMPT.md
