@@ -1385,6 +1385,61 @@ static int test_setsid_failure_not_h2_hint(void)
     return 0;
 }
 
+/* ── T10: idempotent simulator boot ───────────────────────────────── */
+
+/* 25. Simulator EXECUTE: the prime phase issues a SINGLE bootstatus -b exec
+   (no separate boot exec), then flows build → prime → install → launch. */
+static int test_simulator_prime(void)
+{
+    stub_run_reset();
+    /* settings(0) → build(1) → prime/bootstatus(2) → install(3) → launch(4) */
+    g_run_resp[0] = (StubRunResp){
+        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){
+        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){
+        "Booting simulator...\n", 21, 0, false, false };
+    g_run_resp[3] = (StubRunResp){
+        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    /* Streaming launch channel: won't EOF until g_run_stop_stream is set. */
+    g_run_resp[4] = (StubRunResp){
+        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp_count = 5;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_sim_execute_cmd();  /* simulator target */
+    ASSERT("submit execute sim", session_run_submit(s, &cmd));
+
+    RunPhase p = RUN_PRIMING;
+    ASSERT("phase priming", drain_until(s, phase_is, &p));
+
+    p = RUN_INSTALLING;
+    ASSERT("phase installing", drain_until(s, phase_is, &p));
+
+    p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+
+    g_run_stop_stream = 1;
+    p = RUN_IDLE;
+    ASSERT("phase idle after console eof", drain_until(s, phase_is, &p));
+
+    /* 5 execs: settings, build, bootstatus, install, launch — NOT 6. */
+    ASSERT("5 execs (single prime exec)", g_exec_next == 5);
+    /* exec[2] is bootstatus -b with no separate boot exec before it. */
+    ASSERT("prime exec contains bootstatus",
+           strstr(g_exec_cmds[2], "bootstatus") != NULL);
+    ASSERT("prime exec contains -b", strstr(g_exec_cmds[2], "-b") != NULL);
+    ASSERT("prime exec no --wait", strstr(g_exec_cmds[2], "--wait") == NULL);
+    ASSERT("install at exec[3]", strstr(g_exec_cmds[3], "install") != NULL);
+
+    session_close(s);
+    PASS("simulator_prime");
+    return 0;
+}
+
 /* ── main ─────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -1419,6 +1474,7 @@ int main(void)
     rc |= test_h2_hint_absent_for_simulator();
     rc |= test_h2_hint_absent_when_kc_pass_set();
     rc |= test_setsid_failure_not_h2_hint();
+    rc |= test_simulator_prime();
 
     log_shutdown();
     unlink("/tmp/ostrich_session_run_test.log");

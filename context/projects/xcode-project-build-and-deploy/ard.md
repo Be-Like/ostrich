@@ -169,7 +169,7 @@ worker: RunChain starts; runstate idle→building
   step build    : open→exec(setsid xcodebuild, PID marker)
                   →stream bytes ─REV_BUILD_LOG chunks→ UI logbuf
                   exit!=0 → runstate→build_failed (EXPLOIT FAILED)
-  step prime    : (simulator only) boot + bootstatus -b
+  step prime    : (simulator only) bootstatus -b (boot-if-needed + wait)
   step install  : exec(devicectl/simctl install app_path)
                   →stream→Build Log; exit!=0 → deploy_failed
   step launch   : exec(launch --console); on accept hand channel
@@ -298,8 +298,7 @@ BdStatus bd_settings_cmd (const RunConfig*, const Target*,
                           bool has_target, char*, size_t);
 BdStatus bd_build_cmd    (const RunConfig*, const Target*,
                           bool has_target, char*, size_t);
-BdStatus bd_boot_cmd     (const Target*, char*, size_t);
-BdStatus bd_bootstatus_cmd(const Target*, char*, size_t);
+BdStatus bd_bootstatus_cmd(const Target*, char*, size_t); /* boot-if-needed + wait (-b) */
 BdStatus bd_install_cmd  (const Target*, const char *app_path,
                           char*, size_t);
 BdStatus bd_launch_cmd   (const Target*, const char *bundle_id,

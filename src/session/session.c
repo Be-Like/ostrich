@@ -122,8 +122,7 @@ typedef enum {
     RCHAIN_STEP_KC_UNLOCK,   /* unlock login.keychain; gated on kc_pass != "" */
     RCHAIN_STEP_SETTINGS,
     RCHAIN_STEP_BUILD,
-    RCHAIN_STEP_PRIME_BOOT,
-    RCHAIN_STEP_PRIME_STATUS,
+    RCHAIN_STEP_PRIME,       /* simulator only: bootstatus -b (boot-if-needed + wait) */
     RCHAIN_STEP_INSTALL,
     RCHAIN_STEP_LAUNCH,
 } RChainStep;
@@ -378,8 +377,7 @@ static RunEvent step_to_fail_ev(RChainStep step)
     case RCHAIN_STEP_KC_UNLOCK:                return RUN_EV_UNLOCK_FAIL;
     case RCHAIN_STEP_SETTINGS:
     case RCHAIN_STEP_BUILD:        return RUN_EV_BUILD_FAIL;
-    case RCHAIN_STEP_PRIME_BOOT:
-    case RCHAIN_STEP_PRIME_STATUS: return RUN_EV_PRIME_FAIL;
+    case RCHAIN_STEP_PRIME:        return RUN_EV_PRIME_FAIL;
     case RCHAIN_STEP_INSTALL:      return RUN_EV_INSTALL_FAIL;
     case RCHAIN_STEP_LAUNCH:       return RUN_EV_LAUNCH_FAIL;
     }
@@ -393,8 +391,7 @@ static const char *rchain_step_str(RChainStep step)
     case RCHAIN_STEP_KC_UNLOCK:    return "kc-unlock";
     case RCHAIN_STEP_SETTINGS:     return "settings";
     case RCHAIN_STEP_BUILD:        return "build";
-    case RCHAIN_STEP_PRIME_BOOT:   return "prime-boot";
-    case RCHAIN_STEP_PRIME_STATUS: return "prime-status";
+    case RCHAIN_STEP_PRIME:        return "prime";
     case RCHAIN_STEP_INSTALL:      return "install";
     case RCHAIN_STEP_LAUNCH:       return "launch";
     }
@@ -565,7 +562,7 @@ static void handle_step_exit(WorkerCtx *ctx, int exit_code)
         }
         emit_run_phase(ctx, ctx->rs.phase, BD_OK);
         if (act == RUN_ACT_PRIME) {
-            rc->step  = RCHAIN_STEP_PRIME_BOOT;
+            rc->step  = RCHAIN_STEP_PRIME;
             rc->state = RCHAIN_OPEN;
         } else {
             rc->step  = RCHAIN_STEP_INSTALL;
@@ -573,16 +570,7 @@ static void handle_step_exit(WorkerCtx *ctx, int exit_code)
         }
         break;
     }
-    case RCHAIN_STEP_PRIME_BOOT: {
-        if (exit_code != 0) {
-            fail_run_chain(ctx, RUN_EV_PRIME_FAIL, BD_ERR_BOOT);
-            return;
-        }
-        rc->step  = RCHAIN_STEP_PRIME_STATUS;
-        rc->state = RCHAIN_OPEN;
-        break;
-    }
-    case RCHAIN_STEP_PRIME_STATUS: {
+    case RCHAIN_STEP_PRIME: {
         if (exit_code != 0) {
             fail_run_chain(ctx, RUN_EV_PRIME_FAIL, BD_ERR_BOOT);
             return;
@@ -646,8 +634,7 @@ static void process_run_chunk(WorkerCtx *ctx, const char *buf, size_t n)
             }
         }
         break;
-    case RCHAIN_STEP_PRIME_BOOT:
-    case RCHAIN_STEP_PRIME_STATUS:
+    case RCHAIN_STEP_PRIME:
     case RCHAIN_STEP_INSTALL:
         emit_build_log(ctx, buf, n);
         break;
@@ -666,9 +653,7 @@ static BdStatus build_step_cmd(WorkerCtx *ctx, char *cmd, size_t cap)
         return bd_settings_cmd(&rc->cfg, &rc->target, rc->has_target, cmd, cap);
     case RCHAIN_STEP_BUILD:
         return bd_build_cmd(&rc->cfg, &rc->target, rc->has_target, cmd, cap);
-    case RCHAIN_STEP_PRIME_BOOT:
-        return bd_boot_cmd(&rc->target, cmd, cap);
-    case RCHAIN_STEP_PRIME_STATUS:
+    case RCHAIN_STEP_PRIME:
         return bd_bootstatus_cmd(&rc->target, cmd, cap);
     case RCHAIN_STEP_INSTALL:
         return bd_install_cmd(&rc->target, rc->app_path, cmd, cap);

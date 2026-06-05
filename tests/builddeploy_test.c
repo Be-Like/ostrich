@@ -155,19 +155,7 @@ static int test_build_cmd_single_quote_escape(void) {
     return 0;
 }
 
-/* ── bd_boot_cmd / bd_bootstatus_cmd ─────────────────────────────── */
-
-static int test_boot_cmd(void) {
-    char buf[1024];
-    Target t = make_sim("SIM-UDID-1234");
-    BdStatus s = bd_boot_cmd(&t, buf, sizeof(buf));
-    ASSERT("boot ok",     s == BD_OK);
-    ASSERT("boot simctl", has(buf, "simctl"));
-    ASSERT("boot verb",   has(buf, "boot"));
-    ASSERT("boot udid",   has(buf, "SIM-UDID-1234"));
-    PASS("boot_cmd");
-    return 0;
-}
+/* ── bd_bootstatus_cmd ───────────────────────────────────────────── */
 
 static int test_bootstatus_cmd(void) {
     char buf[1024];
@@ -176,7 +164,10 @@ static int test_bootstatus_cmd(void) {
     ASSERT("bootstatus ok",     s == BD_OK);
     ASSERT("bootstatus simctl", has(buf, "simctl"));
     ASSERT("bootstatus verb",   has(buf, "bootstatus"));
-    ASSERT("bootstatus wait",   has(buf, "--wait"));
+    ASSERT("bootstatus udid",   has(buf, "SIM-UDID-1234"));
+    /* idempotent boot: -b boots-if-needed + waits; no undocumented --wait */
+    ASSERT("bootstatus -b",     has(buf, "-b"));
+    ASSERT("bootstatus no wait", !has(buf, "--wait"));
     PASS("bootstatus_cmd");
     return 0;
 }
@@ -593,7 +584,6 @@ static int test_oom_tiny_buf(void) {
     ASSERT("settings oom", bd_settings_cmd(&rc, NULL, false, buf, sizeof(buf)) == BD_ERR_OOM);
 
     Target t = make_sim("SIM");
-    ASSERT("boot oom",       bd_boot_cmd(&t, buf, sizeof(buf))       == BD_ERR_OOM);
     ASSERT("bootstatus oom", bd_bootstatus_cmd(&t, buf, sizeof(buf)) == BD_ERR_OOM);
     ASSERT("install oom",    bd_install_cmd(&t, "/app", buf, sizeof(buf)) == BD_ERR_OOM);
     ASSERT("terminate oom",  bd_terminate_cmd(&t, "com.x", buf, sizeof(buf)) == BD_ERR_OOM);
@@ -621,7 +611,6 @@ int main(void) {
     failures += test_build_cmd_no_target_generic_dest();
     failures += test_build_cmd_single_quote_escape();
 
-    failures += test_boot_cmd();
     failures += test_bootstatus_cmd();
 
     failures += test_install_cmd_device();

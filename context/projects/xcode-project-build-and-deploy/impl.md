@@ -81,6 +81,10 @@ both Linux and macOS.
     raw-output contract, and gives every subsequent block of tool
     output an unambiguous header. New event kind on the run ring,
     one new lexicon group, no changes to `runstate`/`builddeploy`.
+12. **fix: idempotent simulator boot** — collapse the prime step to
+    a single `xcrun simctl bootstatus <udid> -b` (boot-if-needed +
+    wait) and delete the non-idempotent `boot` step that failed an
+    already-booted simulator (SimError 405). Post-ship bugfix.
 
 ## Task Dependency Relationships
 
@@ -967,3 +971,84 @@ shape:
       the demarcation lines verbatim; the demarcations render in the
       decorative cyan/magenta voice (not semantic green/red), matching
       the existing NEW PAYLOAD line.
+
+### Task 12 - fix: idempotent simulator boot
+
+- **Status**: done
+- **Blocked by**: none (edits T2/T5 code, both done)
+- **User stories covered**: 9, 10
+
+#### What to build
+
+A focused bugfix to the shipped Play/Observe loop: an EXECUTE against
+a simulator that is **already booted** currently fails the whole run.
+The prime step issued `xcrun simctl boot <udid>`, which exits non-zero
+on an already-booted device (SimError code=405, "Unable to boot device
+in current state: Booted"), and the worker treated that non-zero exit
+as a deploy failure (DEPLOYMENT FAILED // PAYLOAD REJECTED) even though
+the build succeeded and the simulator is fine. The fix makes the boot
+**idempotent**: prime becomes a single
+`xcrun simctl bootstatus <udid> -b`, which boots the device only if it
+is not already booted and then waits for full boot, so both a cold and
+an already-booted simulator flow cleanly into install → launch.
+
+#### Technical Details
+
+Per ARD §"Control + data flow for one EXECUTE" (the prime line) and
+§"Liveness, termination, and failure mapping":
+
+- **builddeploy**: change `bd_bootstatus_cmd` to emit
+  `xcrun simctl bootstatus <udid> -b` — drop `--wait` (undocumented
+  for `bootstatus`, which blocks by design) and add `-b`
+  (boot-if-needed); the single-quote escaping of the udid is
+  unchanged. **Remove `bd_boot_cmd`** from `include/builddeploy.h` and
+  `src/builddeploy/builddeploy.c` (boot-if-needed is folded into
+  bootstatus; the command is now dead).
+- **worker** (`src/session/session.c`): collapse
+  `RCHAIN_STEP_PRIME_BOOT` and `RCHAIN_STEP_PRIME_STATUS` into a single
+  `RCHAIN_STEP_PRIME` that execs `bd_bootstatus_cmd`; on exit 0 it
+  steps `RUN_EV_PRIME_OK` → install, on non-zero it fails
+  `RUN_EV_PRIME_FAIL` / `BD_ERR_BOOT` → `RUN_DEPLOY_FAILED` (a genuine
+  boot failure still fails distinctly). Update the step→event map, the
+  step-name string, `build_step_cmd`, and `process_run_chunk` switches
+  accordingly. The prime step keeps the existing output-progress
+  watchdog; no special window.
+- **runstate** is unchanged (`RUN_EV_PRIME_OK` / `RUN_EV_PRIME_FAIL` /
+  `RUN_ACT_PRIME` all stay); the fix is confined to the command string
+  and the worker's prime sub-steps.
+- **ARD reconcile**: drop `bd_boot_cmd` from §Interfaces
+  (`builddeploy.h`) and tighten the flow sketch from
+  "boot + bootstatus -b" to "bootstatus -b". `prd.md` is unchanged (it
+  never named the command).
+- **Tests**: in `builddeploy_test.c`, remove `test_boot_cmd` (and its
+  OOM assertion) and update the bootstatus test to assert the command
+  contains `-b` and not `--wait`. In `session_run_test.c`,
+  `test_simulator_prime` asserts the prime phase issues a **single**
+  exec containing `bootstatus` and `-b` and that the chain flows to
+  install (5 execs, not 6). The actual already-booted-passes behavior
+  is a manual acceptance criterion via `run_smoke` against a live Mac.
+
+#### Acceptance criteria
+
+- [x] `bd_bootstatus_cmd` emits `xcrun simctl bootstatus <udid> -b`
+      (contains `-b`, no `--wait`), udid single-quote-escaped;
+      `bd_boot_cmd` is removed from `builddeploy.{c,h}` with no
+      remaining references.
+- [x] The worker prime step is a single `RCHAIN_STEP_PRIME` exec of
+      `bd_bootstatus_cmd`; exit 0 → install, non-zero →
+      `RUN_DEPLOY_FAILED` via `BD_ERR_BOOT`; the
+      step→event/name/cmd/chunk switches compile with no
+      `RCHAIN_STEP_PRIME_BOOT` reference.
+- [x] `builddeploy_test.c`: `test_boot_cmd` removed; the bootstatus
+      test asserts `-b` present and `--wait` absent.
+      `session_run_test.c`: `test_simulator_prime` is a single exec
+      containing `bootstatus -b` and flows to install.
+- [x] `ard.md` drops `bd_boot_cmd` from §Interfaces and the flow
+      sketch reads "bootstatus -b" (`prd.md` unchanged).
+- [x] `build/libbuilddeploy.a`, `build/libsession.a`, and the full app
+      build clean on Linux, and `make test` passes.
+- [ ] Manually via `run_smoke` against a live Mac: EXECUTE against an
+      already-booted simulator builds, installs, launches, and streams
+      its console (no DEPLOYMENT FAILED); EXECUTE against a cold
+      simulator boots it first; a genuinely un-bootable target still
+      surfaces the distinct deploy failure.

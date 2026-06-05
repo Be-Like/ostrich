@@ -26,8 +26,7 @@ BdStatus bd_settings_cmd  (const RunConfig *, const Target *,
                            bool has_target, char *, size_t);
 BdStatus bd_build_cmd     (const RunConfig *, const Target *,
                            bool has_target, char *, size_t);
-BdStatus bd_boot_cmd      (const Target *, char *, size_t);
-BdStatus bd_bootstatus_cmd(const Target *, char *, size_t);
+BdStatus bd_bootstatus_cmd(const Target *, char *, size_t); /* boot-if-needed + wait (-b) */
 BdStatus bd_install_cmd   (const Target *, const char *app_path,
                            char *, size_t);
 BdStatus bd_launch_cmd    (const Target *, const char *bundle_id,

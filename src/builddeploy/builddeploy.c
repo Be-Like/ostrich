@@ -159,22 +159,14 @@ BdStatus bd_build_cmd(const RunConfig *rc, const Target *tgt,
     return BD_OK;
 }
 
-BdStatus bd_boot_cmd(const Target *tgt, char *buf, size_t cap) {
-    char qudid[300];
-    BdStatus s = bd_quote(tgt->udid, qudid, sizeof(qudid));
-    if (s != BD_OK) return s;
-
-    int n = snprintf(buf, cap, "xcrun simctl boot %s", qudid);
-    if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
-    return BD_OK;
-}
-
 BdStatus bd_bootstatus_cmd(const Target *tgt, char *buf, size_t cap) {
     char qudid[300];
     BdStatus s = bd_quote(tgt->udid, qudid, sizeof(qudid));
     if (s != BD_OK) return s;
 
-    int n = snprintf(buf, cap, "xcrun simctl bootstatus %s --wait", qudid);
+    /* -b boots the device if needed, then blocks until fully booted;
+       idempotent against an already-booted simulator. */
+    int n = snprintf(buf, cap, "xcrun simctl bootstatus %s -b", qudid);
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
 }
