@@ -90,6 +90,20 @@ both Linux and macOS.
     app's `print()`/stdout line-buffers and streams live into the
     Device Log instead of sitting block-buffered until exit. Post-ship
     bugfix.
+14. **fix: reliable build-failure detection** — the chain installs
+    and launches a stale `.app` after a *failed* compile because the
+    build's `setsid` wrapper masks `xcodebuild`'s real exit code (the
+    SSH channel reports `setsid`'s `0`). Emit an in-band
+    `__OSTRICH_EXIT__` marker (mirroring the existing PGID marker),
+    parse it in the worker, and gate the build branch on the *parsed*
+    code so a failed compile resolves to `RUN_BUILD_FAILED` and the
+    chain stops before install/launch. Strip the `__OSTRICH_*` control
+    tokens from the Build Log. Post-ship bugfix.
+15. **Device Log build-aborted line** — on a compilation failure,
+    drop a `NEW PAYLOAD`-style ostrich-voice separator
+    (`> ── BUILD ABORTED // COMPILATION FAILED ──`) into the Device
+    Log so the operator watching a now-dark feed learns why no app
+    relaunched. New lexicon key + one app-side `logbuf_mark` arm.
 
 ## Task Dependency Relationships
 
@@ -137,6 +151,23 @@ each editing T2's `libbuilddeploy` command construction (T12 the prime
 step, T13 the launch step). Neither depends on nor is depended on by
 any other task; either can be picked up once a live-Mac symptom is
 observed.
+
+T14 is a post-ship bugfix to the build-failure path: it edits T2's
+`libbuilddeploy` (the `bd_build_cmd` wrapper + a new parser) and T5's
+worker (`process_run_chunk` / `handle_step_exit` in `libsession`). It
+is the core correctness fix and depends on nothing. T15 is the
+operator-facing surface for that fix — a `liblexicon` key and one
+app-side drain arm — and is blocked by T14 because its message only
+ever fires once a masked build failure actually resolves to
+`RUN_BUILD_FAILED`.
+
+```
+ T14 reliable build-  ──▶ T15 Device Log
+     failure detection      build-aborted line
+     (builddeploy +         (lexicon + app)
+      worker, strip
+      markers)
+```
 
 ## Detailed Tasks
 
@@ -1130,3 +1161,221 @@ Per ARD §"Control + data flow for one EXECUTE" (the launch line) and
       streams those lines live in the Device Log (not only on exit);
       the benign IOSurface line is unaffected; a device-target launch
       is unregressed.
+
+### Task 14 - fix: reliable build-failure detection
+
+- **Status**: done
+- **Blocked by**: none (edits T2/T5 code, both done)
+- **User stories covered**: 1, 12, 29, 45 (regression fix)
+
+#### What to build
+
+A correctness bugfix to the shipped Play/Observe loop: an EXECUTE
+whose `xcodebuild` step **fails to compile** currently proceeds to
+install and launch anyway whenever a previously-built `.app`
+artifact already exists on disk — redeploying a stale binary as if
+the build had succeeded. The operator sees their old app come back
+up and reasonably believes the new code is running. This directly
+breaks the one-action chain's honesty (story 1), launch-after-a-
+*successful*-build (story 12), the distinct `EXPLOIT FAILED`
+terminal state (stories 29, 45), and the trust the whole loop
+depends on.
+
+Root cause: the build command is wrapped as
+`setsid sh -c 'printf PID…; exec xcodebuild …'`
+(`bd_build_cmd`, `src/builddeploy/builddeploy.c`). The chain decides
+build success solely from the SSH channel exit code
+(`handle_step_exit`, `src/session/session.c`, the
+`RCHAIN_STEP_BUILD` case), which is read via
+`libssh2_channel_get_exit_status` (`ssh_channel_exit`,
+`src/ssh/ssh.c`). That value is the exit status of the **`setsid`
+process**, not of `xcodebuild`: when `setsid` forks to create its
+session the reaped status is `0` while `xcodebuild`'s real failing
+status is lost. The build's stdout/stderr still stream (the forked
+child keeps the fds), so the Build Log looks normal, but the chain
+reads `0` → `RUN_EV_BUILD_OK` → install → launch. Because the
+`SETTINGS` step (which resolves the `.app` path) always succeeds and
+a prior `.app` exists, install+launch redeploy the stale binary.
+
+This task makes build-failure detection independent of how `setsid`
+and `sshd` reap, mirroring the existing in-band `__OSTRICH_PGID__`
+PID-marker precedent, and removes the resulting control-token noise
+from the Build Log.
+
+#### Technical Details
+
+Per ARD §"Liveness, termination, and failure mapping"
+("Distinct failures", "Two-pronged kill") and §"Control + data flow
+for one EXECUTE" (the `build` step):
+
+- **builddeploy** (`src/builddeploy/builddeploy.c` /
+  `include/builddeploy.h`): change `bd_build_cmd` to stop `exec`-ing
+  `xcodebuild` and instead run it as a child of the setsid'd `sh`,
+  capture `$?`, and emit a trailing exit marker — e.g.
+  `setsid sh -c 'printf "__OSTRICH_PGID__%d\n" $$; xcodebuild … ;
+  printf "__OSTRICH_EXIT__%d\n" $?'`. The kill path is unchanged:
+  the inner `sh` is still the `setsid` session/group leader, so its
+  `$$` is the PGID and `kill -- -<pgid>` still tears down both `sh`
+  and `xcodebuild` (T6's two-pronged abort holds). Add a pure
+  `bool bd_parse_exit_marker(Str chunk, int *out_code)` next to
+  `bd_parse_pid_marker`, scanning a chunk for `__OSTRICH_EXIT__<n>`
+  and returning the integer. No other command changes (settings,
+  install, launch are not setsid-exit-gated).
+- **worker** (`src/session/session.c`): in `process_run_chunk`'s
+  `RCHAIN_STEP_BUILD` arm, also run `bd_parse_exit_marker` over each
+  chunk and, on a hit, record it on a new `RunChain` field (e.g.
+  `int build_exit; bool have_build_exit;`, reset in
+  `start_run_chain`). In `handle_step_exit`'s `RCHAIN_STEP_BUILD`
+  case, use the **parsed** exit code when `have_build_exit` is set,
+  otherwise fall back to the channel `exit_code` — preserving the
+  existing `exit_code != 0 && build_pgid == 0` setsid-missing help
+  block (no marker arrives when `setsid` itself is missing, channel
+  reports 127) and the device-only codesign-hint block. The
+  build-OK / build-FAIL routing (`RUN_EV_BUILD_OK` vs
+  `RUN_EV_BUILD_FAIL` with `BD_ERR_BUILD` / `BD_ERR_XCODE_MISSING`)
+  is otherwise unchanged.
+- **strip control tokens** (`src/session/session.c`): filter any
+  line beginning with `__OSTRICH_` out of the bytes passed to
+  `emit_build_log` for the build step, so neither the PGID marker
+  (visible today) nor the new EXIT marker reaches the Build Log.
+  Because markers can fall across read-chunk boundaries, carry a
+  small partial-line buffer on the `RunChain` for the build step:
+  buffer an incomplete trailing line, emit complete non-marker lines
+  raw, drop complete `__OSTRICH_*` lines (still feeding them to the
+  PID/EXIT parsers). Flush any residual partial line on EOF. This is
+  worker-side; `logbuf`'s own line assembly is untouched.
+- **runstate** is unchanged — only the *source* of the build step's
+  pass/fail boolean changes, not the state machine.
+- **ARD reconcile**: note in §"Liveness, termination, and failure
+  mapping" that build success is determined by the in-band
+  `__OSTRICH_EXIT__` marker (channel exit code is unreliable through
+  `setsid`), alongside the existing PGID-marker note. `prd.md`
+  unchanged (it names no command).
+- **Tests**: `builddeploy_test.c` — assert `bd_build_cmd` contains a
+  `__OSTRICH_EXIT__` printf and no `exec ` of xcodebuild, and that
+  `bd_parse_exit_marker` recovers the code from a representative
+  marker line (incl. a non-zero code) and rejects junk without a
+  crash. `session_run_test.c` — drive a build whose stream carries a
+  **non-zero** `__OSTRICH_EXIT__` marker and assert the chain
+  resolves to `RUN_BUILD_FAILED` and issues **no** install or launch
+  exec (the core regression assertion); a zero marker proceeds to
+  install→launch as before; and `__OSTRICH_*` marker lines do not
+  appear in the emitted `REV_BUILD_LOG` chunks. The real masked-exit
+  behavior against a live Mac is a manual acceptance criterion via
+  `run_smoke`.
+
+#### Acceptance criteria
+
+- [x] `bd_build_cmd` emits a trailing `__OSTRICH_EXIT__%d` marker
+      carrying `xcodebuild`'s `$?` and no longer `exec`s xcodebuild;
+      `bd_parse_exit_marker` recovers the code (incl. non-zero) and
+      returns false on input without a marker — verified in
+      `builddeploy_test.c`.
+- [x] The worker records the parsed build exit code from the stream
+      and `handle_step_exit` gates the build branch on it (falling
+      back to the channel code only when no marker arrived); the
+      setsid-missing help block and the codesign-hint block still
+      fire on their existing conditions.
+- [x] `session_run_test.c` asserts a non-zero build exit marker
+      resolves to `RUN_BUILD_FAILED` with **no** install/launch exec,
+      a zero marker proceeds to install→launch, and no `__OSTRICH_*`
+      line appears in `REV_BUILD_LOG` output.
+- [x] No line beginning with `__OSTRICH_` reaches the Build Log for
+      the build step (PGID and EXIT both stripped), surviving
+      chunk-boundary splits; genuine xcodebuild output is unchanged
+      and still raw.
+- [x] T6's two-pronged abort is unregressed — `kill -- -<pgid>`
+      still targets the parsed PGID and tears down the build group
+      (the inner `sh` remains the setsid group leader); existing
+      `session_run_test` abort assertions pass.
+- [x] `build/libbuilddeploy.a`, `build/libsession.a`, and the full
+      app build clean on Linux and macOS, and `make test` passes.
+- [ ] Manually via `run_smoke` / the app against a live Mac with a
+      prior successful `.app` on disk: introducing a compile error
+      and pressing EXECUTE resolves to `EXPLOIT FAILED` and does
+      **not** install or launch the stale app; a clean build still
+      installs and launches normally.
+
+### Task 15 - Device Log build-aborted line
+
+- **Status**: pending
+- **Blocked by**: 14
+- **User stories covered**: 21, 35 (extension), 45, 48
+
+#### What to build
+
+A surface improvement on top of T14: when a compilation fails, the
+chain stops before launch (T14), but an operator who was watching
+the Device Log — especially after a terminate-first re-EXECUTE that
+already darkened the feed (story 21) — is left staring at a silent
+panel with no explanation for why the app never came back. This task
+drops a single ostrich-voice line into the Device Log on a
+compilation failure stating that the build was aborted, so the
+silence is explained on the surface the operator is actually
+watching. It extends the same `> ── … ──` separator idiom the
+Device Log already uses for `NEW PAYLOAD` (story 35), keeps the
+Device Log raw and never recolored (the line is a structural
+separator, not tool output), and sources its wording from the
+centralized lexicon (story 48). It fires only on a compilation
+failure (`RUN_BUILD_FAILED`), not on deploy failures or ABORT.
+
+#### Technical Details
+
+Per ARD §"What changes" item 6 ("UI + composition-root wiring") and
+item 7 ("New lexicon copy"), and §"Control + data flow" (the
+demarcation note):
+
+- **lexicon** (`include/lexicon.h` / `src/lexicon.c`): add one
+  Build/deploy key — e.g. `LEX_RUN_BUILD_ABORTED` — mapping to the
+  `theme.md` string. Candidate wording (theme.md owns final copy):
+  `> ── BUILD ABORTED // COMPILATION FAILED ──`, styled as a
+  separator consistent with `LEX_RUN_NEW_PAYLOAD`. No new phase or
+  status keys.
+- **app** (`src/app/app.c`): in the `session_run_poll` drain's
+  `REV_PHASE` arm, add a branch: when `rev.phase ==
+  RUN_BUILD_FAILED`, call
+  `logbuf_mark(app->device_log, lex(LEX_RUN_BUILD_ABORTED))` — right
+  beside the existing `if (rev.phase == RUN_RUNNING)
+  logbuf_mark(app->device_log, lex(LEX_RUN_NEW_PAYLOAD));`. This
+  fires uniformly on any compile failure (cold or warm): on a cold
+  build-fail the Device Log leaves its `// NO SIGNAL — TARGET DARK`
+  empty state and shows the single abort line; on a re-EXECUTE it
+  follows the already-dark stream. No new run event is required —
+  the worker already emits `REV_PHASE{RUN_BUILD_FAILED}`. The
+  existing `RUN_BUILD_FAILED && BD_ERR_UNLOCK_FAILED` keychain-reset
+  branch is unaffected (both run on the same event).
+- **runstate / builddeploy / session / logbuf**: unchanged — this
+  task is lexicon + one app-side `logbuf_mark` call, reusing the
+  primitive T3 already provides (flush partial line, insert a
+  complete demarcation).
+- **ui.cpp**: unchanged — the Device Log already renders every
+  `logbuf` line raw off-white; the abort line renders exactly like
+  the `NEW PAYLOAD` separator with no recoloring (story 39 holds).
+- **Tests**: `lexicon_test.c` — assert `LEX_RUN_BUILD_ABORTED`
+  resolves to its non-empty themed string with the `//` separator
+  and UTF-8 glyphs preserved (no `(?)`). The app-side insertion is
+  verified manually via the app (the `app.c` drain has no unit
+  harness, matching existing practice for the `NEW PAYLOAD` and
+  `REV_BUILD_MARK` arms).
+
+#### Acceptance criteria
+
+- [ ] `include/lexicon.h` / `src/lexicon.c` declare and map
+      `LEX_RUN_BUILD_ABORTED` to its `theme.md` string;
+      `lexicon_test.c` asserts it resolves non-empty with glyphs and
+      `//` preserved, and `make test` passes.
+- [ ] `app.c` calls `logbuf_mark(app->device_log,
+      lex(LEX_RUN_BUILD_ABORTED))` exactly once per `RUN_BUILD_FAILED`
+      phase event, beside the existing `NEW PAYLOAD` mark, and only
+      on `RUN_BUILD_FAILED` (not deploy failures or ABORT).
+- [ ] The line renders raw off-white as a `> ──` separator
+      consistent with `NEW PAYLOAD`; the Device Log is not recolored
+      and the existing keychain-reset branch on the same event is
+      unaffected.
+- [ ] `build/ostrich` builds clean on Linux and macOS and
+      `make test` passes (`ui_test` headless still green).
+- [ ] Manually against a live Mac: a failed compile drops the
+      `BUILD ABORTED // COMPILATION FAILED` line into the Device Log
+      on both a cold EXECUTE and a re-EXECUTE; a successful build
+      shows no such line; a deploy failure and an ABORT do not emit
+      it; copy-to-clipboard includes the line verbatim.

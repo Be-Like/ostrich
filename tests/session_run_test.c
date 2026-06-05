@@ -5,76 +5,82 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include "../include/session.h"
-#include "../include/log.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 
+#include "../include/log.h"
+#include "../include/session.h"
+
 /* ── stub globals (defined in ssh_stub_run.c) ─────────────────────── */
 
 typedef struct {
     const char *output;
-    size_t      output_len;
-    int         exit_code;
-    bool        streaming;
-    bool        stall_read;
+    size_t output_len;
+    int exit_code;
+    bool streaming;
+    bool stall_read;
 } StubRunResp;
 
-extern StubRunResp  g_run_resp[];
-extern int          g_run_resp_count;
+extern StubRunResp g_run_resp[];
+extern int g_run_resp_count;
 extern volatile int g_run_stop_stream;
 extern volatile int g_run_simulate_drop;
-extern int          g_exec_next;
-extern int          g_cur_idx;
-extern int          g_bytes_sent[];
-extern char         g_exec_cmds[][2048];
+extern int g_exec_next;
+extern int g_cur_idx;
+extern int g_bytes_sent[];
+extern char g_exec_cmds[][2048];
 
 void stub_run_reset(void);
 
 /* ── test macros ──────────────────────────────────────────────────── */
 
 #define PASS(name) printf("PASS: %s\n", (name))
-#define FAIL(name) do { printf("FAIL: %s\n", (name)); return 1; } while (0)
-#define ASSERT(name, cond) do { if (!(cond)) { printf("FAIL: %s (assert: %s)\n", (name), #cond); return 1; } } while (0)
+#define FAIL(name)                    \
+    do {                              \
+        printf("FAIL: %s\n", (name)); \
+        return 1;                     \
+    } while (0)
+#define ASSERT(name, cond)                                    \
+    do {                                                      \
+        if (!(cond)) {                                        \
+            printf("FAIL: %s (assert: %s)\n", (name), #cond); \
+            return 1;                                         \
+        }                                                     \
+    } while (0)
 
-#define POLL_MAX 5000  /* 5 seconds max per assertion */
+#define POLL_MAX 5000 /* 5 seconds max per assertion */
 
 /* ── test data ────────────────────────────────────────────────────── */
 
 /* Minimal xcodebuild -showBuildSettings -json output that bd_parse_product_path
    can extract a product path from. */
-static const char k_settings_json[] =
-    "[{\"action\":\"build\","
-    "\"buildSettings\":{"
-    "\"BUILT_PRODUCTS_DIR\":\"/tmp\","
-    "\"FULL_PRODUCT_NAME\":\"Test.app\","
-    "\"PRODUCT_BUNDLE_IDENTIFIER\":\"com.test.App\""
-    "},\"target\":\"Test\"}]";
+static const char k_settings_json[] = "[{\"action\":\"build\","
+                                      "\"buildSettings\":{"
+                                      "\"BUILT_PRODUCTS_DIR\":\"/tmp\","
+                                      "\"FULL_PRODUCT_NAME\":\"Test.app\","
+                                      "\"PRODUCT_BUNDLE_IDENTIFIER\":\"com.test.App\""
+                                      "},\"target\":\"Test\"}]";
 
 /* Build output with an embedded PID marker. */
-static const char k_build_output[] =
-    "xcodebuild output\n__OSTRICH_PGID__99001\nBUILD SUCCEEDED\n";
+static const char k_build_output[] = "xcodebuild output\n__OSTRICH_PGID__99001\nBUILD SUCCEEDED\n";
 
 static const char k_install_output[] = "install ok\n";
-static const char k_device_output[]  = "app log line\n";
+static const char k_device_output[] = "app log line\n";
 
 /* ── helpers ──────────────────────────────────────────────────────── */
 
-static void sleep_ms(int ms)
-{
-    struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
+static void sleep_ms(int ms) {
+    struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L};
     nanosleep(&ts, NULL);
 }
 
-static bool connect_and_wait_online(Session *s)
-{
+static bool connect_and_wait_online(Session *s) {
     SessionCmd cmd;
     memset(&cmd, 0, sizeof(cmd));
-    cmd.kind     = CMD_BREACH;
+    cmd.kind = CMD_BREACH;
     cmd.cfg.port = 22;
     cmd.cfg.auth = SSH_AUTH_AGENT;
     snprintf(cmd.cfg.host, sizeof(cmd.cfg.host), "stubhost");
@@ -90,31 +96,29 @@ static bool connect_and_wait_online(Session *s)
     return false;
 }
 
-static SessionRunCmd make_execute_cmd(void)
-{
+static SessionRunCmd make_execute_cmd(void) {
     SessionRunCmd cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.kind = RCMD_EXECUTE;
-    snprintf(cmd.cfg.project,   sizeof(cmd.cfg.project),   "/tmp/Test.xcodeproj");
-    snprintf(cmd.cfg.scheme,    sizeof(cmd.cfg.scheme),    "Test");
-    snprintf(cmd.cfg.config,    sizeof(cmd.cfg.config),    "Debug");
+    snprintf(cmd.cfg.project, sizeof(cmd.cfg.project), "/tmp/Test.xcodeproj");
+    snprintf(cmd.cfg.scheme, sizeof(cmd.cfg.scheme), "Test");
+    snprintf(cmd.cfg.config, sizeof(cmd.cfg.config), "Debug");
     snprintf(cmd.cfg.bundle_id, sizeof(cmd.cfg.bundle_id), "com.test.App");
-    snprintf(cmd.target.name,   sizeof(cmd.target.name),   "iPhone");
-    snprintf(cmd.target.udid,   sizeof(cmd.target.udid),   "DEVICE-UDID-001");
+    snprintf(cmd.target.name, sizeof(cmd.target.name), "iPhone");
+    snprintf(cmd.target.udid, sizeof(cmd.target.udid), "DEVICE-UDID-001");
     cmd.target.is_simulator = false;
-    cmd.target.booted       = true;
-    cmd.has_target          = true;
+    cmd.target.booted = true;
+    cmd.has_target = true;
     return cmd;
 }
 
-static SessionRunCmd make_compile_cmd(void)
-{
+static SessionRunCmd make_compile_cmd(void) {
     SessionRunCmd cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.kind = RCMD_COMPILE;
-    snprintf(cmd.cfg.project,   sizeof(cmd.cfg.project),   "/tmp/Test.xcodeproj");
-    snprintf(cmd.cfg.scheme,    sizeof(cmd.cfg.scheme),    "Test");
-    snprintf(cmd.cfg.config,    sizeof(cmd.cfg.config),    "Debug");
+    snprintf(cmd.cfg.project, sizeof(cmd.cfg.project), "/tmp/Test.xcodeproj");
+    snprintf(cmd.cfg.scheme, sizeof(cmd.cfg.scheme), "Test");
+    snprintf(cmd.cfg.config, sizeof(cmd.cfg.config), "Debug");
     snprintf(cmd.cfg.bundle_id, sizeof(cmd.cfg.bundle_id), "com.test.App");
     cmd.has_target = false;
     return cmd;
@@ -124,8 +128,7 @@ static SessionRunCmd make_compile_cmd(void)
 typedef bool (*RunEvPred)(const SessionRunEvent *ev, void *data);
 
 /* Poll run events for up to POLL_MAX ms; return true when pred fires. */
-static bool drain_until(Session *s, RunEvPred pred, void *data)
-{
+static bool drain_until(Session *s, RunEvPred pred, void *data) {
     SessionRunEvent ev;
     for (int i = 0; i < POLL_MAX; i++) {
         if (session_run_poll(s, &ev)) {
@@ -137,8 +140,7 @@ static bool drain_until(Session *s, RunEvPred pred, void *data)
 }
 
 /* Same but with a shorter timeout (ms). */
-static bool drain_until_ms(Session *s, RunEvPred pred, void *data, int timeout_ms)
-{
+static bool drain_until_ms(Session *s, RunEvPred pred, void *data, int timeout_ms) {
     SessionRunEvent ev;
     for (int i = 0; i < timeout_ms; i++) {
         if (session_run_poll(s, &ev)) {
@@ -149,19 +151,16 @@ static bool drain_until_ms(Session *s, RunEvPred pred, void *data, int timeout_m
     return false;
 }
 
-static bool phase_is(const SessionRunEvent *ev, void *p)
-{
+static bool phase_is(const SessionRunEvent *ev, void *p) {
     return ev->kind == REV_PHASE && ev->phase == *(RunPhase *)p;
 }
 
-static bool got_build_log(const SessionRunEvent *ev, void *p)
-{
+static bool got_build_log(const SessionRunEvent *ev, void *p) {
     (void)p;
     return ev->kind == REV_BUILD_LOG && ev->len > 0;
 }
 
-static bool got_device_log(const SessionRunEvent *ev, void *p)
-{
+static bool got_device_log(const SessionRunEvent *ev, void *p) {
     (void)p;
     return ev->kind == REV_DEVICE_LOG && ev->len > 0;
 }
@@ -170,18 +169,13 @@ static bool got_device_log(const SessionRunEvent *ev, void *p)
 
 /* 1. EXECUTE happy path: device target (no sim priming).
    Chain: settings → build → install → launch → running → console_eof → idle. */
-static int test_execute_happy_path(void)
-{
+static int test_execute_happy_path(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
     /* Streaming launch channel: won't EOF until g_run_stop_stream is set. */
-    g_run_resp[3] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     g_run_resp_count = 4;
 
     Session *s = NULL;
@@ -227,13 +221,10 @@ static int test_execute_happy_path(void)
 }
 
 /* 2. COMPILE only: no target → no install, no launch. */
-static int test_compile_only(void)
-{
+static int test_compile_only(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     g_run_resp_count = 2;
 
     Session *s = NULL;
@@ -263,22 +254,19 @@ static int test_compile_only(void)
 /* Collect all REV_BUILD_LOG chunks until a phase event matching *p arrives.
    Returns true if the target phase was reached; appends chunk bytes into
    buf (NUL-terminated, up to cap-1 bytes). */
-static bool collect_build_log_until_phase(Session *s, RunPhase target,
-                                          char *buf, size_t cap)
-{
+static bool collect_build_log_until_phase(Session *s, RunPhase target, char *buf, size_t cap) {
     size_t pos = 0;
     SessionRunEvent ev;
     for (int i = 0; i < POLL_MAX; i++) {
         if (session_run_poll(s, &ev)) {
             if (ev.kind == REV_BUILD_LOG && ev.len > 0) {
                 size_t space = cap - 1 - pos;
-                size_t copy  = (size_t)ev.len < space ? (size_t)ev.len : space;
+                size_t copy = (size_t)ev.len < space ? (size_t)ev.len : space;
                 memcpy(buf + pos, ev.chunk, copy);
                 pos += copy;
                 buf[pos] = '\0';
             }
-            if (ev.kind == REV_PHASE && ev.phase == target)
-                return true;
+            if (ev.kind == REV_PHASE && ev.phase == target) return true;
         }
         sleep_ms(1);
     }
@@ -288,13 +276,10 @@ static bool collect_build_log_until_phase(Session *s, RunPhase target,
 /* 3. Build failure (non-zero exit from build step, no pgid marker).
    The setsid help block must appear in the build log before the
    RUN_BUILD_FAILED phase event. */
-static int test_build_failure(void)
-{
+static int test_build_failure(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        "build error\n", 12, 1, false, false };  /* exit 1, no pgid marker */
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){"build error\n", 12, 1, false, false}; /* exit 1, no pgid marker */
     g_run_resp_count = 2;
 
     Session *s = NULL;
@@ -306,15 +291,11 @@ static int test_build_failure(void)
 
     char build_log[8192];
     build_log[0] = '\0';
-    ASSERT("phase build_failed",
-           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
-                                         build_log, sizeof(build_log)));
+    ASSERT("phase build_failed", collect_build_log_until_phase(s, RUN_BUILD_FAILED, build_log, sizeof(build_log)));
 
     /* Help block must be in the build log. */
-    ASSERT("help block header in build log",
-           strstr(build_log, "REMOTE MAC IS MISSING setsid.") != NULL);
-    ASSERT("ssh invocation in build log",
-           strstr(build_log, "ssh ") != NULL);
+    ASSERT("help block header in build log", strstr(build_log, "REMOTE MAC IS MISSING setsid.") != NULL);
+    ASSERT("ssh invocation in build log", strstr(build_log, "ssh ") != NULL);
 
     /* Only 2 execs: settings + build; no install or launch. */
     ASSERT("only 2 execs for build fail", g_exec_next == 2);
@@ -332,33 +313,28 @@ static int test_build_failure(void)
    for bd_parse_product_path and never reaches REV_BUILD_LOG, so when
    SETTINGS exits non-zero the build log panel is empty.  Fixing this
    means teeing SETTINGS bytes into emit_build_log as they stream. */
-static int test_execute_settings_failure_shows_log(void)
-{
+static int test_execute_settings_failure_shows_log(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        "xcodebuild: error: Unable to find a destination matching id=...\n",
-        64, 1, false, false };  /* exit 1, settings step only */
+    g_run_resp[0] = (StubRunResp){"xcodebuild: error: Unable to find a destination matching id=...\n", 64, 1, false,
+                                  false}; /* exit 1, settings step only */
     g_run_resp_count = 1;
 
     Session *s = NULL;
     ASSERT("session open", session_open(&s) == SSH_OK);
     ASSERT("online", connect_and_wait_online(s));
 
-    SessionRunCmd cmd = make_execute_cmd();  /* has_target=true */
+    SessionRunCmd cmd = make_execute_cmd(); /* has_target=true */
     ASSERT("submit execute", session_run_submit(s, &cmd));
 
     char build_log[8192];
     build_log[0] = '\0';
-    ASSERT("phase build_failed",
-           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
-                                         build_log, sizeof(build_log)));
+    ASSERT("phase build_failed", collect_build_log_until_phase(s, RUN_BUILD_FAILED, build_log, sizeof(build_log)));
 
     /* Only SETTINGS ran; BUILD never started. */
     ASSERT("only 1 exec for settings fail", g_exec_next == 1);
 
     /* The xcodebuild error must be surfaced to the user. */
-    ASSERT("settings stderr surfaced in build log",
-           strstr(build_log, "Unable to find") != NULL);
+    ASSERT("settings stderr surfaced in build log", strstr(build_log, "Unable to find") != NULL);
 
     session_close(s);
     PASS("execute_settings_failure_shows_log");
@@ -366,15 +342,11 @@ static int test_execute_settings_failure_shows_log(void)
 }
 
 /* 4. Install failure (non-zero exit from install step). */
-static int test_install_failure(void)
-{
+static int test_install_failure(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        "install failed\n", 15, 1, false, false };  /* exit 1 → install fail */
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){"install failed\n", 15, 1, false, false}; /* exit 1 → install fail */
     g_run_resp_count = 3;
 
     Session *s = NULL;
@@ -400,20 +372,15 @@ static int test_install_failure(void)
    then DevConsole gets non-zero exit → RUN_EV_DROP → ABORTED.
    We set g_run_stop_stream=1 immediately so the streaming channel EOFs
    as soon as we've read its data. */
-static int test_launch_nonzero_exit(void)
-{
+static int test_launch_nonzero_exit(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
     /* streaming, exit 1 — stop immediately so the channel EOFs right away */
-    g_run_resp[3] = (StubRunResp){
-        "launch error\n", 13, 1, true, false };
+    g_run_resp[3] = (StubRunResp){"launch error\n", 13, 1, true, false};
     g_run_resp_count = 4;
-    g_run_stop_stream = 1;  /* pre-set: EOF after first read */
+    g_run_stop_stream = 1; /* pre-set: EOF after first read */
 
     Session *s = NULL;
     ASSERT("session open", session_open(&s) == SSH_OK);
@@ -450,18 +417,13 @@ static int test_launch_nonzero_exit(void)
 }
 
 /* 6. Normal console EOF (exit 0) → IDLE. */
-static int test_console_eof(void)
-{
+static int test_console_eof(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
     /* streaming, exit 0 — EOF when g_run_stop_stream */
-    g_run_resp[3] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     g_run_resp_count = 4;
 
     Session *s = NULL;
@@ -489,14 +451,12 @@ static int test_console_eof(void)
    The build step uses stall_read=true so read always returns SSH_AGAIN
    and eof always returns false.  The worker should detect the stall and
    resolve to RUN_BUILD_FAILED within a few hundred ms. */
-static int test_watchdog_stall(void)
-{
+static int test_watchdog_stall(void) {
     stub_run_reset();
     /* Settings step: OK */
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
     /* Build step: stall — read always SSH_AGAIN, eof always false */
-    g_run_resp[1] = (StubRunResp){ NULL, 0, 0, false, true };
+    g_run_resp[1] = (StubRunResp){NULL, 0, 0, false, true};
     g_run_resp_count = 2;
 
     Session *s = NULL;
@@ -512,8 +472,7 @@ static int test_watchdog_stall(void)
 
     /* With a 50ms stall window, BUILD_FAILED should arrive within 1 second. */
     p = RUN_BUILD_FAILED;
-    ASSERT("stall watchdog fires → build_failed",
-           drain_until_ms(s, phase_is, &p, 1000));
+    ASSERT("stall watchdog fires → build_failed", drain_until_ms(s, phase_is, &p, 1000));
 
     session_close(s);
     PASS("watchdog_stall");
@@ -526,16 +485,13 @@ static int test_watchdog_stall(void)
    The build channel is streaming (won't EOF); we submit ABORT while it
    is in flight.  The worker should issue a kill exec, close local
    channels, and resolve to RUN_ABORTED. */
-static int test_abort_mid_build(void)
-{
+static int test_abort_mid_build(void) {
     stub_run_reset();
     /* settings: ok */
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
     /* build: streaming so the chain stalls waiting for more data;
        the pgid marker is in the output so build_pgid is set. */
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, true, false };
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, true, false};
     /* kill channel: no output, exit 0 (abort exec, fire-and-forget) */
     g_run_resp_count = 2;
 
@@ -564,9 +520,7 @@ static int test_abort_mid_build(void)
 
     /* Kill exec must have been issued: exec 0=settings, 1=build, 2=kill */
     ASSERT("kill exec was issued", g_exec_next >= 3);
-    ASSERT("kill cmd contains kill",
-           strstr(g_exec_cmds[2], "kill") != NULL ||
-           strstr(g_exec_cmds[2], "99001") != NULL);
+    ASSERT("kill cmd contains kill", strstr(g_exec_cmds[2], "kill") != NULL || strstr(g_exec_cmds[2], "99001") != NULL);
     /* No terminate (DevConsole was not streaming) */
     ASSERT("only 3 execs for abort-mid-build", g_exec_next == 3);
 
@@ -578,18 +532,13 @@ static int test_abort_mid_build(void)
 /* 9. ABORT while running: terminate the app.
    App is in RUNNING state (DevConsole streaming).  ABORT should send
    a terminate exec and resolve to RUN_ABORTED. */
-static int test_abort_running(void)
-{
+static int test_abort_running(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
     /* streaming DevConsole */
-    g_run_resp[3] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     g_run_resp_count = 4;
 
     Session *s = NULL;
@@ -615,8 +564,7 @@ static int test_abort_running(void)
     /* Terminate exec at index 4 (after settings=0, build=1, install=2, launch=3) */
     ASSERT("terminate exec was issued", g_exec_next >= 5);
     ASSERT("terminate cmd contains terminate or bundle",
-           strstr(g_exec_cmds[4], "terminate") != NULL ||
-           strstr(g_exec_cmds[4], "com.test.App") != NULL);
+           strstr(g_exec_cmds[4], "terminate") != NULL || strstr(g_exec_cmds[4], "com.test.App") != NULL);
 
     session_close(s);
     PASS("abort_running");
@@ -626,25 +574,18 @@ static int test_abort_running(void)
 /* 10. Terminate-first re-EXECUTE: EXECUTE while running terminates the old
     instance and then starts a fresh chain.  The terminate exec must happen
     BEFORE the new chain's settings exec. */
-static int test_terminate_first(void)
-{
+static int test_terminate_first(void) {
     stub_run_reset();
     /* First run */
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
-    g_run_resp[3] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     /* Second run (terminate at 4, then settings+build at 5+6, install at 7,
        launch at 8 — stop with build failure to keep test simple) */
     /* index 4: terminate (fire-and-forget, no pre-set response needed) */
-    g_run_resp[5] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[6] = (StubRunResp){
-        "rebuild error\n", 14, 1, false, false };  /* build fail → stop early */
+    g_run_resp[5] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[6] = (StubRunResp){"rebuild error\n", 14, 1, false, false}; /* build fail → stop early */
     g_run_resp_count = 7;
 
     Session *s = NULL;
@@ -673,11 +614,9 @@ static int test_terminate_first(void)
     /* Ordering: exec[4] = terminate; exec[5] = settings (second run).
        The terminate must precede the settings exec. */
     ASSERT("terminate at exec[4]",
-           strstr(g_exec_cmds[4], "terminate") != NULL ||
-           strstr(g_exec_cmds[4], "com.test.App") != NULL);
+           strstr(g_exec_cmds[4], "terminate") != NULL || strstr(g_exec_cmds[4], "com.test.App") != NULL);
     ASSERT("settings at exec[5] follows terminate",
-           strstr(g_exec_cmds[5], "showBuildSettings") != NULL ||
-           strstr(g_exec_cmds[5], "xcodebuild") != NULL);
+           strstr(g_exec_cmds[5], "showBuildSettings") != NULL || strstr(g_exec_cmds[5], "xcodebuild") != NULL);
 
     session_close(s);
     PASS("terminate_first");
@@ -686,17 +625,12 @@ static int test_terminate_first(void)
 
 /* 11. SSH drop mid-run: channel read error on DevConsole causes
     RUN_EV_DROP → RUN_ABORTED without crashing. */
-static int test_drop_mid_run(void)
-{
+static int test_drop_mid_run(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
-    g_run_resp[3] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     g_run_resp_count = 4;
 
     Session *s = NULL;
@@ -722,14 +656,12 @@ static int test_drop_mid_run(void)
     return 0;
 }
 
-static bool got_stale_true(const SessionRunEvent *ev, void *p)
-{
+static bool got_stale_true(const SessionRunEvent *ev, void *p) {
     (void)p;
     return ev->kind == REV_STALE && ev->stale;
 }
 
-static bool got_stale_false(const SessionRunEvent *ev, void *p)
-{
+static bool got_stale_false(const SessionRunEvent *ev, void *p) {
     (void)p;
     return ev->kind == REV_STALE && !ev->stale;
 }
@@ -737,23 +669,16 @@ static bool got_stale_false(const SessionRunEvent *ev, void *p)
 /* 12. COMPILE-while-running: app is running (DevConsole streaming), a
     compile-only chain starts on a second channel, build succeeds, and
     REV_STALE(true) is emitted while the DevConsole stays alive. */
-static int test_compile_while_running(void)
-{
+static int test_compile_while_running(void) {
     stub_run_reset();
     /* First EXECUTE: settings(0) build(1) install(2) launch(3, streaming) */
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
-    g_run_resp[3] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     /* COMPILE-while-running: settings(4) build(5) */
-    g_run_resp[4] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[5] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[4] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[5] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     g_run_resp_count = 6;
 
     Session *s = NULL;
@@ -786,8 +711,7 @@ static int test_compile_while_running(void)
     /* 6 execs: settings(0) build(1) install(2) launch(3)
                 compile-settings(4) compile-build(5) */
     ASSERT("6 execs total", g_exec_next == 6);
-    ASSERT("compile settings at exec[4]",
-           strstr(g_exec_cmds[4], "showBuildSettings") != NULL);
+    ASSERT("compile settings at exec[4]", strstr(g_exec_cmds[4], "showBuildSettings") != NULL);
 
     session_close(s);
     PASS("compile_while_running");
@@ -796,34 +720,23 @@ static int test_compile_while_running(void)
 
 /* 13. Stale clears on re-deploy: after a COMPILE-while-running makes the
     state stale, a subsequent EXECUTE that redeploys emits REV_STALE(false). */
-static int test_stale_clears_on_execute(void)
-{
+static int test_stale_clears_on_execute(void) {
     stub_run_reset();
     /* First EXECUTE */
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
-    g_run_resp[3] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     /* COMPILE-while-running */
-    g_run_resp[4] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[5] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[4] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[5] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     /* Second EXECUTE (from IDLE after console EOF) */
-    g_run_resp[6] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[7] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[8] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[6] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[7] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[8] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
     /* launch for second run: streaming, but g_run_stop_stream will already
        be 1 so it EOFs immediately after sending data */
-    g_run_resp[9] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[9] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     g_run_resp_count = 10;
 
     Session *s = NULL;
@@ -864,17 +777,12 @@ static int test_stale_clears_on_execute(void)
 /* 14. Build marks: REV_BUILD_MARK fires for every chain step with non-empty
    command, and precedes that step's first REV_BUILD_LOG chunk.
    Also verifies compile-only path emits marks for settings and build only. */
-static int test_build_marks(void)
-{
+static int test_build_marks(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
-    g_run_resp[3] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     g_run_resp_count = 4;
 
     Session *s = NULL;
@@ -895,8 +803,7 @@ static int test_build_marks(void)
         SessionRunEvent ev;
         if (session_run_poll(s, &ev)) {
             if (nev < MARK_TEST_EV_CAP) collected[nev++] = ev;
-            if (ev.kind == REV_PHASE && ev.phase == RUN_RUNNING)
-                reached_running = true;
+            if (ev.kind == REV_PHASE && ev.phase == RUN_RUNNING) reached_running = true;
         } else {
             sleep_ms(1);
         }
@@ -908,8 +815,7 @@ static int test_build_marks(void)
     bool mark_seen = false;
     for (int i = 0; i < nev; i++) {
         if (collected[i].kind == REV_BUILD_MARK) {
-            ASSERT("build mark has non-empty command",
-                   collected[i].cmd_summary[0] != '\0');
+            ASSERT("build mark has non-empty command", collected[i].cmd_summary[0] != '\0');
             mark_seen = true;
         }
         if (collected[i].kind == REV_BUILD_LOG && collected[i].len > 0) {
@@ -918,8 +824,7 @@ static int test_build_marks(void)
         /* Reset mark_seen on each INSTALLING/LAUNCHING phase transition
            to enforce per-step ordering. */
         if (collected[i].kind == REV_PHASE &&
-            (collected[i].phase == RUN_INSTALLING ||
-             collected[i].phase == RUN_LAUNCHING)) {
+            (collected[i].phase == RUN_INSTALLING || collected[i].phase == RUN_LAUNCHING)) {
             mark_seen = false;
         }
     }
@@ -928,8 +833,7 @@ static int test_build_marks(void)
     int mark_count = 0;
     for (int i = 0; i < nev; i++)
         if (collected[i].kind == REV_BUILD_MARK) mark_count++;
-    ASSERT("four marks for execute (settings, build, install, launch)",
-           mark_count == 4);
+    ASSERT("four marks for execute (settings, build, install, launch)", mark_count == 4);
 
     g_run_stop_stream = 1;
     session_close(s);
@@ -937,10 +841,8 @@ static int test_build_marks(void)
 
     /* Part 2: compile-only should emit exactly 2 marks (settings + build). */
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     g_run_resp_count = 2;
 
     ASSERT("session open compile", session_open(&s) == SSH_OK);
@@ -955,8 +857,7 @@ static int test_build_marks(void)
         SessionRunEvent ev;
         if (session_run_poll(s, &ev)) {
             if (nev < MARK_TEST_EV_CAP) collected[nev++] = ev;
-            if (ev.kind == REV_PHASE && ev.phase == RUN_IDLE)
-                reached_idle = true;
+            if (ev.kind == REV_PHASE && ev.phase == RUN_IDLE) reached_idle = true;
         } else {
             sleep_ms(1);
         }
@@ -984,13 +885,10 @@ static int test_build_marks(void)
 static const char k_unlock_output[] = "__OSTRICH_PGID__12345\n";
 
 /* 16. No RCMD_SET_KC_PASS → first exec must be xcodebuild -showBuildSettings. */
-static int test_no_kc_pass_skips_unlock(void)
-{
+static int test_no_kc_pass_skips_unlock(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     g_run_resp_count = 2;
 
     Session *s = NULL;
@@ -1004,10 +902,8 @@ static int test_no_kc_pass_skips_unlock(void)
     ASSERT("phase idle", drain_until(s, phase_is, &p));
 
     /* First exec must NOT contain security unlock-keychain. */
-    ASSERT("first exec is settings (no unlock)",
-           strstr(g_exec_cmds[0], "security unlock-keychain") == NULL);
-    ASSERT("first exec is xcodebuild settings",
-           strstr(g_exec_cmds[0], "xcodebuild") != NULL);
+    ASSERT("first exec is settings (no unlock)", strstr(g_exec_cmds[0], "security unlock-keychain") == NULL);
+    ASSERT("first exec is xcodebuild settings", strstr(g_exec_cmds[0], "xcodebuild") != NULL);
     ASSERT("2 execs total (settings + build)", g_exec_next == 2);
 
     session_close(s);
@@ -1016,13 +912,10 @@ static int test_no_kc_pass_skips_unlock(void)
 }
 
 /* 17. RCMD_SET_KC_PASS with empty string → same as no kc_pass. */
-static int test_empty_kc_pass_skips_unlock(void)
-{
+static int test_empty_kc_pass_skips_unlock(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     g_run_resp_count = 2;
 
     Session *s = NULL;
@@ -1037,8 +930,7 @@ static int test_empty_kc_pass_skips_unlock(void)
     RunPhase p = RUN_IDLE;
     ASSERT("phase idle", drain_until(s, phase_is, &p));
 
-    ASSERT("first exec is settings (no unlock)",
-           strstr(g_exec_cmds[0], "security unlock-keychain") == NULL);
+    ASSERT("first exec is settings (no unlock)", strstr(g_exec_cmds[0], "security unlock-keychain") == NULL);
     ASSERT("2 execs total (settings + build)", g_exec_next == 2);
 
     session_close(s);
@@ -1048,18 +940,14 @@ static int test_empty_kc_pass_skips_unlock(void)
 
 /* 18. Non-empty kc_pass + EXECUTE: first exec must be the unlock command,
    unlock exit 0 → chain proceeds; build log contains "> KEYCHAIN UNLOCKED". */
-static int test_unlock_success(void)
-{
+static int test_unlock_success(void) {
     stub_run_reset();
     /* slot 0: unlock step (exit 0) */
-    g_run_resp[0] = (StubRunResp){
-        k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false};
     /* slot 1: settings */
-    g_run_resp[1] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
     /* slot 2: build */
-    g_run_resp[2] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[2] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     g_run_resp_count = 3;
 
     Session *s = NULL;
@@ -1075,21 +963,16 @@ static int test_unlock_success(void)
     /* Collect all build log until IDLE (compile-only ends there). */
     char build_log[8192];
     build_log[0] = '\0';
-    ASSERT("phase idle", collect_build_log_until_phase(s, RUN_IDLE,
-                                                       build_log,
-                                                       sizeof(build_log)));
+    ASSERT("phase idle", collect_build_log_until_phase(s, RUN_IDLE, build_log, sizeof(build_log)));
 
     /* First exec must be the unlock command. */
-    ASSERT("first exec is unlock",
-           strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
+    ASSERT("first exec is unlock", strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
     /* Second exec must be settings. */
     ASSERT("second exec is settings",
-           strstr(g_exec_cmds[1], "xcodebuild") != NULL &&
-           strstr(g_exec_cmds[1], "showBuildSettings") != NULL);
+           strstr(g_exec_cmds[1], "xcodebuild") != NULL && strstr(g_exec_cmds[1], "showBuildSettings") != NULL);
 
     /* Build log must contain the KEYCHAIN UNLOCKED confirmation. */
-    ASSERT("build log has KEYCHAIN UNLOCKED",
-           strstr(build_log, "> KEYCHAIN UNLOCKED") != NULL);
+    ASSERT("build log has KEYCHAIN UNLOCKED", strstr(build_log, "> KEYCHAIN UNLOCKED") != NULL);
 
     /* 3 execs: unlock + settings + build */
     ASSERT("3 execs (unlock + settings + build)", g_exec_next == 3);
@@ -1098,8 +981,7 @@ static int test_unlock_success(void)
     SessionRunEvent ev;
     bool saw_build_failed = false;
     while (session_run_poll(s, &ev)) {
-        if (ev.kind == REV_PHASE && ev.phase == RUN_BUILD_FAILED)
-            saw_build_failed = true;
+        if (ev.kind == REV_PHASE && ev.phase == RUN_BUILD_FAILED) saw_build_failed = true;
     }
     ASSERT("no RUN_BUILD_FAILED on unlock success", !saw_build_failed);
 
@@ -1111,13 +993,10 @@ static int test_unlock_success(void)
 /* 19. Non-empty kc_pass, unlock exits non-zero → build log has
    "KEYCHAIN UNLOCK REJECTED." before RUN_BUILD_FAILED(BD_ERR_UNLOCK_FAILED);
    chain does not advance to SETTINGS. */
-static int test_unlock_failure(void)
-{
+static int test_unlock_failure(void) {
     stub_run_reset();
     /* slot 0: unlock step (exit 1) */
-    g_run_resp[0] = (StubRunResp){
-        "security: SecKeychainUnlock <SecKeychainRef: 0x7f>\n",
-        51, 1, false, false };
+    g_run_resp[0] = (StubRunResp){"security: SecKeychainUnlock <SecKeychainRef: 0x7f>\n", 51, 1, false, false};
     g_run_resp_count = 1;
 
     Session *s = NULL;
@@ -1132,21 +1011,16 @@ static int test_unlock_failure(void)
     /* Collect build log until RUN_BUILD_FAILED. */
     char build_log[8192];
     build_log[0] = '\0';
-    ASSERT("phase build_failed",
-           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
-                                         build_log, sizeof(build_log)));
+    ASSERT("phase build_failed", collect_build_log_until_phase(s, RUN_BUILD_FAILED, build_log, sizeof(build_log)));
 
     /* Build log must contain the F1 help block header. */
-    ASSERT("build log has KEYCHAIN UNLOCK REJECTED",
-           strstr(build_log, "KEYCHAIN UNLOCK REJECTED.") != NULL);
+    ASSERT("build log has KEYCHAIN UNLOCK REJECTED", strstr(build_log, "KEYCHAIN UNLOCK REJECTED.") != NULL);
     /* And the ssh remediation line. */
-    ASSERT("build log has ssh remediation",
-           strstr(build_log, "ssh ") != NULL);
+    ASSERT("build log has ssh remediation", strstr(build_log, "ssh ") != NULL);
 
     /* Only 1 exec (the unlock); chain never reached settings. */
     ASSERT("only 1 exec (unlock only)", g_exec_next == 1);
-    ASSERT("first exec is unlock",
-           strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
+    ASSERT("first exec is unlock", strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
 
     session_close(s);
     PASS("unlock_failure");
@@ -1156,16 +1030,12 @@ static int test_unlock_failure(void)
 /* 20. kc_pass set in session A does NOT leak into session B.
    After session A closes and session B opens without SET_KC_PASS, the
    first exec in B is the settings step, not the unlock step. */
-static int test_kc_pass_not_inherited_across_sessions(void)
-{
+static int test_kc_pass_not_inherited_across_sessions(void) {
     /* Session A: set kc_pass and let it run one unlock+compile. */
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     g_run_resp_count = 3;
 
     Session *sA = NULL;
@@ -1178,16 +1048,13 @@ static int test_kc_pass_not_inherited_across_sessions(void)
 
     RunPhase p = RUN_IDLE;
     ASSERT("session A idle", drain_until(sA, phase_is, &p));
-    ASSERT("session A first exec was unlock",
-           strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
+    ASSERT("session A first exec was unlock", strstr(g_exec_cmds[0], "security unlock-keychain") != NULL);
     session_close(sA);
 
     /* Session B: no SET_KC_PASS; first exec must be settings. */
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
     g_run_resp_count = 2;
 
     Session *sB = NULL;
@@ -1202,8 +1069,7 @@ static int test_kc_pass_not_inherited_across_sessions(void)
 
     ASSERT("session B first exec is settings (kc_pass not inherited)",
            strstr(g_exec_cmds[0], "security unlock-keychain") == NULL);
-    ASSERT("session B first exec is xcodebuild",
-           strstr(g_exec_cmds[0], "xcodebuild") != NULL);
+    ASSERT("session B first exec is xcodebuild", strstr(g_exec_cmds[0], "xcodebuild") != NULL);
 
     session_close(sB);
     PASS("kc_pass_not_inherited_across_sessions");
@@ -1214,11 +1080,9 @@ static int test_kc_pass_not_inherited_across_sessions(void)
 
 /* Build output that has a pgid marker (so setsid branch does NOT fire)
    but exits non-zero. */
-static const char k_build_fail_with_pgid[] =
-    "xcodebuild output\n__OSTRICH_PGID__99001\nbuild error\n";
+static const char k_build_fail_with_pgid[] = "xcodebuild output\n__OSTRICH_PGID__99001\nbuild error\n";
 
-static SessionRunCmd make_sim_execute_cmd(void)
-{
+static SessionRunCmd make_sim_execute_cmd(void) {
     SessionRunCmd cmd = make_execute_cmd();
     cmd.target.is_simulator = true;
     snprintf(cmd.target.udid, sizeof(cmd.target.udid), "SIM-UDID-001");
@@ -1227,35 +1091,26 @@ static SessionRunCmd make_sim_execute_cmd(void)
 
 /* 21. Non-sim device, empty kc_pass, build fails with pgid marker →
    H2 hint phrases appear in the build log before RUN_BUILD_FAILED. */
-static int test_h2_hint_fires_on_nonsim_build_failure(void)
-{
+static int test_h2_hint_fires_on_nonsim_build_failure(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1,
-        1, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1, 1, false, false};
     g_run_resp_count = 2;
 
     Session *s = NULL;
     ASSERT("session open", session_open(&s) == SSH_OK);
     ASSERT("online", connect_and_wait_online(s));
 
-    SessionRunCmd cmd = make_execute_cmd();  /* device, is_simulator = false */
+    SessionRunCmd cmd = make_execute_cmd(); /* device, is_simulator = false */
     ASSERT("submit execute", session_run_submit(s, &cmd));
 
     char build_log[8192];
     build_log[0] = '\0';
-    ASSERT("phase build_failed",
-           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
-                                         build_log, sizeof(build_log)));
+    ASSERT("phase build_failed", collect_build_log_until_phase(s, RUN_BUILD_FAILED, build_log, sizeof(build_log)));
 
-    ASSERT("H2 hint: errSecInternalComponent present",
-           strstr(build_log, "errSecInternalComponent") != NULL);
-    ASSERT("H2 hint: keychain may be locked present",
-           strstr(build_log, "keychain may be locked") != NULL);
-    ASSERT("H2 hint: HINT rule present",
-           strstr(build_log, "── HINT ──") != NULL);
+    ASSERT("H2 hint: errSecInternalComponent present", strstr(build_log, "errSecInternalComponent") != NULL);
+    ASSERT("H2 hint: keychain may be locked present", strstr(build_log, "keychain may be locked") != NULL);
+    ASSERT("H2 hint: HINT rule present", strstr(build_log, "── HINT ──") != NULL);
 
     /* Only 2 execs: settings + build; no unlock since kc_pass was empty. */
     ASSERT("only 2 execs (settings + build)", g_exec_next == 2);
@@ -1266,33 +1121,25 @@ static int test_h2_hint_fires_on_nonsim_build_failure(void)
 }
 
 /* 22. Simulator target, empty kc_pass, build fails → H2 hint NOT emitted. */
-static int test_h2_hint_absent_for_simulator(void)
-{
+static int test_h2_hint_absent_for_simulator(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1,
-        1, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1, 1, false, false};
     g_run_resp_count = 2;
 
     Session *s = NULL;
     ASSERT("session open", session_open(&s) == SSH_OK);
     ASSERT("online", connect_and_wait_online(s));
 
-    SessionRunCmd cmd = make_sim_execute_cmd();  /* simulator target */
+    SessionRunCmd cmd = make_sim_execute_cmd(); /* simulator target */
     ASSERT("submit execute", session_run_submit(s, &cmd));
 
     char build_log[8192];
     build_log[0] = '\0';
-    ASSERT("phase build_failed",
-           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
-                                         build_log, sizeof(build_log)));
+    ASSERT("phase build_failed", collect_build_log_until_phase(s, RUN_BUILD_FAILED, build_log, sizeof(build_log)));
 
-    ASSERT("H2 hint absent for simulator",
-           strstr(build_log, "errSecInternalComponent") == NULL);
-    ASSERT("H2 HINT rule absent for simulator",
-           strstr(build_log, "── HINT ──") == NULL);
+    ASSERT("H2 hint absent for simulator", strstr(build_log, "errSecInternalComponent") == NULL);
+    ASSERT("H2 HINT rule absent for simulator", strstr(build_log, "── HINT ──") == NULL);
 
     session_close(s);
     PASS("h2_hint_absent_for_simulator");
@@ -1301,19 +1148,14 @@ static int test_h2_hint_absent_for_simulator(void)
 
 /* 23. Non-sim device, kc_pass non-empty (unlock succeeds), build fails →
    H2 hint NOT emitted (user already provided passkey; keychain isn't the issue). */
-static int test_h2_hint_absent_when_kc_pass_set(void)
-{
+static int test_h2_hint_absent_when_kc_pass_set(void) {
     stub_run_reset();
     /* slot 0: unlock step (exit 0) */
-    g_run_resp[0] = (StubRunResp){
-        k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_unlock_output, sizeof(k_unlock_output) - 1, 0, false, false};
     /* slot 1: settings */
-    g_run_resp[1] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[1] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
     /* slot 2: build fails with pgid marker */
-    g_run_resp[2] = (StubRunResp){
-        k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1,
-        1, false, false };
+    g_run_resp[2] = (StubRunResp){k_build_fail_with_pgid, sizeof(k_build_fail_with_pgid) - 1, 1, false, false};
     g_run_resp_count = 3;
 
     Session *s = NULL;
@@ -1322,19 +1164,15 @@ static int test_h2_hint_absent_when_kc_pass_set(void)
 
     ASSERT("set kc_pass", session_set_kc_pass(s, "mypasskey"));
 
-    SessionRunCmd cmd = make_execute_cmd();  /* device, is_simulator = false */
+    SessionRunCmd cmd = make_execute_cmd(); /* device, is_simulator = false */
     ASSERT("submit execute", session_run_submit(s, &cmd));
 
     char build_log[8192];
     build_log[0] = '\0';
-    ASSERT("phase build_failed",
-           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
-                                         build_log, sizeof(build_log)));
+    ASSERT("phase build_failed", collect_build_log_until_phase(s, RUN_BUILD_FAILED, build_log, sizeof(build_log)));
 
-    ASSERT("H2 hint absent when kc_pass was set",
-           strstr(build_log, "errSecInternalComponent") == NULL);
-    ASSERT("H2 HINT rule absent when kc_pass was set",
-           strstr(build_log, "── HINT ──") == NULL);
+    ASSERT("H2 hint absent when kc_pass was set", strstr(build_log, "errSecInternalComponent") == NULL);
+    ASSERT("H2 HINT rule absent when kc_pass was set", strstr(build_log, "── HINT ──") == NULL);
 
     /* 3 execs: unlock + settings + build */
     ASSERT("3 execs (unlock + settings + build)", g_exec_next == 3);
@@ -1347,41 +1185,146 @@ static int test_h2_hint_absent_when_kc_pass_set(void)
 /* 24. Cross-feature: setsid-missing failure (pgid == 0), non-sim, empty kc_pass →
    setsid help block fires (not the H2 hint). The setsid branch returns before the
    H2 hint check so both never fire together. */
-static int test_setsid_failure_not_h2_hint(void)
-{
+static int test_setsid_failure_not_h2_hint(void) {
     stub_run_reset();
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
     /* Build output without pgid marker → triggers setsid-missing path */
-    g_run_resp[1] = (StubRunResp){
-        "build error\n", 12, 1, false, false };
+    g_run_resp[1] = (StubRunResp){"build error\n", 12, 1, false, false};
     g_run_resp_count = 2;
 
     Session *s = NULL;
     ASSERT("session open", session_open(&s) == SSH_OK);
     ASSERT("online", connect_and_wait_online(s));
 
-    SessionRunCmd cmd = make_execute_cmd();  /* device, is_simulator = false */
+    SessionRunCmd cmd = make_execute_cmd(); /* device, is_simulator = false */
     ASSERT("submit execute", session_run_submit(s, &cmd));
 
     char build_log[8192];
     build_log[0] = '\0';
-    ASSERT("phase build_failed",
-           collect_build_log_until_phase(s, RUN_BUILD_FAILED,
-                                         build_log, sizeof(build_log)));
+    ASSERT("phase build_failed", collect_build_log_until_phase(s, RUN_BUILD_FAILED, build_log, sizeof(build_log)));
 
     /* Setsid help block must appear (existing behavior). */
-    ASSERT("setsid help block in build log",
-           strstr(build_log, "REMOTE MAC IS MISSING setsid.") != NULL);
+    ASSERT("setsid help block in build log", strstr(build_log, "REMOTE MAC IS MISSING setsid.") != NULL);
 
     /* H2 hint must NOT appear (setsid branch returns before hint check). */
-    ASSERT("H2 hint absent on setsid-missing failure",
-           strstr(build_log, "errSecInternalComponent") == NULL);
-    ASSERT("H2 HINT rule absent on setsid-missing failure",
-           strstr(build_log, "── HINT ──") == NULL);
+    ASSERT("H2 hint absent on setsid-missing failure", strstr(build_log, "errSecInternalComponent") == NULL);
+    ASSERT("H2 HINT rule absent on setsid-missing failure", strstr(build_log, "── HINT ──") == NULL);
 
     session_close(s);
     PASS("setsid_failure_not_h2_hint");
+    return 0;
+}
+
+/* ── T14: reliable build-failure detection ───────────────────────── */
+
+/* Build output that carries a non-zero EXIT marker with channel exit 0.
+   This simulates the masked-exit case: setsid reports 0 but xcodebuild
+   actually failed. */
+static const char k_build_output_exit1[] = "xcodebuild output\n__OSTRICH_PGID__99001\nbuild error output\n"
+                                           "__OSTRICH_EXIT__1\n";
+
+/* Build output that carries a zero EXIT marker with channel exit 1.
+   This simulates the opposite case: channel exit 1 (setsid quirk) but
+   xcodebuild actually succeeded.  The EXIT marker takes priority. */
+static const char k_build_output_exit0_chan1[] = "xcodebuild output\n__OSTRICH_PGID__99001\nBUILD SUCCEEDED\n"
+                                                 "__OSTRICH_EXIT__0\n";
+
+/* Build output that contains both markers plus real xcodebuild lines. */
+static const char k_build_output_both_markers[] = "xcodebuild starting\n"
+                                                  "__OSTRICH_PGID__99001\n"
+                                                  "Building...\n"
+                                                  "BUILD SUCCEEDED\n"
+                                                  "__OSTRICH_EXIT__0\n";
+
+/* 26. Non-zero EXIT marker with channel exit 0 → RUN_BUILD_FAILED; no install/launch. */
+static int test_build_exit_marker_nonzero(void) {
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    /* Channel exits 0 (setsid's exit); EXIT marker carries the real failure. */
+    g_run_resp[1] = (StubRunResp){k_build_output_exit1, sizeof(k_build_output_exit1) - 1, 0, false, false};
+    g_run_resp_count = 2;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    /* EXIT marker 1 overrides channel exit 0 → build failed */
+    RunPhase p = RUN_BUILD_FAILED;
+    ASSERT("phase build_failed on exit marker 1", drain_until(s, phase_is, &p));
+
+    /* Only 2 execs (settings + build); chain stops before install/launch. */
+    ASSERT("no install/launch (only 2 execs)", g_exec_next == 2);
+
+    session_close(s);
+    PASS("build_exit_marker_nonzero");
+    return 0;
+}
+
+/* 27. Zero EXIT marker with channel exit 1 → build succeeds; proceeds to install. */
+static int test_build_exit_marker_zero(void) {
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    /* Channel exits 1 (setsid quirk); EXIT marker 0 means xcodebuild succeeded. */
+    g_run_resp[1] = (StubRunResp){k_build_output_exit0_chan1, sizeof(k_build_output_exit0_chan1) - 1, 1, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
+    g_run_resp_count = 4;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    /* EXIT marker 0 overrides channel exit 1 → install proceeds */
+    RunPhase p = RUN_INSTALLING;
+    ASSERT("phase installing (zero marker overrides channel exit 1)", drain_until(s, phase_is, &p));
+
+    p = RUN_RUNNING;
+    ASSERT("phase running", drain_until(s, phase_is, &p));
+
+    g_run_stop_stream = 1;
+    session_close(s);
+    PASS("build_exit_marker_zero");
+    return 0;
+}
+
+/* 28. __OSTRICH_* lines are stripped from REV_BUILD_LOG; real output is present. */
+static int test_build_markers_stripped(void) {
+    stub_run_reset();
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] =
+        (StubRunResp){k_build_output_both_markers, sizeof(k_build_output_both_markers) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
+    g_run_resp[3] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
+    g_run_resp_count = 4;
+
+    Session *s = NULL;
+    ASSERT("session open", session_open(&s) == SSH_OK);
+    ASSERT("online", connect_and_wait_online(s));
+
+    SessionRunCmd cmd = make_execute_cmd();
+    ASSERT("submit execute", session_run_submit(s, &cmd));
+
+    char build_log[8192];
+    build_log[0] = '\0';
+    ASSERT("reached running", collect_build_log_until_phase(s, RUN_RUNNING, build_log, sizeof(build_log)));
+
+    /* __OSTRICH_* control tokens must not appear in build log. */
+    ASSERT("PGID marker stripped", strstr(build_log, "__OSTRICH_PGID__") == NULL);
+    ASSERT("EXIT marker stripped", strstr(build_log, "__OSTRICH_EXIT__") == NULL);
+
+    /* Real xcodebuild output must be present. */
+    ASSERT("xcodebuild starting present", strstr(build_log, "xcodebuild starting") != NULL);
+    ASSERT("BUILD SUCCEEDED present", strstr(build_log, "BUILD SUCCEEDED") != NULL);
+
+    g_run_stop_stream = 1;
+    session_close(s);
+    PASS("build_markers_stripped");
     return 0;
 }
 
@@ -1389,28 +1332,22 @@ static int test_setsid_failure_not_h2_hint(void)
 
 /* 25. Simulator EXECUTE: the prime phase issues a SINGLE bootstatus -b exec
    (no separate boot exec), then flows build → prime → install → launch. */
-static int test_simulator_prime(void)
-{
+static int test_simulator_prime(void) {
     stub_run_reset();
     /* settings(0) → build(1) → prime/bootstatus(2) → install(3) → launch(4) */
-    g_run_resp[0] = (StubRunResp){
-        k_settings_json, sizeof(k_settings_json) - 1, 0, false, false };
-    g_run_resp[1] = (StubRunResp){
-        k_build_output, sizeof(k_build_output) - 1, 0, false, false };
-    g_run_resp[2] = (StubRunResp){
-        "Booting simulator...\n", 21, 0, false, false };
-    g_run_resp[3] = (StubRunResp){
-        k_install_output, sizeof(k_install_output) - 1, 0, false, false };
+    g_run_resp[0] = (StubRunResp){k_settings_json, sizeof(k_settings_json) - 1, 0, false, false};
+    g_run_resp[1] = (StubRunResp){k_build_output, sizeof(k_build_output) - 1, 0, false, false};
+    g_run_resp[2] = (StubRunResp){"Booting simulator...\n", 21, 0, false, false};
+    g_run_resp[3] = (StubRunResp){k_install_output, sizeof(k_install_output) - 1, 0, false, false};
     /* Streaming launch channel: won't EOF until g_run_stop_stream is set. */
-    g_run_resp[4] = (StubRunResp){
-        k_device_output, sizeof(k_device_output) - 1, 0, true, false };
+    g_run_resp[4] = (StubRunResp){k_device_output, sizeof(k_device_output) - 1, 0, true, false};
     g_run_resp_count = 5;
 
     Session *s = NULL;
     ASSERT("session open", session_open(&s) == SSH_OK);
     ASSERT("online", connect_and_wait_online(s));
 
-    SessionRunCmd cmd = make_sim_execute_cmd();  /* simulator target */
+    SessionRunCmd cmd = make_sim_execute_cmd(); /* simulator target */
     ASSERT("submit execute sim", session_run_submit(s, &cmd));
 
     RunPhase p = RUN_PRIMING;
@@ -1429,8 +1366,7 @@ static int test_simulator_prime(void)
     /* 5 execs: settings, build, bootstatus, install, launch — NOT 6. */
     ASSERT("5 execs (single prime exec)", g_exec_next == 5);
     /* exec[2] is bootstatus -b with no separate boot exec before it. */
-    ASSERT("prime exec contains bootstatus",
-           strstr(g_exec_cmds[2], "bootstatus") != NULL);
+    ASSERT("prime exec contains bootstatus", strstr(g_exec_cmds[2], "bootstatus") != NULL);
     ASSERT("prime exec contains -b", strstr(g_exec_cmds[2], "-b") != NULL);
     ASSERT("prime exec no --wait", strstr(g_exec_cmds[2], "--wait") == NULL);
     ASSERT("install at exec[3]", strstr(g_exec_cmds[3], "install") != NULL);
@@ -1442,11 +1378,10 @@ static int test_simulator_prime(void)
 
 /* ── main ─────────────────────────────────────────────────────────── */
 
-int main(void)
-{
+int main(void) {
     /* Initialize debug log to /tmp so we don't pollute the real log. */
     (void)setenv("OSTRICH_LOG_FILE", "/tmp/ostrich_session_run_test.log", 1);
-    (void)setenv("OSTRICH_LOG",      "trace", 1);
+    (void)setenv("OSTRICH_LOG", "trace", 1);
     log_init();
 
     int rc = 0;
@@ -1475,6 +1410,9 @@ int main(void)
     rc |= test_h2_hint_absent_when_kc_pass_set();
     rc |= test_setsid_failure_not_h2_hint();
     rc |= test_simulator_prime();
+    rc |= test_build_exit_marker_nonzero();
+    rc |= test_build_exit_marker_zero();
+    rc |= test_build_markers_stripped();
 
     log_shutdown();
     unlink("/tmp/ostrich_session_run_test.log");

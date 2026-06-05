@@ -1,20 +1,27 @@
 #include "../include/builddeploy.h"
+
 #include <stdio.h>
 #include <string.h>
 
 #define PASS(name) printf("PASS: %s\n", (name))
-#define FAIL(name) do { printf("FAIL: %s\n", (name)); return 1; } while (0)
-#define ASSERT(name, cond) do { if (!(cond)) FAIL(name); } while (0)
+#define FAIL(name)                    \
+    do {                              \
+        printf("FAIL: %s\n", (name)); \
+        return 1;                     \
+    } while (0)
+#define ASSERT(name, cond)       \
+    do {                         \
+        if (!(cond)) FAIL(name); \
+    } while (0)
 
 /* ── helpers ──────────────────────────────────────────────────────── */
 
-static RunConfig make_config(const char *project, const char *scheme,
-                              const char *config) {
+static RunConfig make_config(const char *project, const char *scheme, const char *config) {
     RunConfig rc;
     memset(&rc, 0, sizeof(rc));
     snprintf(rc.project, sizeof(rc.project), "%s", project);
-    snprintf(rc.scheme,  sizeof(rc.scheme),  "%s", scheme);
-    snprintf(rc.config,  sizeof(rc.config),  "%s", config);
+    snprintf(rc.scheme, sizeof(rc.scheme), "%s", scheme);
+    snprintf(rc.config, sizeof(rc.config), "%s", config);
     snprintf(rc.bundle_id, sizeof(rc.bundle_id), "com.example.app");
     return rc;
 }
@@ -25,7 +32,7 @@ static Target make_device(const char *udid) {
     snprintf(t.udid, sizeof(t.udid), "%s", udid);
     snprintf(t.name, sizeof(t.name), "iPhone 15");
     t.is_simulator = false;
-    t.booted       = false;
+    t.booted = false;
     return t;
 }
 
@@ -35,7 +42,7 @@ static Target make_sim(const char *udid) {
     snprintf(t.udid, sizeof(t.udid), "%s", udid);
     snprintf(t.name, sizeof(t.name), "iPhone 15 Sim");
     t.is_simulator = true;
-    t.booted       = false;
+    t.booted = false;
     return t;
 }
 
@@ -82,13 +89,13 @@ static int test_settings_cmd_no_target(void) {
     RunConfig rc = make_config("/proj/App.xcodeproj", "App", "Debug");
     BdStatus s = bd_settings_cmd(&rc, NULL, false, buf, sizeof(buf));
     ASSERT("settings no-target ok", s == BD_OK);
-    ASSERT("settings xcodebuild",   has(buf, "xcodebuild"));
+    ASSERT("settings xcodebuild", has(buf, "xcodebuild"));
     ASSERT("settings -showBuildSettings", has(buf, "-showBuildSettings"));
-    ASSERT("settings -json",        has(buf, "-json"));
-    ASSERT("settings -project",     has(buf, "-project"));
-    ASSERT("settings path quoted",  has(buf, "'/proj/App.xcodeproj'"));
-    ASSERT("settings scheme",       has(buf, "-scheme"));
-    ASSERT("settings config",       has(buf, "-configuration"));
+    ASSERT("settings -json", has(buf, "-json"));
+    ASSERT("settings -project", has(buf, "-project"));
+    ASSERT("settings path quoted", has(buf, "'/proj/App.xcodeproj'"));
+    ASSERT("settings scheme", has(buf, "-scheme"));
+    ASSERT("settings config", has(buf, "-configuration"));
     ASSERT("settings generic dest", has(buf, "generic/platform=iOS"));
     PASS("settings_cmd_no_target");
     return 0;
@@ -101,7 +108,7 @@ static int test_settings_cmd_workspace(void) {
     BdStatus s = bd_settings_cmd(&rc, &t, true, buf, sizeof(buf));
     ASSERT("workspace ok", s == BD_OK);
     ASSERT("workspace flag", has(buf, "-workspace"));
-    ASSERT("no -project",   !has(buf, "-project"));
+    ASSERT("no -project", !has(buf, "-project"));
     PASS("settings_cmd_workspace");
     return 0;
 }
@@ -123,12 +130,14 @@ static int test_build_cmd_has_setsid_and_marker(void) {
     char buf[8192];
     RunConfig rc = make_config("/proj/App.xcodeproj", "MyScheme", "Debug");
     BdStatus s = bd_build_cmd(&rc, NULL, false, buf, sizeof(buf));
-    ASSERT("build ok",     s == BD_OK);
-    ASSERT("has setsid",   has(buf, "setsid"));
-    ASSERT("has sh -c",    has(buf, "sh -c"));
-    ASSERT("has marker",   has(buf, "__OSTRICH_PGID__"));
+    ASSERT("build ok", s == BD_OK);
+    ASSERT("has setsid", has(buf, "setsid"));
+    ASSERT("has sh -c", has(buf, "sh -c"));
+    ASSERT("has PGID marker", has(buf, "__OSTRICH_PGID__"));
+    ASSERT("has EXIT marker", has(buf, "__OSTRICH_EXIT__"));
     ASSERT("has xcodebuild", has(buf, "xcodebuild"));
-    ASSERT("has -showBuildSettings not present", !has(buf, "-showBuildSettings"));
+    ASSERT("no exec xcodebuild", !has(buf, "exec xcodebuild"));
+    ASSERT("no -showBuildSettings", !has(buf, "-showBuildSettings"));
     PASS("build_cmd_has_setsid_and_marker");
     return 0;
 }
@@ -138,7 +147,7 @@ static int test_build_cmd_no_target_generic_dest(void) {
     RunConfig rc = make_config("/proj/App.xcodeproj", "App", "Debug");
     BdStatus s = bd_build_cmd(&rc, NULL, false, buf, sizeof(buf));
     ASSERT("no-target ok", s == BD_OK);
-    ASSERT("generic dest",  has(buf, "generic/platform=iOS"));
+    ASSERT("generic dest", has(buf, "generic/platform=iOS"));
     PASS("build_cmd_no_target");
     return 0;
 }
@@ -161,12 +170,12 @@ static int test_bootstatus_cmd(void) {
     char buf[1024];
     Target t = make_sim("SIM-UDID-1234");
     BdStatus s = bd_bootstatus_cmd(&t, buf, sizeof(buf));
-    ASSERT("bootstatus ok",     s == BD_OK);
+    ASSERT("bootstatus ok", s == BD_OK);
     ASSERT("bootstatus simctl", has(buf, "simctl"));
-    ASSERT("bootstatus verb",   has(buf, "bootstatus"));
-    ASSERT("bootstatus udid",   has(buf, "SIM-UDID-1234"));
+    ASSERT("bootstatus verb", has(buf, "bootstatus"));
+    ASSERT("bootstatus udid", has(buf, "SIM-UDID-1234"));
     /* idempotent boot: -b boots-if-needed + waits; no undocumented --wait */
-    ASSERT("bootstatus -b",     has(buf, "-b"));
+    ASSERT("bootstatus -b", has(buf, "-b"));
     ASSERT("bootstatus no wait", !has(buf, "--wait"));
     PASS("bootstatus_cmd");
     return 0;
@@ -178,11 +187,11 @@ static int test_install_cmd_device(void) {
     char buf[4096];
     Target t = make_device("DEV-UDID-XYZ");
     BdStatus s = bd_install_cmd(&t, "/build/MyApp.app", buf, sizeof(buf));
-    ASSERT("install device ok",       s == BD_OK);
+    ASSERT("install device ok", s == BD_OK);
     ASSERT("install device devicectl", has(buf, "devicectl"));
-    ASSERT("install device udid",     has(buf, "DEV-UDID-XYZ"));
+    ASSERT("install device udid", has(buf, "DEV-UDID-XYZ"));
     ASSERT("install device app path", has(buf, "'/build/MyApp.app'"));
-    ASSERT("no simctl",               !has(buf, "simctl"));
+    ASSERT("no simctl", !has(buf, "simctl"));
     PASS("install_cmd_device");
     return 0;
 }
@@ -191,11 +200,11 @@ static int test_install_cmd_sim(void) {
     char buf[4096];
     Target t = make_sim("SIM-UDID-XYZ");
     BdStatus s = bd_install_cmd(&t, "/build/MyApp.app", buf, sizeof(buf));
-    ASSERT("install sim ok",     s == BD_OK);
+    ASSERT("install sim ok", s == BD_OK);
     ASSERT("install sim simctl", has(buf, "simctl"));
     ASSERT("install sim install", has(buf, "install"));
-    ASSERT("install sim udid",   has(buf, "SIM-UDID-XYZ"));
-    ASSERT("no devicectl",       !has(buf, "devicectl"));
+    ASSERT("install sim udid", has(buf, "SIM-UDID-XYZ"));
+    ASSERT("no devicectl", !has(buf, "devicectl"));
     PASS("install_cmd_sim");
     return 0;
 }
@@ -206,15 +215,15 @@ static int test_launch_cmd_device(void) {
     char buf[4096];
     Target t = make_device("DEV-UDID-LAUNCH");
     BdStatus s = bd_launch_cmd(&t, "com.example.App", buf, sizeof(buf));
-    ASSERT("launch device ok",          s == BD_OK);
-    ASSERT("launch device setsid",      has(buf, "setsid"));
-    ASSERT("launch device marker",      has(buf, "__OSTRICH_PGID__"));
-    ASSERT("launch device console",     has(buf, "--console"));
-    ASSERT("launch device no pty",      !has(buf, "--console-pty"));
-    ASSERT("launch device devicectl",   has(buf, "devicectl"));
-    ASSERT("launch device udid",        has(buf, "DEV-UDID-LAUNCH"));
-    ASSERT("launch device bundle",      has(buf, "com.example.App"));
-    ASSERT("no simctl",                 !has(buf, "simctl"));
+    ASSERT("launch device ok", s == BD_OK);
+    ASSERT("launch device setsid", has(buf, "setsid"));
+    ASSERT("launch device marker", has(buf, "__OSTRICH_PGID__"));
+    ASSERT("launch device console", has(buf, "--console"));
+    ASSERT("launch device no pty", !has(buf, "--console-pty"));
+    ASSERT("launch device devicectl", has(buf, "devicectl"));
+    ASSERT("launch device udid", has(buf, "DEV-UDID-LAUNCH"));
+    ASSERT("launch device bundle", has(buf, "com.example.App"));
+    ASSERT("no simctl", !has(buf, "simctl"));
     PASS("launch_cmd_device");
     return 0;
 }
@@ -223,14 +232,14 @@ static int test_launch_cmd_sim(void) {
     char buf[4096];
     Target t = make_sim("SIM-UDID-LAUNCH");
     BdStatus s = bd_launch_cmd(&t, "com.example.App", buf, sizeof(buf));
-    ASSERT("launch sim ok",         s == BD_OK);
-    ASSERT("launch sim setsid",     has(buf, "setsid"));
-    ASSERT("launch sim marker",     has(buf, "__OSTRICH_PGID__"));
+    ASSERT("launch sim ok", s == BD_OK);
+    ASSERT("launch sim setsid", has(buf, "setsid"));
+    ASSERT("launch sim marker", has(buf, "__OSTRICH_PGID__"));
     /* simulator uses --console-pty so the app's stdout is line-buffered */
     ASSERT("launch sim console-pty", has(buf, "--console-pty"));
-    ASSERT("launch sim simctl",     has(buf, "simctl"));
-    ASSERT("launch sim udid",       has(buf, "SIM-UDID-LAUNCH"));
-    ASSERT("no devicectl",          !has(buf, "devicectl"));
+    ASSERT("launch sim simctl", has(buf, "simctl"));
+    ASSERT("launch sim udid", has(buf, "SIM-UDID-LAUNCH"));
+    ASSERT("no devicectl", !has(buf, "devicectl"));
     PASS("launch_cmd_sim");
     return 0;
 }
@@ -241,11 +250,11 @@ static int test_terminate_cmd_device(void) {
     char buf[2048];
     Target t = make_device("DEV-UDID-TERM");
     BdStatus s = bd_terminate_cmd(&t, "com.example.App", buf, sizeof(buf));
-    ASSERT("terminate device ok",      s == BD_OK);
-    ASSERT("terminate devicectl",      has(buf, "devicectl"));
-    ASSERT("terminate udid",           has(buf, "DEV-UDID-TERM"));
-    ASSERT("terminate bundle",         has(buf, "com.example.App"));
-    ASSERT("no simctl",                !has(buf, "simctl"));
+    ASSERT("terminate device ok", s == BD_OK);
+    ASSERT("terminate devicectl", has(buf, "devicectl"));
+    ASSERT("terminate udid", has(buf, "DEV-UDID-TERM"));
+    ASSERT("terminate bundle", has(buf, "com.example.App"));
+    ASSERT("no simctl", !has(buf, "simctl"));
     PASS("terminate_cmd_device");
     return 0;
 }
@@ -254,11 +263,11 @@ static int test_terminate_cmd_sim(void) {
     char buf[2048];
     Target t = make_sim("SIM-UDID-TERM");
     BdStatus s = bd_terminate_cmd(&t, "com.example.App", buf, sizeof(buf));
-    ASSERT("terminate sim ok",    s == BD_OK);
-    ASSERT("terminate simctl",    has(buf, "simctl"));
+    ASSERT("terminate sim ok", s == BD_OK);
+    ASSERT("terminate simctl", has(buf, "simctl"));
     ASSERT("terminate terminate", has(buf, "terminate"));
-    ASSERT("terminate udid",      has(buf, "SIM-UDID-TERM"));
-    ASSERT("no devicectl",        !has(buf, "devicectl"));
+    ASSERT("terminate udid", has(buf, "SIM-UDID-TERM"));
+    ASSERT("no devicectl", !has(buf, "devicectl"));
     PASS("terminate_cmd_sim");
     return 0;
 }
@@ -268,10 +277,10 @@ static int test_terminate_cmd_sim(void) {
 static int test_kill_cmd(void) {
     char buf[256];
     BdStatus s = bd_kill_cmd(12345, buf, sizeof(buf));
-    ASSERT("kill ok",   s == BD_OK);
-    ASSERT("kill cmd",  has(buf, "kill"));
+    ASSERT("kill ok", s == BD_OK);
+    ASSERT("kill cmd", has(buf, "kill"));
     ASSERT("kill pgid", has(buf, "-12345"));
-    ASSERT("kill --",   has(buf, "--"));
+    ASSERT("kill --", has(buf, "--"));
     PASS("kill_cmd");
     return 0;
 }
@@ -289,12 +298,12 @@ static const char *k_settings_json =
 
 static int test_parse_product_path_happy(void) {
     char out[4096];
-    Str json = { k_settings_json, strlen(k_settings_json) };
+    Str json = {k_settings_json, strlen(k_settings_json)};
     BdStatus s = bd_parse_product_path(json, out, sizeof(out));
-    ASSERT("parse ok",         s == BD_OK);
-    ASSERT("parse dir",        has(out, "/Users/jake/DerivedData/App/Build/Products/Debug-iphoneos"));
-    ASSERT("parse product",    has(out, "MyApp.app"));
-    ASSERT("parse slash",      has(out, "/MyApp.app"));
+    ASSERT("parse ok", s == BD_OK);
+    ASSERT("parse dir", has(out, "/Users/jake/DerivedData/App/Build/Products/Debug-iphoneos"));
+    ASSERT("parse product", has(out, "MyApp.app"));
+    ASSERT("parse slash", has(out, "/MyApp.app"));
     PASS("parse_product_path_happy");
     return 0;
 }
@@ -302,7 +311,7 @@ static int test_parse_product_path_happy(void) {
 static int test_parse_product_path_malformed(void) {
     char out[256];
     const char *bad = "not json at all {{{{";
-    Str json = { bad, strlen(bad) };
+    Str json = {bad, strlen(bad)};
     BdStatus s = bd_parse_product_path(json, out, sizeof(out));
     ASSERT("malformed err", s == BD_ERR_PARSE);
     PASS("parse_product_path_malformed");
@@ -311,7 +320,7 @@ static int test_parse_product_path_malformed(void) {
 
 static int test_parse_product_path_empty(void) {
     char out[256];
-    Str json = { "", 0 };
+    Str json = {"", 0};
     BdStatus s = bd_parse_product_path(json, out, sizeof(out));
     ASSERT("empty err", s == BD_ERR_PARSE);
     PASS("parse_product_path_empty");
@@ -322,7 +331,7 @@ static int test_parse_product_path_missing_fields(void) {
     /* JSON is valid but lacks BUILT_PRODUCTS_DIR / FULL_PRODUCT_NAME */
     const char *j = "[{\"buildSettings\":{\"OTHER_KEY\":\"val\"},\"target\":\"T\"}]";
     char out[256];
-    Str json = { j, strlen(j) };
+    Str json = {j, strlen(j)};
     BdStatus s = bd_parse_product_path(json, out, sizeof(out));
     ASSERT("missing fields err", s == BD_ERR_PARSE);
     PASS("parse_product_path_missing_fields");
@@ -334,10 +343,10 @@ static int test_parse_product_path_missing_fields(void) {
 static int test_parse_pid_marker_found(void) {
     const char *chunk = "some build output\n__OSTRICH_PGID__99321\nmore output\n";
     long pgid = 0;
-    Str s = { chunk, strlen(chunk) };
+    Str s = {chunk, strlen(chunk)};
     bool found = bd_parse_pid_marker(s, &pgid);
-    ASSERT("marker found",    found);
-    ASSERT("marker pgid",     pgid == 99321);
+    ASSERT("marker found", found);
+    ASSERT("marker pgid", pgid == 99321);
     PASS("parse_pid_marker_found");
     return 0;
 }
@@ -345,7 +354,7 @@ static int test_parse_pid_marker_found(void) {
 static int test_parse_pid_marker_not_found(void) {
     const char *chunk = "xcodebuild output without any marker\n";
     long pgid = 0;
-    Str s = { chunk, strlen(chunk) };
+    Str s = {chunk, strlen(chunk)};
     bool found = bd_parse_pid_marker(s, &pgid);
     ASSERT("no marker", !found);
     PASS("parse_pid_marker_not_found");
@@ -355,17 +364,17 @@ static int test_parse_pid_marker_not_found(void) {
 static int test_parse_pid_marker_at_start(void) {
     const char *chunk = "__OSTRICH_PGID__1\nrest";
     long pgid = 0;
-    Str s = { chunk, strlen(chunk) };
+    Str s = {chunk, strlen(chunk)};
     bool found = bd_parse_pid_marker(s, &pgid);
     ASSERT("start found", found);
-    ASSERT("start pgid",  pgid == 1);
+    ASSERT("start pgid", pgid == 1);
     PASS("parse_pid_marker_at_start");
     return 0;
 }
 
 static int test_parse_pid_marker_empty_chunk(void) {
     long pgid = 0;
-    Str s = { "", 0 };
+    Str s = {"", 0};
     bool found = bd_parse_pid_marker(s, &pgid);
     ASSERT("empty no marker", !found);
     PASS("parse_pid_marker_empty");
@@ -376,10 +385,63 @@ static int test_parse_pid_marker_partial_prefix(void) {
     /* prefix present but no digits follow */
     const char *chunk = "__OSTRICH_PGID__\n";
     long pgid = 0;
-    Str s = { chunk, strlen(chunk) };
+    Str s = {chunk, strlen(chunk)};
     bool found = bd_parse_pid_marker(s, &pgid);
     ASSERT("no digits → not found", !found);
     PASS("parse_pid_marker_no_digits");
+    return 0;
+}
+
+/* ── bd_parse_exit_marker ────────────────────────────────────────── */
+
+static int test_parse_exit_marker_zero(void) {
+    const char *chunk = "build output\n__OSTRICH_EXIT__0\nmore\n";
+    int code = -1;
+    Str s = {chunk, strlen(chunk)};
+    bool found = bd_parse_exit_marker(s, &code);
+    ASSERT("exit marker found", found);
+    ASSERT("exit code zero", code == 0);
+    PASS("parse_exit_marker_zero");
+    return 0;
+}
+
+static int test_parse_exit_marker_nonzero(void) {
+    const char *chunk = "__OSTRICH_EXIT__65\n";
+    int code = -1;
+    Str s = {chunk, strlen(chunk)};
+    bool found = bd_parse_exit_marker(s, &code);
+    ASSERT("exit marker found", found);
+    ASSERT("exit code nonzero", code == 65);
+    PASS("parse_exit_marker_nonzero");
+    return 0;
+}
+
+static int test_parse_exit_marker_not_found(void) {
+    const char *chunk = "xcodebuild: BUILD SUCCEEDED\n";
+    int code = -1;
+    Str s = {chunk, strlen(chunk)};
+    bool found = bd_parse_exit_marker(s, &code);
+    ASSERT("no exit marker", !found);
+    PASS("parse_exit_marker_not_found");
+    return 0;
+}
+
+static int test_parse_exit_marker_empty(void) {
+    int code = -1;
+    Str s = {"", 0};
+    bool found = bd_parse_exit_marker(s, &code);
+    ASSERT("empty no marker", !found);
+    PASS("parse_exit_marker_empty");
+    return 0;
+}
+
+static int test_parse_exit_marker_no_digits(void) {
+    const char *chunk = "__OSTRICH_EXIT__\n";
+    int code = -1;
+    Str s = {chunk, strlen(chunk)};
+    bool found = bd_parse_exit_marker(s, &code);
+    ASSERT("no digits → not found", !found);
+    PASS("parse_exit_marker_no_digits");
     return 0;
 }
 
@@ -388,16 +450,16 @@ static int test_parse_pid_marker_partial_prefix(void) {
 static int test_setsid_help_block_default_port(void) {
     char buf[2048];
     BdStatus s = bd_setsid_help_block("jake", "mac.local", 22, buf, sizeof(buf));
-    ASSERT("default port ok",        s == BD_OK);
-    ASSERT("header present",         has(buf, "REMOTE MAC IS MISSING setsid."));
-    ASSERT("ssh user@host",          has(buf, "ssh jake@mac.local"));
-    ASSERT("no -p flag",             !has(buf, "ssh -p"));
-    ASSERT("brew install",           has(buf, "brew install util-linux"));
-    ASSERT("zshenv",                 has(buf, ".zshenv"));
-    ASSERT("command -v setsid",      has(buf, "command -v setsid"));
-    ASSERT("remediation opener",     has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
-    ASSERT("remediation closer",     has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
-    ASSERT("nul-terminated",         buf[strlen(buf)] == '\0');
+    ASSERT("default port ok", s == BD_OK);
+    ASSERT("header present", has(buf, "REMOTE MAC IS MISSING setsid."));
+    ASSERT("ssh user@host", has(buf, "ssh jake@mac.local"));
+    ASSERT("no -p flag", !has(buf, "ssh -p"));
+    ASSERT("brew install", has(buf, "brew install util-linux"));
+    ASSERT("zshenv", has(buf, ".zshenv"));
+    ASSERT("command -v setsid", has(buf, "command -v setsid"));
+    ASSERT("remediation opener", has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("remediation closer", has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("nul-terminated", buf[strlen(buf)] == '\0');
     PASS("setsid_help_block_default_port");
     return 0;
 }
@@ -405,14 +467,14 @@ static int test_setsid_help_block_default_port(void) {
 static int test_setsid_help_block_nondefault_port(void) {
     char buf[2048];
     BdStatus s = bd_setsid_help_block("jake", "mac.local", 2222, buf, sizeof(buf));
-    ASSERT("nondefault port ok",     s == BD_OK);
-    ASSERT("header present",         has(buf, "REMOTE MAC IS MISSING setsid."));
-    ASSERT("ssh -p port user@host",  has(buf, "ssh -p 2222 jake@mac.local"));
-    ASSERT("brew install",           has(buf, "brew install util-linux"));
-    ASSERT("zshenv",                 has(buf, ".zshenv"));
-    ASSERT("command -v setsid",      has(buf, "command -v setsid"));
-    ASSERT("remediation opener",     has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
-    ASSERT("remediation closer",     has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("nondefault port ok", s == BD_OK);
+    ASSERT("header present", has(buf, "REMOTE MAC IS MISSING setsid."));
+    ASSERT("ssh -p port user@host", has(buf, "ssh -p 2222 jake@mac.local"));
+    ASSERT("brew install", has(buf, "brew install util-linux"));
+    ASSERT("zshenv", has(buf, ".zshenv"));
+    ASSERT("command -v setsid", has(buf, "command -v setsid"));
+    ASSERT("remediation opener", has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("remediation closer", has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
     PASS("setsid_help_block_nondefault_port");
     return 0;
 }
@@ -430,13 +492,13 @@ static int test_setsid_help_block_oom(void) {
 static int test_unlock_cmd_basics(void) {
     char buf[4096];
     BdStatus s = bd_unlock_cmd("mypassword", buf, sizeof(buf));
-    ASSERT("unlock cmd ok",        s == BD_OK);
-    ASSERT("has setsid",           has(buf, "setsid"));
-    ASSERT("has sh -c",            has(buf, "sh -c"));
-    ASSERT("has marker",           has(buf, "__OSTRICH_PGID__"));
-    ASSERT("has security",         has(buf, "security unlock-keychain"));
-    ASSERT("has keychain path",    has(buf, "login.keychain-db"));
-    ASSERT("has env var",          has(buf, "__BD_KC_PASS="));
+    ASSERT("unlock cmd ok", s == BD_OK);
+    ASSERT("has setsid", has(buf, "setsid"));
+    ASSERT("has sh -c", has(buf, "sh -c"));
+    ASSERT("has marker", has(buf, "__OSTRICH_PGID__"));
+    ASSERT("has security", has(buf, "security unlock-keychain"));
+    ASSERT("has keychain path", has(buf, "login.keychain-db"));
+    ASSERT("has env var", has(buf, "__BD_KC_PASS="));
     PASS("unlock_cmd_basics");
     return 0;
 }
@@ -444,8 +506,8 @@ static int test_unlock_cmd_basics(void) {
 static int test_unlock_cmd_quote_escape(void) {
     char buf[4096];
     BdStatus s = bd_unlock_cmd("pass'word", buf, sizeof(buf));
-    ASSERT("quote escape ok",  s == BD_OK);
-    ASSERT("escaped quote",    has(buf, "'\\''"));
+    ASSERT("quote escape ok", s == BD_OK);
+    ASSERT("escaped quote", has(buf, "'\\''"));
     PASS("unlock_cmd_quote_escape");
     return 0;
 }
@@ -453,10 +515,10 @@ static int test_unlock_cmd_quote_escape(void) {
 static int test_unlock_cmd_empty_passkey(void) {
     char buf[4096];
     BdStatus s = bd_unlock_cmd("", buf, sizeof(buf));
-    ASSERT("empty passkey ok",    s == BD_OK);
-    ASSERT("still has setsid",    has(buf, "setsid"));
-    ASSERT("still has marker",    has(buf, "__OSTRICH_PGID__"));
-    ASSERT("still has security",  has(buf, "security unlock-keychain"));
+    ASSERT("empty passkey ok", s == BD_OK);
+    ASSERT("still has setsid", has(buf, "setsid"));
+    ASSERT("still has marker", has(buf, "__OSTRICH_PGID__"));
+    ASSERT("still has security", has(buf, "security unlock-keychain"));
     PASS("unlock_cmd_empty_passkey");
     return 0;
 }
@@ -464,7 +526,7 @@ static int test_unlock_cmd_empty_passkey(void) {
 static int test_unlock_cmd_oom(void) {
     char buf[10];
     BdStatus s = bd_unlock_cmd("pass", buf, sizeof(buf));
-    ASSERT("small cap → oom",  s == BD_ERR_OOM);
+    ASSERT("small cap → oom", s == BD_ERR_OOM);
     PASS("unlock_cmd_oom");
     return 0;
 }
@@ -474,15 +536,15 @@ static int test_unlock_cmd_oom(void) {
 static int test_unlock_help_block_default_port(void) {
     char buf[2048];
     BdStatus s = bd_unlock_help_block("jake", "mac.local", 22, buf, sizeof(buf));
-    ASSERT("default port ok",        s == BD_OK);
-    ASSERT("header present",         has(buf, "KEYCHAIN UNLOCK REJECTED."));
-    ASSERT("ssh user@host",          has(buf, "ssh jake@mac.local"));
-    ASSERT("no -p flag",             !has(buf, "ssh -p"));
-    ASSERT("security cmd present",   has(buf, "security unlock-keychain"));
-    ASSERT("keychain path present",  has(buf, "~/Library/Keychains/login.keychain-db"));
-    ASSERT("remediation opener",     has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
-    ASSERT("remediation closer",     has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
-    ASSERT("nul-terminated",         buf[strlen(buf)] == '\0');
+    ASSERT("default port ok", s == BD_OK);
+    ASSERT("header present", has(buf, "KEYCHAIN UNLOCK REJECTED."));
+    ASSERT("ssh user@host", has(buf, "ssh jake@mac.local"));
+    ASSERT("no -p flag", !has(buf, "ssh -p"));
+    ASSERT("security cmd present", has(buf, "security unlock-keychain"));
+    ASSERT("keychain path present", has(buf, "~/Library/Keychains/login.keychain-db"));
+    ASSERT("remediation opener", has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("remediation closer", has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("nul-terminated", buf[strlen(buf)] == '\0');
     PASS("unlock_help_block_default_port");
     return 0;
 }
@@ -490,13 +552,13 @@ static int test_unlock_help_block_default_port(void) {
 static int test_unlock_help_block_nondefault_port(void) {
     char buf[2048];
     BdStatus s = bd_unlock_help_block("jake", "mac.local", 2222, buf, sizeof(buf));
-    ASSERT("nondefault port ok",      s == BD_OK);
-    ASSERT("header present",          has(buf, "KEYCHAIN UNLOCK REJECTED."));
-    ASSERT("ssh -p port user@host",   has(buf, "ssh -p 2222 jake@mac.local"));
-    ASSERT("security cmd present",    has(buf, "security unlock-keychain"));
-    ASSERT("keychain path present",   has(buf, "~/Library/Keychains/login.keychain-db"));
-    ASSERT("remediation opener",      has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
-    ASSERT("remediation closer",      has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("nondefault port ok", s == BD_OK);
+    ASSERT("header present", has(buf, "KEYCHAIN UNLOCK REJECTED."));
+    ASSERT("ssh -p port user@host", has(buf, "ssh -p 2222 jake@mac.local"));
+    ASSERT("security cmd present", has(buf, "security unlock-keychain"));
+    ASSERT("keychain path present", has(buf, "~/Library/Keychains/login.keychain-db"));
+    ASSERT("remediation opener", has(buf, "\xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("remediation closer", has(buf, "\xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80"));
     PASS("unlock_help_block_nondefault_port");
     return 0;
 }
@@ -504,7 +566,7 @@ static int test_unlock_help_block_nondefault_port(void) {
 static int test_unlock_help_block_oom(void) {
     char buf[10];
     BdStatus s = bd_unlock_help_block("u", "h", 22, buf, sizeof(buf));
-    ASSERT("small cap → oom",  s == BD_ERR_OOM);
+    ASSERT("small cap → oom", s == BD_ERR_OOM);
     PASS("unlock_help_block_oom");
     return 0;
 }
@@ -514,12 +576,12 @@ static int test_unlock_help_block_oom(void) {
 static int test_codesign_hint_block(void) {
     char buf[1024];
     BdStatus s = bd_codesign_hint_block("jake", "mac.local", 22, buf, sizeof(buf));
-    ASSERT("hint ok",                  s == BD_OK);
-    ASSERT("errSecInternalComponent",  has(buf, "errSecInternalComponent"));
-    ASSERT("keychain may be locked",   has(buf, "keychain may be locked"));
-    ASSERT("hint opener",              has(buf, "\xe2\x94\x80\xe2\x94\x80 HINT \xe2\x94\x80\xe2\x94\x80"));
-    ASSERT("hint closer",              has(buf, "\xe2\x94\x80\xe2\x94\x80 END HINT \xe2\x94\x80\xe2\x94\x80"));
-    ASSERT("nul-terminated",           buf[strlen(buf)] == '\0');
+    ASSERT("hint ok", s == BD_OK);
+    ASSERT("errSecInternalComponent", has(buf, "errSecInternalComponent"));
+    ASSERT("keychain may be locked", has(buf, "keychain may be locked"));
+    ASSERT("hint opener", has(buf, "\xe2\x94\x80\xe2\x94\x80 HINT \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("hint closer", has(buf, "\xe2\x94\x80\xe2\x94\x80 END HINT \xe2\x94\x80\xe2\x94\x80"));
+    ASSERT("nul-terminated", buf[strlen(buf)] == '\0');
     PASS("codesign_hint_block");
     return 0;
 }
@@ -527,7 +589,7 @@ static int test_codesign_hint_block(void) {
 static int test_codesign_hint_block_oom(void) {
     char buf[10];
     BdStatus s = bd_codesign_hint_block("u", "h", 22, buf, sizeof(buf));
-    ASSERT("small cap → oom",  s == BD_ERR_OOM);
+    ASSERT("small cap → oom", s == BD_ERR_OOM);
     PASS("codesign_hint_block_oom");
     return 0;
 }
@@ -536,10 +598,9 @@ static int test_codesign_hint_block_oom(void) {
 
 static int test_unlock_failed_status(void) {
     const char *str = bd_status_str(BD_ERR_UNLOCK_FAILED);
-    ASSERT("unlock_failed str non-empty",  str != NULL && str[0] != '\0');
+    ASSERT("unlock_failed str non-empty", str != NULL && str[0] != '\0');
     ASSERT("unlock_failed str not unknown", strcmp(str, "(unknown)") != 0);
-    ASSERT("unlock_failed reason lex",
-           bd_reason_lex(BD_ERR_UNLOCK_FAILED) == LEX_REC_ERR_KC_UNLOCK);
+    ASSERT("unlock_failed reason lex", bd_reason_lex(BD_ERR_UNLOCK_FAILED) == LEX_REC_ERR_KC_UNLOCK);
     PASS("unlock_failed_status");
     return 0;
 }
@@ -547,14 +608,14 @@ static int test_unlock_failed_status(void) {
 /* ── bd_reason_lex ───────────────────────────────────────────────── */
 
 static int test_reason_lex(void) {
-    ASSERT("xcode missing → rec err",    bd_reason_lex(BD_ERR_XCODE_MISSING)  == LEX_REC_ERR_XCODE);
-    ASSERT("setsid missing → setsid",    bd_reason_lex(BD_ERR_SETSID_MISSING) == LEX_REC_ERR_SETSID);
-    ASSERT("unlock failed → kc_unlock",  bd_reason_lex(BD_ERR_UNLOCK_FAILED)  == LEX_REC_ERR_KC_UNLOCK);
-    ASSERT("build → build failed",       bd_reason_lex(BD_ERR_BUILD) == LEX_RUN_BUILD_FAILED);
-    ASSERT("parse → build failed",       bd_reason_lex(BD_ERR_PARSE) == LEX_RUN_BUILD_FAILED);
-    ASSERT("boot → deploy failed",       bd_reason_lex(BD_ERR_BOOT)    == LEX_RUN_DEPLOY_FAILED);
-    ASSERT("install → deploy failed",    bd_reason_lex(BD_ERR_INSTALL) == LEX_RUN_DEPLOY_FAILED);
-    ASSERT("launch → deploy failed",     bd_reason_lex(BD_ERR_LAUNCH)  == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("xcode missing → rec err", bd_reason_lex(BD_ERR_XCODE_MISSING) == LEX_REC_ERR_XCODE);
+    ASSERT("setsid missing → setsid", bd_reason_lex(BD_ERR_SETSID_MISSING) == LEX_REC_ERR_SETSID);
+    ASSERT("unlock failed → kc_unlock", bd_reason_lex(BD_ERR_UNLOCK_FAILED) == LEX_REC_ERR_KC_UNLOCK);
+    ASSERT("build → build failed", bd_reason_lex(BD_ERR_BUILD) == LEX_RUN_BUILD_FAILED);
+    ASSERT("parse → build failed", bd_reason_lex(BD_ERR_PARSE) == LEX_RUN_BUILD_FAILED);
+    ASSERT("boot → deploy failed", bd_reason_lex(BD_ERR_BOOT) == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("install → deploy failed", bd_reason_lex(BD_ERR_INSTALL) == LEX_RUN_DEPLOY_FAILED);
+    ASSERT("launch → deploy failed", bd_reason_lex(BD_ERR_LAUNCH) == LEX_RUN_DEPLOY_FAILED);
     /* build vs deploy are distinct */
     ASSERT("build != deploy", bd_reason_lex(BD_ERR_BUILD) != bd_reason_lex(BD_ERR_INSTALL));
     PASS("reason_lex");
@@ -564,16 +625,16 @@ static int test_reason_lex(void) {
 /* ── bd_status_str ───────────────────────────────────────────────── */
 
 static int test_status_str(void) {
-    ASSERT("ok str",            bd_status_str(BD_OK)[0] != '\0');
-    ASSERT("xcode str",         bd_status_str(BD_ERR_XCODE_MISSING)[0] != '\0');
-    ASSERT("setsid str",        bd_status_str(BD_ERR_SETSID_MISSING)[0] != '\0');
-    ASSERT("build str",         bd_status_str(BD_ERR_BUILD)[0] != '\0');
-    ASSERT("boot str",          bd_status_str(BD_ERR_BOOT)[0] != '\0');
-    ASSERT("install str",       bd_status_str(BD_ERR_INSTALL)[0] != '\0');
-    ASSERT("launch str",        bd_status_str(BD_ERR_LAUNCH)[0] != '\0');
-    ASSERT("parse str",         bd_status_str(BD_ERR_PARSE)[0] != '\0');
+    ASSERT("ok str", bd_status_str(BD_OK)[0] != '\0');
+    ASSERT("xcode str", bd_status_str(BD_ERR_XCODE_MISSING)[0] != '\0');
+    ASSERT("setsid str", bd_status_str(BD_ERR_SETSID_MISSING)[0] != '\0');
+    ASSERT("build str", bd_status_str(BD_ERR_BUILD)[0] != '\0');
+    ASSERT("boot str", bd_status_str(BD_ERR_BOOT)[0] != '\0');
+    ASSERT("install str", bd_status_str(BD_ERR_INSTALL)[0] != '\0');
+    ASSERT("launch str", bd_status_str(BD_ERR_LAUNCH)[0] != '\0');
+    ASSERT("parse str", bd_status_str(BD_ERR_PARSE)[0] != '\0');
     ASSERT("unlock_failed str", bd_status_str(BD_ERR_UNLOCK_FAILED)[0] != '\0');
-    ASSERT("oom str",           bd_status_str(BD_ERR_OOM)[0] != '\0');
+    ASSERT("oom str", bd_status_str(BD_ERR_OOM)[0] != '\0');
     PASS("status_str");
     return 0;
 }
@@ -587,10 +648,10 @@ static int test_oom_tiny_buf(void) {
 
     Target t = make_sim("SIM");
     ASSERT("bootstatus oom", bd_bootstatus_cmd(&t, buf, sizeof(buf)) == BD_ERR_OOM);
-    ASSERT("install oom",    bd_install_cmd(&t, "/app", buf, sizeof(buf)) == BD_ERR_OOM);
-    ASSERT("terminate oom",  bd_terminate_cmd(&t, "com.x", buf, sizeof(buf)) == BD_ERR_OOM);
-    ASSERT("kill oom",       bd_kill_cmd(123, buf, sizeof(buf))      == BD_ERR_OOM);
-    ASSERT("dest oom",       bd_destination(&t, true, buf, sizeof(buf)) == BD_ERR_OOM);
+    ASSERT("install oom", bd_install_cmd(&t, "/app", buf, sizeof(buf)) == BD_ERR_OOM);
+    ASSERT("terminate oom", bd_terminate_cmd(&t, "com.x", buf, sizeof(buf)) == BD_ERR_OOM);
+    ASSERT("kill oom", bd_kill_cmd(123, buf, sizeof(buf)) == BD_ERR_OOM);
+    ASSERT("dest oom", bd_destination(&t, true, buf, sizeof(buf)) == BD_ERR_OOM);
 
     PASS("oom_tiny_buf");
     return 0;
@@ -636,6 +697,12 @@ int main(void) {
     failures += test_parse_pid_marker_at_start();
     failures += test_parse_pid_marker_empty_chunk();
     failures += test_parse_pid_marker_partial_prefix();
+
+    failures += test_parse_exit_marker_zero();
+    failures += test_parse_exit_marker_nonzero();
+    failures += test_parse_exit_marker_not_found();
+    failures += test_parse_exit_marker_empty();
+    failures += test_parse_exit_marker_no_digits();
 
     failures += test_setsid_help_block_default_port();
     failures += test_setsid_help_block_nondefault_port();

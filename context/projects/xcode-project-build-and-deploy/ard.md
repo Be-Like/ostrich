@@ -410,9 +410,16 @@ pattern. `ui.h` gains `#include "logbuf.h"`.
   `kill -- -<pgid>` on a fresh channel (then closes the local
   channel) — guaranteeing no orphaned `xcodebuild` holds the build
   directory.
-- **Distinct failures:** a non-zero `build` exit →
-  `RUN_BUILD_FAILED` (EXPLOIT FAILED); a non-zero
-  `boot/install/launch` exit → `RUN_DEPLOY_FAILED`
+- **Distinct failures:** build success is determined by the in-band
+  `__OSTRICH_EXIT__<n>` marker emitted at the end of `bd_build_cmd`'s
+  `setsid sh -c` script (capturing xcodebuild's real `$?`), because the
+  SSH channel reports `setsid`'s own exit code (0) rather than
+  `xcodebuild`'s. When the marker is present the worker uses it; when
+  absent (setsid itself missing, exit 127) it falls back to the channel
+  code. Both `__OSTRICH_PGID__` and `__OSTRICH_EXIT__` lines are
+  stripped from the Build Log before reaching `logbuf`. A non-zero
+  effective build exit → `RUN_BUILD_FAILED` (EXPLOIT FAILED); a
+  non-zero `boot/install/launch` exit → `RUN_DEPLOY_FAILED`
   (DEPLOYMENT FAILED // PAYLOAD REJECTED); ABORT / drop →
   `RUN_ABORTED`. `builddeploy` owns the code→lexicon mapping.
 

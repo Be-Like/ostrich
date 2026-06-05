@@ -1,11 +1,11 @@
 #include "builddeploy.h"
 
 #define JSMN_STATIC
-#include "jsmn.h"
-
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include "jsmn.h"
 
 /* ── internal helpers ────────────────────────────────────────────── */
 
@@ -14,14 +14,19 @@
 static BdStatus bd_quote(const char *s, char *buf, size_t cap) {
     size_t pos = 0;
 
-#define PUTC(c) \
-    do { if (pos + 1 >= cap) return BD_ERR_OOM; \
-         buf[pos++] = (char)(c); } while (0)
+#define PUTC(c)                                \
+    do {                                       \
+        if (pos + 1 >= cap) return BD_ERR_OOM; \
+        buf[pos++] = (char)(c);                \
+    } while (0)
 
     PUTC('\'');
     for (const char *ch = s; *ch; ch++) {
         if (*ch == '\'') {
-            PUTC('\''); PUTC('\\'); PUTC('\''); PUTC('\'');
+            PUTC('\'');
+            PUTC('\\');
+            PUTC('\'');
+            PUTC('\'');
         } else {
             PUTC(*ch);
         }
@@ -33,10 +38,8 @@ static BdStatus bd_quote(const char *s, char *buf, size_t cap) {
     return BD_OK;
 }
 
-static bool str_ends_with(const char *data, size_t len,
-                           const char *suffix, size_t suf_len) {
-    return len >= suf_len &&
-           memcmp(data + len - suf_len, suffix, suf_len) == 0;
+static bool str_ends_with(const char *data, size_t len, const char *suffix, size_t suf_len) {
+    return len >= suf_len && memcmp(data + len - suf_len, suffix, suf_len) == 0;
 }
 
 /* ── jsmn helpers (same patterns as discovery.c) ─────────────────── */
@@ -45,12 +48,10 @@ static bool str_ends_with(const char *data, size_t len,
 
 static bool jstr_eq(const char *js, const jsmntok_t *t, const char *key) {
     int klen = (int)strlen(key);
-    return t->type == JSMN_STRING && (t->end - t->start) == klen &&
-           memcmp(js + t->start, key, (size_t)klen) == 0;
+    return t->type == JSMN_STRING && (t->end - t->start) == klen && memcmp(js + t->start, key, (size_t)klen) == 0;
 }
 
-static bool jstr_copy(const char *js, const jsmntok_t *t,
-                      char *dst, size_t cap) {
+static bool jstr_copy(const char *js, const jsmntok_t *t, char *dst, size_t cap) {
     if (t->type != JSMN_STRING || cap == 0) return false;
     size_t len = (size_t)(t->end - t->start);
     if (len >= cap) len = cap - 1;
@@ -78,8 +79,7 @@ static int tok_tree_size(const jsmntok_t *t, int i) {
  * No target (COMPILE without a lock): generic iOS.
  * Specific target (device or simulator): id=<udid>.
  */
-BdStatus bd_destination(const Target *tgt, bool has_target,
-                        char *buf, size_t cap) {
+BdStatus bd_destination(const Target *tgt, bool has_target, char *buf, size_t cap) {
     int n;
     if (!has_target || !tgt) {
         n = snprintf(buf, cap, "generic/platform=iOS");
@@ -92,27 +92,25 @@ BdStatus bd_destination(const Target *tgt, bool has_target,
 
 /* ── command builders ────────────────────────────────────────────── */
 
-BdStatus bd_settings_cmd(const RunConfig *rc, const Target *tgt,
-                         bool has_target, char *buf, size_t cap) {
+BdStatus bd_settings_cmd(const RunConfig *rc, const Target *tgt, bool has_target, char *buf, size_t cap) {
     char qpath[4096], qscheme[1024], qconfig[512];
     char dest[512], qdest[600];
     BdStatus s;
 
-    if ((s = bd_quote(rc->project, qpath,   sizeof(qpath)))   != BD_OK) return s;
-    if ((s = bd_quote(rc->scheme,  qscheme,  sizeof(qscheme))) != BD_OK) return s;
-    if ((s = bd_quote(rc->config,  qconfig,  sizeof(qconfig))) != BD_OK) return s;
-    if ((s = bd_destination(tgt, has_target, dest, sizeof(dest)))  != BD_OK) return s;
-    if ((s = bd_quote(dest, qdest, sizeof(qdest)))             != BD_OK) return s;
+    if ((s = bd_quote(rc->project, qpath, sizeof(qpath))) != BD_OK) return s;
+    if ((s = bd_quote(rc->scheme, qscheme, sizeof(qscheme))) != BD_OK) return s;
+    if ((s = bd_quote(rc->config, qconfig, sizeof(qconfig))) != BD_OK) return s;
+    if ((s = bd_destination(tgt, has_target, dest, sizeof(dest))) != BD_OK) return s;
+    if ((s = bd_quote(dest, qdest, sizeof(qdest))) != BD_OK) return s;
 
     size_t path_len = strlen(rc->project);
-    bool is_ws = str_ends_with(rc->project, path_len,
-                               ".xcworkspace", sizeof(".xcworkspace") - 1);
+    bool is_ws = str_ends_with(rc->project, path_len, ".xcworkspace", sizeof(".xcworkspace") - 1);
     const char *flag = is_ws ? "-workspace" : "-project";
 
     int n = snprintf(buf, cap,
-        "xcodebuild -showBuildSettings -json %s %s"
-        " -scheme %s -configuration %s -destination %s",
-        flag, qpath, qscheme, qconfig, qdest);
+                     "xcodebuild -showBuildSettings -json %s %s"
+                     " -scheme %s -configuration %s -destination %s",
+                     flag, qpath, qscheme, qconfig, qdest);
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
 }
@@ -127,34 +125,35 @@ BdStatus bd_settings_cmd(const RunConfig *rc, const Target *tgt,
  * single-quote-escaped values work in the outer shell without needing
  * nested single-quote escaping inside the setsid'd sh -c argument.
  */
-BdStatus bd_build_cmd(const RunConfig *rc, const Target *tgt,
-                      bool has_target, char *buf, size_t cap) {
+BdStatus bd_build_cmd(const RunConfig *rc, const Target *tgt, bool has_target, char *buf, size_t cap) {
     char qpath[4096], qscheme[1024], qconfig[512];
     char dest[512], qdest[600];
     BdStatus s;
 
-    if ((s = bd_quote(rc->project, qpath,   sizeof(qpath)))   != BD_OK) return s;
-    if ((s = bd_quote(rc->scheme,  qscheme,  sizeof(qscheme))) != BD_OK) return s;
-    if ((s = bd_quote(rc->config,  qconfig,  sizeof(qconfig))) != BD_OK) return s;
-    if ((s = bd_destination(tgt, has_target, dest, sizeof(dest)))  != BD_OK) return s;
-    if ((s = bd_quote(dest, qdest, sizeof(qdest)))             != BD_OK) return s;
+    if ((s = bd_quote(rc->project, qpath, sizeof(qpath))) != BD_OK) return s;
+    if ((s = bd_quote(rc->scheme, qscheme, sizeof(qscheme))) != BD_OK) return s;
+    if ((s = bd_quote(rc->config, qconfig, sizeof(qconfig))) != BD_OK) return s;
+    if ((s = bd_destination(tgt, has_target, dest, sizeof(dest))) != BD_OK) return s;
+    if ((s = bd_quote(dest, qdest, sizeof(qdest))) != BD_OK) return s;
 
     size_t path_len = strlen(rc->project);
-    bool is_ws = str_ends_with(rc->project, path_len,
-                               ".xcworkspace", sizeof(".xcworkspace") - 1);
+    bool is_ws = str_ends_with(rc->project, path_len, ".xcworkspace", sizeof(".xcworkspace") - 1);
     const char *flag = is_ws ? "-workspace" : "-project";
 
     /* The setsid'd shell is the session leader; $$ is its PID = PGID.
-       The inner shell expands $__BD_* env vars with double-quoting. */
+       xcodebuild runs as a child (not exec'd) so $? is captured and emitted
+       as __OSTRICH_EXIT__ for reliable build-failure detection independent
+       of how setsid and sshd reap the process. */
     int n = snprintf(buf, cap,
-        "__BD_PROJ=%s __BD_SCHEME=%s __BD_CONFIG=%s __BD_DEST=%s "
-        "setsid sh -c "
-        "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
-        "exec xcodebuild %s \"$__BD_PROJ\""
-        " -scheme \"$__BD_SCHEME\""
-        " -configuration \"$__BD_CONFIG\""
-        " -destination \"$__BD_DEST\"'",
-        qpath, qscheme, qconfig, qdest, flag);
+                     "__BD_PROJ=%s __BD_SCHEME=%s __BD_CONFIG=%s __BD_DEST=%s "
+                     "setsid sh -c "
+                     "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
+                     "xcodebuild %s \"$__BD_PROJ\""
+                     " -scheme \"$__BD_SCHEME\""
+                     " -configuration \"$__BD_CONFIG\""
+                     " -destination \"$__BD_DEST\"; "
+                     "printf \"__OSTRICH_EXIT__%%d\\n\" $?'",
+                     qpath, qscheme, qconfig, qdest, flag);
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
 }
@@ -171,21 +170,18 @@ BdStatus bd_bootstatus_cmd(const Target *tgt, char *buf, size_t cap) {
     return BD_OK;
 }
 
-BdStatus bd_install_cmd(const Target *tgt, const char *app_path,
-                        char *buf, size_t cap) {
+BdStatus bd_install_cmd(const Target *tgt, const char *app_path, char *buf, size_t cap) {
     char qudid[300], qapp[4096];
     BdStatus s;
 
-    if ((s = bd_quote(tgt->udid,  qudid, sizeof(qudid))) != BD_OK) return s;
-    if ((s = bd_quote(app_path,   qapp,  sizeof(qapp)))  != BD_OK) return s;
+    if ((s = bd_quote(tgt->udid, qudid, sizeof(qudid))) != BD_OK) return s;
+    if ((s = bd_quote(app_path, qapp, sizeof(qapp))) != BD_OK) return s;
 
     int n;
     if (tgt->is_simulator) {
         n = snprintf(buf, cap, "xcrun simctl install %s %s", qudid, qapp);
     } else {
-        n = snprintf(buf, cap,
-            "xcrun devicectl device install app --device %s %s",
-            qudid, qapp);
+        n = snprintf(buf, cap, "xcrun devicectl device install app --device %s %s", qudid, qapp);
     }
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
@@ -201,52 +197,50 @@ BdStatus bd_install_cmd(const Target *tgt, const char *app_path,
  * live instead of block-buffering over the non-TTY SSH pipe.
  * Device: --console is sufficient; devicectl owns the transport.
  */
-BdStatus bd_launch_cmd(const Target *tgt, const char *bundle_id,
-                       char *buf, size_t cap) {
+BdStatus bd_launch_cmd(const Target *tgt, const char *bundle_id, char *buf, size_t cap) {
     char qudid[300], qbundle[512];
     BdStatus s;
 
-    if ((s = bd_quote(tgt->udid,  qudid,   sizeof(qudid)))   != BD_OK) return s;
-    if ((s = bd_quote(bundle_id,  qbundle,  sizeof(qbundle))) != BD_OK) return s;
+    if ((s = bd_quote(tgt->udid, qudid, sizeof(qudid))) != BD_OK) return s;
+    if ((s = bd_quote(bundle_id, qbundle, sizeof(qbundle))) != BD_OK) return s;
 
     int n;
     if (tgt->is_simulator) {
         n = snprintf(buf, cap,
-            "__BD_UDID=%s __BD_BUNDLE=%s "
-            "setsid sh -c "
-            "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
-            "exec xcrun simctl launch --console-pty"
-            " \"$__BD_UDID\" \"$__BD_BUNDLE\"'",
-            qudid, qbundle);
+                     "__BD_UDID=%s __BD_BUNDLE=%s "
+                     "setsid sh -c "
+                     "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
+                     "exec xcrun simctl launch --console-pty"
+                     " \"$__BD_UDID\" \"$__BD_BUNDLE\"'",
+                     qudid, qbundle);
     } else {
         n = snprintf(buf, cap,
-            "__BD_UDID=%s __BD_BUNDLE=%s "
-            "setsid sh -c "
-            "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
-            "exec xcrun devicectl device process launch --console"
-            " --device \"$__BD_UDID\" \"$__BD_BUNDLE\"'",
-            qudid, qbundle);
+                     "__BD_UDID=%s __BD_BUNDLE=%s "
+                     "setsid sh -c "
+                     "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
+                     "exec xcrun devicectl device process launch --console"
+                     " --device \"$__BD_UDID\" \"$__BD_BUNDLE\"'",
+                     qudid, qbundle);
     }
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
 }
 
-BdStatus bd_terminate_cmd(const Target *tgt, const char *bundle_id,
-                           char *buf, size_t cap) {
+BdStatus bd_terminate_cmd(const Target *tgt, const char *bundle_id, char *buf, size_t cap) {
     char qudid[300], qbundle[512];
     BdStatus s;
 
-    if ((s = bd_quote(tgt->udid,  qudid,   sizeof(qudid)))   != BD_OK) return s;
-    if ((s = bd_quote(bundle_id,  qbundle,  sizeof(qbundle))) != BD_OK) return s;
+    if ((s = bd_quote(tgt->udid, qudid, sizeof(qudid))) != BD_OK) return s;
+    if ((s = bd_quote(bundle_id, qbundle, sizeof(qbundle))) != BD_OK) return s;
 
     int n;
     if (tgt->is_simulator) {
         n = snprintf(buf, cap, "xcrun simctl terminate %s %s", qudid, qbundle);
     } else {
         n = snprintf(buf, cap,
-            "xcrun devicectl device process terminate"
-            " --device %s --bundle-identifier %s",
-            qudid, qbundle);
+                     "xcrun devicectl device process terminate"
+                     " --device %s --bundle-identifier %s",
+                     qudid, qbundle);
     }
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
@@ -266,14 +260,12 @@ BdStatus bd_kill_cmd(long pgid, char *buf, size_t cap) {
  * target's buildSettings; concatenates them as the complete .app path.
  */
 BdStatus bd_parse_product_path(Str settings_json, char *out, size_t cap) {
-    if (!settings_json.data || settings_json.len == 0 || !out || cap == 0)
-        return BD_ERR_PARSE;
+    if (!settings_json.data || settings_json.len == 0 || !out || cap == 0) return BD_ERR_PARSE;
 
     jsmntok_t toks[PARSE_SETTINGS_TOKS];
     jsmn_parser p;
     jsmn_init(&p);
-    int r = jsmn_parse(&p, settings_json.data, settings_json.len,
-                       toks, PARSE_SETTINGS_TOKS);
+    int r = jsmn_parse(&p, settings_json.data, settings_json.len, toks, PARSE_SETTINGS_TOKS);
     if (r < 0) return BD_ERR_PARSE;
     int n = r;
 
@@ -291,8 +283,8 @@ BdStatus bd_parse_product_path(Str settings_json, char *out, size_t cap) {
         int bs_idx = -1;
         int j = i + 1;
         for (int k = 0; k < toks[i].size && j < n; k++) {
-            if (jstr_eq(settings_json.data, &toks[j], "buildSettings") &&
-                j + 1 < n && toks[j + 1].type == JSMN_OBJECT) {
+            if (jstr_eq(settings_json.data, &toks[j], "buildSettings") && j + 1 < n &&
+                toks[j + 1].type == JSMN_OBJECT) {
                 bs_idx = j + 1;
                 break;
             }
@@ -300,28 +292,23 @@ BdStatus bd_parse_product_path(Str settings_json, char *out, size_t cap) {
         }
 
         if (bs_idx >= 0) {
-            char built_dir[2048]  = {0};
+            char built_dir[2048] = {0};
             char product_name[512] = {0};
 
             int ki = bs_idx + 1;
             for (int k = 0; k < toks[bs_idx].size && ki < n; k++) {
-                if (jstr_eq(settings_json.data, &toks[ki],
-                            "BUILT_PRODUCTS_DIR") &&
-                    ki + 1 < n && toks[ki + 1].type == JSMN_STRING) {
-                    jstr_copy(settings_json.data, &toks[ki + 1],
-                              built_dir, sizeof(built_dir));
-                } else if (jstr_eq(settings_json.data, &toks[ki],
-                                   "FULL_PRODUCT_NAME") &&
-                           ki + 1 < n && toks[ki + 1].type == JSMN_STRING) {
-                    jstr_copy(settings_json.data, &toks[ki + 1],
-                              product_name, sizeof(product_name));
+                if (jstr_eq(settings_json.data, &toks[ki], "BUILT_PRODUCTS_DIR") && ki + 1 < n &&
+                    toks[ki + 1].type == JSMN_STRING) {
+                    jstr_copy(settings_json.data, &toks[ki + 1], built_dir, sizeof(built_dir));
+                } else if (jstr_eq(settings_json.data, &toks[ki], "FULL_PRODUCT_NAME") && ki + 1 < n &&
+                           toks[ki + 1].type == JSMN_STRING) {
+                    jstr_copy(settings_json.data, &toks[ki + 1], product_name, sizeof(product_name));
                 }
                 ki += tok_tree_size(toks, ki);
             }
 
             if (built_dir[0] && product_name[0]) {
-                int written = snprintf(out, cap, "%s/%s",
-                                       built_dir, product_name);
+                int written = snprintf(out, cap, "%s/%s", built_dir, product_name);
                 if (written < 0 || (size_t)written >= cap) return BD_ERR_OOM;
                 return BD_OK;
             }
@@ -350,8 +337,7 @@ bool bd_parse_pid_marker(Str chunk, long *out_pgid) {
         size_t num_start = i + mlen;
         char num_buf[24];
         size_t num_len = 0;
-        while (num_start + num_len < chunk.len &&
-               num_len < sizeof(num_buf) - 1) {
+        while (num_start + num_len < chunk.len && num_len < sizeof(num_buf) - 1) {
             char c = chunk.data[num_start + num_len];
             if (c < '0' || c > '9') break;
             num_buf[num_len++] = c;
@@ -368,61 +354,93 @@ bool bd_parse_pid_marker(Str chunk, long *out_pgid) {
     return false;
 }
 
+/*
+ * Search a raw chunk for the exit-code marker emitted by bd_build_cmd.
+ * Returns true and sets *out_code if found.  The marker carries xcodebuild's
+ * real $? so the worker can gate the build branch on it rather than on the
+ * setsid process's channel exit code.
+ */
+bool bd_parse_exit_marker(Str chunk, int *out_code) {
+    static const char marker[] = "__OSTRICH_EXIT__";
+    const size_t mlen = sizeof(marker) - 1;
+
+    if (!chunk.data || chunk.len < mlen || !out_code) return false;
+
+    for (size_t i = 0; i + mlen <= chunk.len; i++) {
+        if (memcmp(chunk.data + i, marker, mlen) != 0) continue;
+
+        size_t num_start = i + mlen;
+        char num_buf[12];
+        size_t num_len = 0;
+        while (num_start + num_len < chunk.len && num_len < sizeof(num_buf) - 1) {
+            char c = chunk.data[num_start + num_len];
+            if (c < '0' || c > '9') break;
+            num_buf[num_len++] = c;
+        }
+        if (num_len == 0) continue;
+        num_buf[num_len] = '\0';
+
+        long code = strtol(num_buf, NULL, 10);
+        *out_code = (int)code;
+        return true;
+    }
+    return false;
+}
+
 /* ── remediation text ────────────────────────────────────────────── */
 
-BdStatus bd_setsid_help_block(const char *user, const char *host, int port,
-                               char *buf, size_t cap) {
+BdStatus bd_setsid_help_block(const char *user, const char *host, int port, char *buf, size_t cap) {
     int n;
     if (port == 22) {
         n = snprintf(buf, cap,
-            "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
-            "REMOTE MAC IS MISSING setsid.\n"
-            "\n"
-            "To install, connect to the Mac:\n"
-            "    ssh %s@%s\n"
-            "\n"
-            "Then on the Mac, run:\n"
-            "    brew install util-linux\n"
-            "\n"
-            "Then add ONE of the following to ~/.zshenv, matching your Mac:\n"
-            "    # Apple Silicon:\n"
-            "    echo 'export PATH=\"/opt/homebrew/opt/util-linux/bin:$PATH\"' >> ~/.zshenv\n"
-            "    # Intel:\n"
-            "    echo 'export PATH=\"/usr/local/opt/util-linux/bin:$PATH\"' >> ~/.zshenv\n"
-            "\n"
-            "(Substitute your own path if util-linux is installed elsewhere.)\n"
-            "\n"
-            "Verify the fix with (from this host):\n"
-            "    ssh %s@%s 'command -v setsid'\n"
-            "\n"
-            "(See README \"Remote Mac (SSH target)\" for context.)\n"
-            "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
-            user, host, user, host);
+                     "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
+                     "REMOTE MAC IS MISSING setsid.\n"
+                     "\n"
+                     "To install, connect to the Mac:\n"
+                     "    ssh %s@%s\n"
+                     "\n"
+                     "Then on the Mac, run:\n"
+                     "    brew install util-linux\n"
+                     "\n"
+                     "Then add ONE of the following to ~/.zshenv, matching your Mac:\n"
+                     "    # Apple Silicon:\n"
+                     "    echo 'export PATH=\"/opt/homebrew/opt/util-linux/bin:$PATH\"' >> ~/.zshenv\n"
+                     "    # Intel:\n"
+                     "    echo 'export PATH=\"/usr/local/opt/util-linux/bin:$PATH\"' >> ~/.zshenv\n"
+                     "\n"
+                     "(Substitute your own path if util-linux is installed elsewhere.)\n"
+                     "\n"
+                     "Verify the fix with (from this host):\n"
+                     "    ssh %s@%s 'command -v setsid'\n"
+                     "\n"
+                     "(See README \"Remote Mac (SSH target)\" for context.)\n"
+                     "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
+                     user, host, user, host);
     } else {
         n = snprintf(buf, cap,
-            "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
-            "REMOTE MAC IS MISSING setsid.\n"
-            "\n"
-            "To install, connect to the Mac:\n"
-            "    ssh -p %d %s@%s\n"
-            "\n"
-            "Then on the Mac, run:\n"
-            "    brew install util-linux\n"
-            "\n"
-            "Then add ONE of the following to ~/.zshenv, matching your Mac:\n"
-            "    # Apple Silicon:\n"
-            "    echo 'export PATH=\"/opt/homebrew/opt/util-linux/bin:$PATH\"' >> ~/.zshenv\n"
-            "    # Intel:\n"
-            "    echo 'export PATH=\"/usr/local/opt/util-linux/bin:$PATH\"' >> ~/.zshenv\n"
-            "\n"
-            "(Substitute your own path if util-linux is installed elsewhere.)\n"
-            "\n"
-            "Verify the fix with (from this host):\n"
-            "    ssh -p %d %s@%s 'command -v setsid'\n"
-            "\n"
-            "(See README \"Remote Mac (SSH target)\" for context.)\n"
-            "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
-            port, user, host, port, user, host);
+                     "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
+                     "REMOTE MAC IS MISSING setsid.\n"
+                     "\n"
+                     "To install, connect to the Mac:\n"
+                     "    ssh -p %d %s@%s\n"
+                     "\n"
+                     "Then on the Mac, run:\n"
+                     "    brew install util-linux\n"
+                     "\n"
+                     "Then add ONE of the following to ~/.zshenv, matching your Mac:\n"
+                     "    # Apple Silicon:\n"
+                     "    echo 'export PATH=\"/opt/homebrew/opt/util-linux/bin:$PATH\"' >> ~/.zshenv\n"
+                     "    # Intel:\n"
+                     "    echo 'export PATH=\"/usr/local/opt/util-linux/bin:$PATH\"' >> ~/.zshenv\n"
+                     "\n"
+                     "(Substitute your own path if util-linux is installed elsewhere.)\n"
+                     "\n"
+                     "Verify the fix with (from this host):\n"
+                     "    ssh -p %d %s@%s 'command -v setsid'\n"
+                     "\n"
+                     "(See README \"Remote Mac (SSH target)\" for context.)\n"
+                     "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
+                     port, user, host, port, user, host);
     }
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
@@ -434,65 +452,65 @@ BdStatus bd_unlock_cmd(const char *kc_pass, char *buf, size_t cap) {
     if (s != BD_OK) return s;
 
     int n = snprintf(buf, cap,
-        "__BD_KC_PASS=%s "
-        "setsid sh -c "
-        "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
-        "exec security unlock-keychain -p \"$__BD_KC_PASS\""
-        " \"$HOME/Library/Keychains/login.keychain-db\"'",
-        qkc_pass);
+                     "__BD_KC_PASS=%s "
+                     "setsid sh -c "
+                     "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
+                     "exec security unlock-keychain -p \"$__BD_KC_PASS\""
+                     " \"$HOME/Library/Keychains/login.keychain-db\"'",
+                     qkc_pass);
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
 }
 
-BdStatus bd_unlock_help_block(const char *user, const char *host, int port,
-                               char *buf, size_t cap) {
+BdStatus bd_unlock_help_block(const char *user, const char *host, int port, char *buf, size_t cap) {
     int n;
     if (port == 22) {
         n = snprintf(buf, cap,
-            "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
-            "KEYCHAIN UNLOCK REJECTED.\n"
-            "\n"
-            "The keychain passkey was rejected by the Mac. Likely causes:\n"
-            "    - wrong passkey (try again)\n"
-            "    - login.keychain is corrupt or missing\n"
-            "\n"
-            "Verify manually from this host:\n"
-            "    ssh %s@%s 'security unlock-keychain"
-            " ~/Library/Keychains/login.keychain-db'\n"
-            "\n"
-            "Press EXECUTE again; the keychain passkey modal will appear.\n"
-            "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
-            user, host);
+                     "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
+                     "KEYCHAIN UNLOCK REJECTED.\n"
+                     "\n"
+                     "The keychain passkey was rejected by the Mac. Likely causes:\n"
+                     "    - wrong passkey (try again)\n"
+                     "    - login.keychain is corrupt or missing\n"
+                     "\n"
+                     "Verify manually from this host:\n"
+                     "    ssh %s@%s 'security unlock-keychain"
+                     " ~/Library/Keychains/login.keychain-db'\n"
+                     "\n"
+                     "Press EXECUTE again; the keychain passkey modal will appear.\n"
+                     "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
+                     user, host);
     } else {
         n = snprintf(buf, cap,
-            "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
-            "KEYCHAIN UNLOCK REJECTED.\n"
-            "\n"
-            "The keychain passkey was rejected by the Mac. Likely causes:\n"
-            "    - wrong passkey (try again)\n"
-            "    - login.keychain is corrupt or missing\n"
-            "\n"
-            "Verify manually from this host:\n"
-            "    ssh -p %d %s@%s 'security unlock-keychain"
-            " ~/Library/Keychains/login.keychain-db'\n"
-            "\n"
-            "Press EXECUTE again; the keychain passkey modal will appear.\n"
-            "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
-            port, user, host);
+                     "> \xe2\x94\x80\xe2\x94\x80 REMEDIATION \xe2\x94\x80\xe2\x94\x80\n"
+                     "KEYCHAIN UNLOCK REJECTED.\n"
+                     "\n"
+                     "The keychain passkey was rejected by the Mac. Likely causes:\n"
+                     "    - wrong passkey (try again)\n"
+                     "    - login.keychain is corrupt or missing\n"
+                     "\n"
+                     "Verify manually from this host:\n"
+                     "    ssh -p %d %s@%s 'security unlock-keychain"
+                     " ~/Library/Keychains/login.keychain-db'\n"
+                     "\n"
+                     "Press EXECUTE again; the keychain passkey modal will appear.\n"
+                     "> \xe2\x94\x80\xe2\x94\x80 END REMEDIATION \xe2\x94\x80\xe2\x94\x80\n",
+                     port, user, host);
     }
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
 }
 
-BdStatus bd_codesign_hint_block(const char *user, const char *host, int port,
-                                 char *buf, size_t cap) {
-    (void)user; (void)host; (void)port;
+BdStatus bd_codesign_hint_block(const char *user, const char *host, int port, char *buf, size_t cap) {
+    (void)user;
+    (void)host;
+    (void)port;
     int n = snprintf(buf, cap,
-        "> \xe2\x94\x80\xe2\x94\x80 HINT \xe2\x94\x80\xe2\x94\x80\n"
-        "If this was a codesign / errSecInternalComponent failure, the\n"
-        "Mac's keychain may be locked. Press EXECUTE; the keychain\n"
-        "passkey modal will appear.\n"
-        "> \xe2\x94\x80\xe2\x94\x80 END HINT \xe2\x94\x80\xe2\x94\x80\n");
+                     "> \xe2\x94\x80\xe2\x94\x80 HINT \xe2\x94\x80\xe2\x94\x80\n"
+                     "If this was a codesign / errSecInternalComponent failure, the\n"
+                     "Mac's keychain may be locked. Press EXECUTE; the keychain\n"
+                     "passkey modal will appear.\n"
+                     "> \xe2\x94\x80\xe2\x94\x80 END HINT \xe2\x94\x80\xe2\x94\x80\n");
     if (n < 0 || (size_t)n >= cap) return BD_ERR_OOM;
     return BD_OK;
 }
@@ -501,30 +519,48 @@ BdStatus bd_codesign_hint_block(const char *user, const char *host, int port,
 
 LexKey bd_reason_lex(BdStatus st) {
     switch (st) {
-    case BD_ERR_XCODE_MISSING:   return LEX_REC_ERR_XCODE;
-    case BD_ERR_SETSID_MISSING:  return LEX_REC_ERR_SETSID;
-    case BD_ERR_UNLOCK_FAILED:   return LEX_REC_ERR_KC_UNLOCK;
-    case BD_ERR_BUILD:           return LEX_RUN_BUILD_FAILED;
-    case BD_ERR_PARSE:           return LEX_RUN_BUILD_FAILED;
-    case BD_ERR_BOOT:
-    case BD_ERR_INSTALL:
-    case BD_ERR_LAUNCH:          return LEX_RUN_DEPLOY_FAILED;
-    default:                     return LEX_RUN_BUILD_FAILED;
+        case BD_ERR_XCODE_MISSING:
+            return LEX_REC_ERR_XCODE;
+        case BD_ERR_SETSID_MISSING:
+            return LEX_REC_ERR_SETSID;
+        case BD_ERR_UNLOCK_FAILED:
+            return LEX_REC_ERR_KC_UNLOCK;
+        case BD_ERR_BUILD:
+            return LEX_RUN_BUILD_FAILED;
+        case BD_ERR_PARSE:
+            return LEX_RUN_BUILD_FAILED;
+        case BD_ERR_BOOT:
+        case BD_ERR_INSTALL:
+        case BD_ERR_LAUNCH:
+            return LEX_RUN_DEPLOY_FAILED;
+        default:
+            return LEX_RUN_BUILD_FAILED;
     }
 }
 
 const char *bd_status_str(BdStatus st) {
     switch (st) {
-    case BD_OK:                  return "ok";
-    case BD_ERR_XCODE_MISSING:   return "xcode not found";
-    case BD_ERR_SETSID_MISSING:  return "setsid not found";
-    case BD_ERR_BUILD:           return "build failed";
-    case BD_ERR_BOOT:            return "boot failed";
-    case BD_ERR_INSTALL:         return "install failed";
-    case BD_ERR_LAUNCH:          return "launch failed";
-    case BD_ERR_PARSE:           return "parse error";
-    case BD_ERR_UNLOCK_FAILED:   return "keychain unlock failed";
-    case BD_ERR_OOM:             return "out of memory";
-    default:                     return "(unknown)";
+        case BD_OK:
+            return "ok";
+        case BD_ERR_XCODE_MISSING:
+            return "xcode not found";
+        case BD_ERR_SETSID_MISSING:
+            return "setsid not found";
+        case BD_ERR_BUILD:
+            return "build failed";
+        case BD_ERR_BOOT:
+            return "boot failed";
+        case BD_ERR_INSTALL:
+            return "install failed";
+        case BD_ERR_LAUNCH:
+            return "launch failed";
+        case BD_ERR_PARSE:
+            return "parse error";
+        case BD_ERR_UNLOCK_FAILED:
+            return "keychain unlock failed";
+        case BD_ERR_OOM:
+            return "out of memory";
+        default:
+            return "(unknown)";
     }
 }

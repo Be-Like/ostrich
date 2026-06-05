@@ -40,6 +40,7 @@ BdStatus bd_destination   (const Target *, bool has_target,
 /* parse (raw bytes → values) */
 BdStatus bd_parse_product_path(Str settings_json, char *out, size_t cap);
 bool     bd_parse_pid_marker  (Str chunk, long *out_pgid);
+bool     bd_parse_exit_marker (Str chunk, int  *out_code); /* __OSTRICH_EXIT__ marker */
 
 /* remediation text */
 BdStatus bd_setsid_help_block(const char *user, const char *host, int port,
