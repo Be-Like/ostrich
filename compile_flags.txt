@@ -1,0 +1,8 @@
+-Iinclude
+-Ithird_party
+-Ithird_party/imgui
+-Ithird_party/imgui/backends
+-Ithird_party/glfw/include
+-Ithird_party/libssh2/include
+-Ithird_party/libssh2/src
+-Ithird_party/jsmn
