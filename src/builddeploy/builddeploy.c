@@ -192,9 +192,14 @@ BdStatus bd_install_cmd(const Target *tgt, const char *app_path,
 }
 
 /*
- * Launch the app with --console so its stdout/stderr streams to the
- * worker channel.  Wrapped in setsid + PID marker so the DevConsole
- * channel can be forcefully closed if the terminate path doesn't EOF it.
+ * Launch the app so its stdout/stderr streams to the worker channel.
+ * Wrapped in setsid + PID marker so the DevConsole channel can be
+ * forcefully closed if the terminate path doesn't EOF it.
+ *
+ * Simulator: --console-pty allocates a local PTY between simctl and the
+ * app so stdout is line-buffered (isatty() → true), flushing print()
+ * live instead of block-buffering over the non-TTY SSH pipe.
+ * Device: --console is sufficient; devicectl owns the transport.
  */
 BdStatus bd_launch_cmd(const Target *tgt, const char *bundle_id,
                        char *buf, size_t cap) {
@@ -210,7 +215,7 @@ BdStatus bd_launch_cmd(const Target *tgt, const char *bundle_id,
             "__BD_UDID=%s __BD_BUNDLE=%s "
             "setsid sh -c "
             "'printf \"__OSTRICH_PGID__%%d\\n\" $$; "
-            "exec xcrun simctl launch --console"
+            "exec xcrun simctl launch --console-pty"
             " \"$__BD_UDID\" \"$__BD_BUNDLE\"'",
             qudid, qbundle);
     } else {

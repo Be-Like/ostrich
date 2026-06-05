@@ -85,6 +85,11 @@ both Linux and macOS.
     a single `xcrun simctl bootstatus <udid> -b` (boot-if-needed +
     wait) and delete the non-idempotent `boot` step that failed an
     already-booted simulator (SimError 405). Post-ship bugfix.
+13. **fix: simulator console PTY for live stdout** — switch the
+    simulator launch to `xcrun simctl launch --console-pty` so the
+    app's `print()`/stdout line-buffers and streams live into the
+    Device Log instead of sitting block-buffered until exit. Post-ship
+    bugfix.
 
 ## Task Dependency Relationships
 
@@ -126,6 +131,12 @@ command construction site) and on T8 (the UI's Build Log drain and
 `logbuf_mark` call site). It is a UX increment, not a bug fix, and is
 sequenced after T10 because the demarcation only pays off once the
 underlying tool output it labels is actually reaching the panel.
+
+T12 and T13 are independent post-ship bugfixes to the simulator path,
+each editing T2's `libbuilddeploy` command construction (T12 the prime
+step, T13 the launch step). Neither depends on nor is depended on by
+any other task; either can be picked up once a live-Mac symptom is
+observed.
 
 ## Detailed Tasks
 
@@ -1052,3 +1063,70 @@ Per ARD §"Control + data flow for one EXECUTE" (the prime line) and
       its console (no DEPLOYMENT FAILED); EXECUTE against a cold
       simulator boots it first; a genuinely un-bootable target still
       surfaces the distinct deploy failure.
+
+### Task 13 - fix: simulator console PTY for live stdout
+
+- **Status**: done
+- **Blocked by**: none (edits T2 code, T2/T5 both done)
+- **User stories covered**: 31, 33, 34
+
+#### What to build
+
+A focused bugfix to the shipped Play/Observe loop: an EXECUTE against
+a simulator launches and streams its console, but the launched app's
+own `print()`/stdout lines never appear in the Device Log — only the
+simulator runtime's stderr noise
+(`IOSurfaceClientSetSurfaceNotify failed e00002c7`) and `simctl`'s own
+`<bundle>: <pid>` success line do. The cause is not transport, the
+DevConsole handoff, or the headless boot: over a non-TTY SSH pipe the
+launched app sees `stdout` as a pipe, so the C runtime switches
+`print()` from line-buffered to fully block-buffered (~4 KB) — a
+normally-running app never fills that buffer, so its stdout never
+flushes, while unbuffered stderr (the IOSurface line) comes through
+immediately. The fix launches the simulator app under a pseudo-
+terminal so its `stdout` is line-buffered and every `print()` flushes
+and streams live. The IOSurface line is benign headless-render noise
+and is explicitly **not** addressed by this task.
+
+#### Technical Details
+
+Per ARD §"Control + data flow for one EXECUTE" (the launch line) and
+§"Interfaces (`builddeploy.h`)":
+
+- **builddeploy** (`src/builddeploy/builddeploy.c`): in `bd_launch_cmd`
+  change the `is_simulator` branch from `xcrun simctl launch --console`
+  to `xcrun simctl launch --console-pty`. `simctl` allocates a PTY
+  **locally on the Mac** for the child, so the child's `stdout`
+  `isatty()` → line-buffered; the PTY is between `simctl` and the app,
+  never over SSH, so it does not hit the non-interactive-SSH PTY hazard
+  the discovery work documented (`devicectl --json-output -`). The
+  udid/bundle single-quote escaping, the `setsid` + `__OSTRICH_PGID__`
+  marker wrapper, and the device (`devicectl … --console`) branch are
+  **unchanged**. Update the function comment at `:195` to note the PTY
+  rationale.
+- **worker / runstate / DevConsole**: unchanged. The launch exec, the
+  channel handoff to `DevConsole`, and the run-state machine are
+  invariant — only the command string differs.
+- **liblogbuf**: unchanged. A PTY emits `\r\n`, but `logbuf_append`
+  already discards every `\r` (`src/logbuf/logbuf.c`), so the Device
+  Log lines stay clean with no new code. This is a verified invariant,
+  not a change.
+- **Tests**: in `builddeploy_test.c`, tighten the simulator launch
+  assertion to require `--console-pty` (the device assertion stays
+  `--console`). `session_run_test.c` is unaffected (its stub asserts
+  console EOF and handoff, not the launch flag string).
+
+#### Acceptance criteria
+
+- [x] The `is_simulator` branch of `bd_launch_cmd` emits
+      `xcrun simctl launch --console-pty`; the device branch still emits
+      `devicectl … process launch --console`; the udid/bundle escaping
+      and the `setsid`/PID-marker wrapper are unchanged.
+- [x] `builddeploy_test.c` asserts the simulator launch command
+      contains `--console-pty`; `build/libbuilddeploy.a` and the full
+      app build clean on Linux and macOS, and `make test` passes.
+- [ ] Manually via `run_smoke` / the app against a live Mac: EXECUTE
+      against a booted simulator running an app that uses `print()`
+      streams those lines live in the Device Log (not only on exit);
+      the benign IOSurface line is unaffected; a device-target launch
+      is unregressed.

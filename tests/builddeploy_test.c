@@ -206,14 +206,15 @@ static int test_launch_cmd_device(void) {
     char buf[4096];
     Target t = make_device("DEV-UDID-LAUNCH");
     BdStatus s = bd_launch_cmd(&t, "com.example.App", buf, sizeof(buf));
-    ASSERT("launch device ok",       s == BD_OK);
-    ASSERT("launch device setsid",   has(buf, "setsid"));
-    ASSERT("launch device marker",   has(buf, "__OSTRICH_PGID__"));
-    ASSERT("launch device console",  has(buf, "--console"));
-    ASSERT("launch device devicectl", has(buf, "devicectl"));
-    ASSERT("launch device udid",     has(buf, "DEV-UDID-LAUNCH"));
-    ASSERT("launch device bundle",   has(buf, "com.example.App"));
-    ASSERT("no simctl",              !has(buf, "simctl"));
+    ASSERT("launch device ok",          s == BD_OK);
+    ASSERT("launch device setsid",      has(buf, "setsid"));
+    ASSERT("launch device marker",      has(buf, "__OSTRICH_PGID__"));
+    ASSERT("launch device console",     has(buf, "--console"));
+    ASSERT("launch device no pty",      !has(buf, "--console-pty"));
+    ASSERT("launch device devicectl",   has(buf, "devicectl"));
+    ASSERT("launch device udid",        has(buf, "DEV-UDID-LAUNCH"));
+    ASSERT("launch device bundle",      has(buf, "com.example.App"));
+    ASSERT("no simctl",                 !has(buf, "simctl"));
     PASS("launch_cmd_device");
     return 0;
 }
@@ -222,13 +223,14 @@ static int test_launch_cmd_sim(void) {
     char buf[4096];
     Target t = make_sim("SIM-UDID-LAUNCH");
     BdStatus s = bd_launch_cmd(&t, "com.example.App", buf, sizeof(buf));
-    ASSERT("launch sim ok",      s == BD_OK);
-    ASSERT("launch sim setsid",  has(buf, "setsid"));
-    ASSERT("launch sim marker",  has(buf, "__OSTRICH_PGID__"));
-    ASSERT("launch sim console", has(buf, "--console"));
-    ASSERT("launch sim simctl",  has(buf, "simctl"));
-    ASSERT("launch sim udid",    has(buf, "SIM-UDID-LAUNCH"));
-    ASSERT("no devicectl",       !has(buf, "devicectl"));
+    ASSERT("launch sim ok",         s == BD_OK);
+    ASSERT("launch sim setsid",     has(buf, "setsid"));
+    ASSERT("launch sim marker",     has(buf, "__OSTRICH_PGID__"));
+    /* simulator uses --console-pty so the app's stdout is line-buffered */
+    ASSERT("launch sim console-pty", has(buf, "--console-pty"));
+    ASSERT("launch sim simctl",     has(buf, "simctl"));
+    ASSERT("launch sim udid",       has(buf, "SIM-UDID-LAUNCH"));
+    ASSERT("no devicectl",          !has(buf, "devicectl"));
     PASS("launch_cmd_sim");
     return 0;
 }
