@@ -274,6 +274,11 @@ static int test_run_device_log_keys(void) {
     ASSERT("stale exact",
            strcmp(lex(LEX_RUN_STALE),
                   "PAYLOAD STALE // NEW EXPLOIT READY") == 0);
+    ASSERT("build_aborted non-empty", lex(LEX_RUN_BUILD_ABORTED)[0] != '\0');
+    ASSERT("build_aborted has //",
+           strstr(lex(LEX_RUN_BUILD_ABORTED), "//") != NULL);
+    ASSERT("build_aborted has separator glyph",
+           strstr(lex(LEX_RUN_BUILD_ABORTED), "\xe2\x94\x80\xe2\x94\x80") != NULL);
     PASS("run_device_log_keys");
     return 0;
 }
@@ -320,7 +325,7 @@ static int test_kc_modal_keys(void) {
 
 static int test_lex_count_consistency(void) {
     /* Update this constant when new keys are added. */
-    ASSERT("LEX__COUNT is 79", LEX__COUNT == 79);
+    ASSERT("LEX__COUNT is 80", LEX__COUNT == 80);
     PASS("lex_count_consistency");
     return 0;
 }

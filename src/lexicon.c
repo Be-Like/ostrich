@@ -89,6 +89,7 @@ static const char *s_table[LEX__COUNT] = {
     /* LEX_RUN_LIVE_FEED     */ "LIVE FEED // INTERCEPTING",
     /* LEX_RUN_NEW_PAYLOAD   */ "> \xe2\x94\x80\xe2\x94\x80 NEW PAYLOAD \xe2\x94\x80\xe2\x94\x80",
     /* LEX_RUN_STALE         */ "PAYLOAD STALE // NEW EXPLOIT READY",
+    /* LEX_RUN_BUILD_ABORTED */ "> \xe2\x94\x80\xe2\x94\x80 BUILD ABORTED // COMPILATION FAILED \xe2\x94\x80\xe2\x94\x80",
 
     /* LEX_RUN_BUILD_EMPTY        */ "// NO PAYLOAD COMPILED",
     /* LEX_RUN_DEVICE_EMPTY       */ "// NO SIGNAL \xe2\x80\x94 TARGET DARK",

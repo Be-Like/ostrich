@@ -1298,7 +1298,7 @@ for one EXECUTE" (the `build` step):
 
 ### Task 15 - Device Log build-aborted line
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: 14
 - **User stories covered**: 21, 35 (extension), 45, 48
 
@@ -1360,19 +1360,19 @@ demarcation note):
 
 #### Acceptance criteria
 
-- [ ] `include/lexicon.h` / `src/lexicon.c` declare and map
+- [x] `include/lexicon.h` / `src/lexicon.c` declare and map
       `LEX_RUN_BUILD_ABORTED` to its `theme.md` string;
       `lexicon_test.c` asserts it resolves non-empty with glyphs and
       `//` preserved, and `make test` passes.
-- [ ] `app.c` calls `logbuf_mark(app->device_log,
+- [x] `app.c` calls `logbuf_mark(app->device_log,
       lex(LEX_RUN_BUILD_ABORTED))` exactly once per `RUN_BUILD_FAILED`
       phase event, beside the existing `NEW PAYLOAD` mark, and only
       on `RUN_BUILD_FAILED` (not deploy failures or ABORT).
-- [ ] The line renders raw off-white as a `> ──` separator
+- [x] The line renders raw off-white as a `> ──` separator
       consistent with `NEW PAYLOAD`; the Device Log is not recolored
       and the existing keychain-reset branch on the same event is
       unaffected.
-- [ ] `build/ostrich` builds clean on Linux and macOS and
+- [x] `build/ostrich` builds clean on Linux and macOS and
       `make test` passes (`ui_test` headless still green).
 - [ ] Manually against a live Mac: a failed compile drops the
       `BUILD ABORTED // COMPILATION FAILED` line into the Device Log

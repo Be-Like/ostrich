@@ -433,6 +433,8 @@ bool app_tick(App *app) {
                 logbuf_clear(app->build_log);
             if (rev.phase == RUN_RUNNING)
                 logbuf_mark(app->device_log, lex(LEX_RUN_NEW_PAYLOAD));
+            if (rev.phase == RUN_BUILD_FAILED)
+                logbuf_mark(app->device_log, lex(LEX_RUN_BUILD_ABORTED));
             if (rev.phase == RUN_BUILD_FAILED &&
                 rev.reason == BD_ERR_UNLOCK_FAILED) {
                 memset(app->kc_pass_cache, 0, sizeof(app->kc_pass_cache));
