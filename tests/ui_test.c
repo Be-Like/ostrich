@@ -2512,6 +2512,113 @@ int main(void) {
         }
     }
 
+    /* ── Task 3: `v` toggles project picker (state-based, no key injection) */
+
+    /* T3: DISCONNECTED phase — renders without crash; no spurious pick_blueprint
+     * (v-toggle is inert before ONLINE, and no key is injected in headless). */
+    {
+        UiConnView disc_view = {0};
+        disc_view.phase = CONN_DISCONNECTED;
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &disc_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(ri.pick_blueprint == -1);
+            assert(!ri.scan);
+        }
+    }
+
+    /* T3: ONLINE — no key injected → picker does not open; no spurious
+     * pick_blueprint, scan, or abort_scan emitted. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(ri.pick_blueprint == -1); /* no v key → picker stays closed */
+            assert(!ri.scan);
+            assert(!ri.abort_scan);
+        }
+    }
+
+    /* T3: ONLINE + KEYCHAIN modal open — v suppressed while vault is open;
+     * no spurious pick_blueprint or scan intents across multiple frames. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        KcForm kc_v = {0};
+        Arena *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.show_kc_prompt = true;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc_v);
+            assert(ri.pick_blueprint == -1); /* v suppressed while vault modal open */
+            assert(!ri.scan);
+        }
+        arena_destroy(test_arena);
+    }
+
+    /* T3: ONLINE + fully populated recon view — v key not injected; picker
+     * stays closed; no spurious blueprint or target picks. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        Blueprint bp_items[2] = {0};
+        snprintf(bp_items[0].path, sizeof(bp_items[0].path), "/Users/alice/App/App.xcworkspace");
+        bp_items[0].is_workspace = true;
+        snprintf(bp_items[1].path, sizeof(bp_items[1].path), "/Users/alice/Lib/Lib.xcodeproj");
+        BlueprintList bp_list = {.items = bp_items, .count = 2};
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            rv.scan_done = true;
+            rv.scan_err = DISC_OK;
+            rv.blueprints = &bp_list;
+            snprintf(rf.project, sizeof(rf.project), "/Users/alice/App/App.xcworkspace");
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(ri.pick_blueprint == -1); /* no v key → no picker interaction */
+            assert(!ri.scan);
+        }
+    }
+
     ui_shutdown(ui);
     arena_destroy(a);
     printf("ui_test: ok\n");

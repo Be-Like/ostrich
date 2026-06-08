@@ -407,6 +407,13 @@ static void draw_breach_overlay(const UiConnView *view, ConnForm *form, UiIntent
 
 /* ── connection bar ─────────────────────────────────────────────────── */
 /* ── recon panel (ONLINE / REACQUIRING) — compact 4-row layout ──────── */
+
+/* Pure decision: should the 'v' key toggle the project picker this frame? */
+static bool picker_v_should_toggle(bool v_pressed, bool want_text_input, bool key_ctrl, bool key_alt, bool key_super,
+                                   bool kc_vault_open) {
+    return v_pressed && !want_text_input && !key_ctrl && !key_alt && !key_super && !kc_vault_open;
+}
+
 static void draw_recon_panel(const UiReconView *rv, RunConfig *rf, UiReconIntents *ri, ImVec2 pos, ImVec2 sz) {
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
@@ -425,6 +432,11 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf, UiReconIntent
     ImGui::TextUnformatted("PROJECT");
     ImGui::PopStyleColor();
     ImGui::SameLine(70.0f);
+    const ImGuiIO &io = ImGui::GetIO();
+    bool picker_was_open = ImGui::IsPopupOpen("##project_picker");
+    bool v_toggle = picker_v_should_toggle(ImGui::IsKeyPressed(ImGuiKey_V), io.WantTextInput, io.KeyCtrl, io.KeyAlt,
+                                           io.KeySuper, ImGui::IsPopupOpen("##kc_vault"));
+    if (v_toggle && !picker_was_open) ImGui::OpenPopup("##project_picker");
     {
         const float btn_w = ImGui::CalcTextSize("[v]").x + ImGui::GetStyle().FramePadding.x * 2.0f;
         ImGui::SetNextItemWidth(-(btn_w + ImGui::GetStyle().ItemSpacing.x));
@@ -499,6 +511,7 @@ static void draw_recon_panel(const UiReconView *rv, RunConfig *rf, UiReconIntent
             ImGui::PopStyleColor();
         }
 
+        if (v_toggle && picker_was_open) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 

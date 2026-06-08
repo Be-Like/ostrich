@@ -205,7 +205,7 @@ Inside the KEYCHAIN passphrase modal (`draw_kc_modal`,
 
 ### Task 3 - `v` toggles the project dropdown (focus-guarded)
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: requirement 3 (`v` toggles project
   dropdown when no textbox focused)
