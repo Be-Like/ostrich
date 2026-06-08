@@ -1095,7 +1095,8 @@ static void draw_kc_modal(const UiRunView *rv, KcForm *kf, UiRunIntents *ri) {
     ImGui::SameLine(lw);
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-    ImGui::InputText("##kc_passkey", kf->passkey, sizeof(kf->passkey), ImGuiInputTextFlags_Password);
+    bool kc_passkey_enter = ImGui::InputText("##kc_passkey", kf->passkey, sizeof(kf->passkey),
+                                             ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
 
     /* REMEMBER KEYCHAIN checkbox */
     ImGui::Checkbox("##kc_remember", &kf->remember);
@@ -1116,6 +1117,17 @@ static void draw_kc_modal(const UiRunView *rv, KcForm *kf, UiRunIntents *ri) {
     ImGui::SameLine();
     /* SKIP button */
     if (ImGui::Button(lex(LEX_KC_BUTTON_SKIP))) {
+        ri->kc_skip = true;
+        ImGui::CloseCurrentPopup();
+    }
+
+    /* keyboard: Enter → submit, Escape → skip */
+    bool kb_enter =
+        kc_passkey_enter || ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter);
+    if (kb_enter) {
+        ri->kc_submit = true;
+        ImGui::CloseCurrentPopup();
+    } else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
         ri->kc_skip = true;
         ImGui::CloseCurrentPopup();
     }

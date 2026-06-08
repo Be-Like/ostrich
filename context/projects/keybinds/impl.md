@@ -163,7 +163,7 @@ so the modal keeps ownership of Enter/Escape.
 
 ### Task 2 - KEYCHAIN modal: Enter submits, Escape skips
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: requirement 2 (keychain form Enter/Escape)
 

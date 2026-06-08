@@ -2271,6 +2271,79 @@ int main(void) {
         arena_destroy(test_arena);
     }
 
+    /* ── Task 2: KEYCHAIN modal keyboard shortcuts (state-based) ──────── */
+
+    /* T2: show_kc_prompt=true with passkey pre-filled — no spurious kc_submit
+     * or kc_skip without user input (no key injected in headless mode). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        KcForm kc = {0};
+        snprintf(kc.passkey, sizeof(kc.passkey), "hunter2");
+
+        Arena *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.show_kc_prompt = true;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
+            assert(!run_ri.kc_submit); /* no key injected → no spurious submit */
+            assert(!run_ri.kc_skip);   /* no key injected → no spurious skip */
+        }
+        /* passkey buffer must survive frames unmodified */
+        assert(strcmp(kc.passkey, "hunter2") == 0);
+        arena_destroy(test_arena);
+    }
+
+    /* T2: show_kc_prompt=true, remember=true — kc_submit/kc_skip stay false;
+     * remember flag is not corrupted by the keyboard-handler code path. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        KcForm kc = {0};
+        kc.remember = true;
+
+        Arena *test_arena = arena_create(64 * 1024);
+        assert(test_arena != NULL);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
+        assert(build_log != NULL);
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.show_kc_prompt = true;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
+            assert(!run_ri.kc_submit);
+            assert(!run_ri.kc_skip);
+        }
+        assert(kc.remember); /* remember flag must not be corrupted */
+        arena_destroy(test_arena);
+    }
+
     /* ── Task 1: global chord handler (state-based, no key injection) ── */
 
     /* T1: Ctrl+Enter — DISCONNECTED phase: no execute fired (bar_phase=false). */
