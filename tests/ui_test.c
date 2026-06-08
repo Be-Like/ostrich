@@ -1,12 +1,13 @@
+#include "ui.h"
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "arena.h"
+#include "discovery.h"
 #include "logbuf.h"
 #include "runstate.h"
-#include "ui.h"
-#include "discovery.h"
 
 #define APP_ARENA_BYTES (8 * 1024 * 1024)
 
@@ -14,8 +15,8 @@
 static UiReconView make_recon_view(void) {
     UiReconView rv = {0};
     rv.blueprint_selected = -1;
-    rv.preset_selected    = -1;
-    rv.target_selected    = -1;
+    rv.preset_selected = -1;
+    rv.target_selected = -1;
     return rv;
 }
 
@@ -23,17 +24,17 @@ static UiReconView make_recon_view(void) {
 static UiReconIntents make_recon_intents(void) {
     UiReconIntents ri = {0};
     ri.pick_blueprint = -1;
-    ri.pick_preset    = -1;
-    ri.pick_target    = -1;
+    ri.pick_preset = -1;
+    ri.pick_target = -1;
     return ri;
 }
 
 /* Default-initialized run view (no build_log — safe for headless render). */
 static UiRunView make_run_view(void) {
-    UiRunView rrv  = {0};
-    rrv.phase      = RUN_IDLE;
-    rrv.readiness  = READY_NO_PROJECT;
-    rrv.build_log  = NULL;
+    UiRunView rrv = {0};
+    rrv.phase = RUN_IDLE;
+    rrv.readiness = READY_NO_PROJECT;
+    rrv.build_log = NULL;
     rrv.device_log = NULL;
     return rrv;
 }
@@ -43,13 +44,13 @@ int main(void) {
     assert(a != NULL);
 
     UiOptions opts;
-    opts.title    = "ui_test";
-    opts.width    = 800;
-    opts.height   = 600;
+    opts.title = "ui_test";
+    opts.width = 800;
+    opts.height = 600;
     opts.font_dir = "assets/fonts";
     opts.headless = 1; /* hidden window */
 
-    Ui *ui   = NULL;
+    Ui *ui = NULL;
     UiStatus st = ui_init(a, opts, &ui);
 
     if (st == UI_ERR_NO_DISPLAY) {
@@ -67,19 +68,19 @@ int main(void) {
     assert(ui != NULL);
 
     /* State-based test: a resting (zeroed) view produces no intents. */
-    UiConnView   view = {0};
-    ConnForm     form = {0};
+    UiConnView view = {0};
+    ConnForm form = {0};
     form.selected_known_host = -1;
-    UiRunView    rrv = make_run_view(); /* shared across non-run tests */
+    UiRunView rrv = make_run_view(); /* shared across non-run tests */
     UiRunIntents rri = {0};
-    KcForm       kf  = {0}; /* shared kc form; show_kc_prompt stays false */
+    KcForm kf = {0}; /* shared kc form; show_kc_prompt stays false */
 
     for (int i = 0; i < 3; i++) {
-        UiIntents    intents = {0};
-        UiReconView  rv      = make_recon_view();
-        RunConfig    rf      = {0};
-        UiReconIntents ri    = make_recon_intents();
-        intents.select_host  = -1;
+        UiIntents intents = {0};
+        UiReconView rv = make_recon_view();
+        RunConfig rf = {0};
+        UiReconIntents ri = make_recon_intents();
+        intents.select_host = -1;
         int keep_going = ui_frame(ui, &view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
         (void)keep_going;
         /* Resting view emits no action intents. */
@@ -94,17 +95,17 @@ int main(void) {
 
     /* State-based test: TOFU prompt (AWAITING_HOSTKEY) emits no spurious trust/decline. */
     {
-        UiConnView tofu_view          = {0};
-        tofu_view.phase               = CONN_AWAITING_HOSTKEY;
+        UiConnView tofu_view = {0};
+        tofu_view.phase = CONN_AWAITING_HOSTKEY;
         tofu_view.show_hostkey_prompt = true;
-        tofu_view.fingerprint         = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        tofu_view.fingerprint = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &tofu_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.trust);
             assert(!intents.decline);
@@ -114,17 +115,17 @@ int main(void) {
 
     /* State-based test: mismatch stop (DISCONNECTED + show_mismatch) emits no spurious trust. */
     {
-        UiConnView mismatch_view    = {0};
-        mismatch_view.phase         = CONN_DISCONNECTED;
+        UiConnView mismatch_view = {0};
+        mismatch_view.phase = CONN_DISCONNECTED;
         mismatch_view.show_mismatch = true;
-        mismatch_view.fingerprint   = "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+        mismatch_view.fingerprint = "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &mismatch_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.trust);
         }
@@ -143,11 +144,11 @@ int main(void) {
 
         UiConnView pw_view = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
         }
@@ -166,11 +167,11 @@ int main(void) {
 
         UiConnView pw_view = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
         }
@@ -184,17 +185,17 @@ int main(void) {
         snprintf(pw_form.host, sizeof(pw_form.host), "example.com");
         snprintf(pw_form.user, sizeof(pw_form.user), "alice");
         snprintf(pw_form.port, sizeof(pw_form.port), "22");
-        pw_form.auth     = SSH_AUTH_PASSWORD;
+        pw_form.auth = SSH_AUTH_PASSWORD;
         snprintf(pw_form.passkey, sizeof(pw_form.passkey), "s3cr3t");
         pw_form.remember = false;
 
         UiConnView pw_view = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.save);
@@ -210,17 +211,17 @@ int main(void) {
         snprintf(pw_form.host, sizeof(pw_form.host), "example.com");
         snprintf(pw_form.user, sizeof(pw_form.user), "alice");
         snprintf(pw_form.port, sizeof(pw_form.port), "22");
-        pw_form.auth     = SSH_AUTH_PASSWORD;
+        pw_form.auth = SSH_AUTH_PASSWORD;
         snprintf(pw_form.passkey, sizeof(pw_form.passkey), "s3cr3t");
         pw_form.remember = true;
 
         UiConnView pw_view = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &pw_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
         }
@@ -235,18 +236,18 @@ int main(void) {
         snprintf(pw_form.host, sizeof(pw_form.host), "example.com");
         snprintf(pw_form.user, sizeof(pw_form.user), "alice");
         snprintf(pw_form.port, sizeof(pw_form.port), "22");
-        pw_form.auth     = SSH_AUTH_PASSWORD;
+        pw_form.auth = SSH_AUTH_PASSWORD;
         snprintf(pw_form.passkey, sizeof(pw_form.passkey), "s3cr3t");
         pw_form.remember = true;
 
         UiConnView connecting_view = {0};
-        connecting_view.phase      = CONN_CONNECTING;
+        connecting_view.phase = CONN_CONNECTING;
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &connecting_view, &pw_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.abort); /* no keyboard Escape was pressed */
@@ -257,15 +258,15 @@ int main(void) {
     /* State-based test: ONLINE view (bar phase) emits no spurious close/update. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.close);
             assert(!intents.update);
@@ -276,15 +277,15 @@ int main(void) {
     /* State-based test: REACQUIRING view (bar phase) emits no spurious intents. */
     {
         UiConnView reacq_view = {0};
-        reacq_view.phase     = CONN_REACQUIRING;
+        reacq_view.phase = CONN_REACQUIRING;
         reacq_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.close);
             assert(!intents.update);
@@ -296,20 +297,20 @@ int main(void) {
      * bar_h / v_pad sizing change in draw_conn_bar). */
     {
         const char *hosts[] = {"alice@mac.local", "bob@192.168.1.10", ""};
-        ConnPhase   phases[] = {CONN_ONLINE, CONN_REACQUIRING};
+        ConnPhase phases[] = {CONN_ONLINE, CONN_REACQUIRING};
 
         for (int pi = 0; pi < 2; pi++) {
             for (int hi = 0; hi < 3; hi++) {
                 UiConnView bar_view = {0};
-                bar_view.phase     = phases[pi];
+                bar_view.phase = phases[pi];
                 bar_view.user_host = hosts[hi];
 
                 for (int i = 0; i < 5; i++) {
-                    UiIntents    intents = {0};
-                    UiReconView  rv      = make_recon_view();
-                    RunConfig    rf      = {0};
-                    UiReconIntents ri    = make_recon_intents();
-                    intents.select_host  = -1;
+                    UiIntents intents = {0};
+                    UiReconView rv = make_recon_view();
+                    RunConfig rf = {0};
+                    UiReconIntents ri = make_recon_intents();
+                    intents.select_host = -1;
                     ui_frame(ui, &bar_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
                     assert(!intents.close);
                     assert(!intents.update);
@@ -331,11 +332,11 @@ int main(void) {
 
         UiConnView agent_view = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &agent_view, &agent_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.abort);
@@ -347,19 +348,19 @@ int main(void) {
     {
         ConnForm pw_nav_form = {0};
         pw_nav_form.selected_known_host = -1;
-        snprintf(pw_nav_form.host,    sizeof(pw_nav_form.host),    "mac.local");
-        snprintf(pw_nav_form.user,    sizeof(pw_nav_form.user),    "bob");
-        snprintf(pw_nav_form.port,    sizeof(pw_nav_form.port),    "22");
+        snprintf(pw_nav_form.host, sizeof(pw_nav_form.host), "mac.local");
+        snprintf(pw_nav_form.user, sizeof(pw_nav_form.user), "bob");
+        snprintf(pw_nav_form.port, sizeof(pw_nav_form.port), "22");
         snprintf(pw_nav_form.passkey, sizeof(pw_nav_form.passkey), "hunter2");
         pw_nav_form.auth = SSH_AUTH_PASSWORD;
 
         UiConnView pw_nav_view = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &pw_nav_view, &pw_nav_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.abort);
@@ -369,8 +370,8 @@ int main(void) {
     /* State-based test: ONLINE + overlay_open (UPDATE mode) emits no spurious breach. */
     {
         UiConnView update_view = {0};
-        update_view.phase        = CONN_ONLINE;
-        update_view.user_host    = "alice@mac.local";
+        update_view.phase = CONN_ONLINE;
+        update_view.user_host = "alice@mac.local";
         update_view.overlay_open = true;
 
         ConnForm update_form = {0};
@@ -380,11 +381,11 @@ int main(void) {
         snprintf(update_form.port, sizeof(update_form.port), "22");
 
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &update_view, &update_form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!intents.breach);
             assert(!intents.close);
@@ -397,15 +398,15 @@ int main(void) {
      * without crash and emits no spurious scan/abort_scan. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scan);
             assert(!ri.abort_scan);
@@ -417,19 +418,19 @@ int main(void) {
      * NO_BLUEPRINTS state without crash and emits no spurious pick. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         BlueprintList empty_list = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
-            rv.scan_done         = true;
-            rv.scan_err          = DISC_OK;
-            rv.blueprints        = &empty_list;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.scan_done = true;
+            rv.scan_err = DISC_OK;
+            rv.blueprints = &empty_list;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scan);
             assert(ri.pick_blueprint == -1);
@@ -440,27 +441,25 @@ int main(void) {
      * BLUEPRINTS_RECOVERED without crash and emits no spurious picks. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Blueprint bp_items[2] = {0};
-        snprintf(bp_items[0].path, sizeof(bp_items[0].path),
-                 "/Users/alice/App/App.xcworkspace");
+        snprintf(bp_items[0].path, sizeof(bp_items[0].path), "/Users/alice/App/App.xcworkspace");
         bp_items[0].is_workspace = true;
-        snprintf(bp_items[1].path, sizeof(bp_items[1].path),
-                 "/Users/alice/Lib/Lib.xcodeproj");
+        snprintf(bp_items[1].path, sizeof(bp_items[1].path), "/Users/alice/Lib/Lib.xcodeproj");
         bp_items[1].is_workspace = false;
-        BlueprintList bp_list = { .items = bp_items, .count = 2 };
+        BlueprintList bp_list = {.items = bp_items, .count = 2};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
-            rv.scan_done         = true;
-            rv.scan_err          = DISC_OK;
-            rv.blueprints        = &bp_list;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.scan_done = true;
+            rv.scan_err = DISC_OK;
+            rv.blueprints = &bp_list;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_blueprint == -1); /* no user interaction */
         }
@@ -470,18 +469,17 @@ int main(void) {
      * without crash and emits no spurious abort_scan without user input. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
-            rv.scanning          = true;
-            snprintf(rf.scan_root, sizeof(rf.scan_root),
-                     "/Users/alice/Developer");
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.scanning = true;
+            snprintf(rf.scan_root, sizeof(rf.scan_root), "/Users/alice/Developer");
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.abort_scan); /* no keyboard/mouse */
             assert(!ri.scan);
@@ -492,19 +490,19 @@ int main(void) {
      * state without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         BlueprintList empty_list = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
-            rv.scan_done         = true;
-            rv.scan_err          = DISC_ERR_XCODE_MISSING;
-            rv.blueprints        = &empty_list;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.scan_done = true;
+            rv.scan_err = DISC_ERR_XCODE_MISSING;
+            rv.blueprints = &empty_list;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scan);
         }
@@ -514,19 +512,19 @@ int main(void) {
      * state without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         BlueprintList empty_list = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconView  rv      = make_recon_view();
-            RunConfig    rf      = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
-            rv.scan_done         = true;
-            rv.scan_err          = DISC_ERR_COMMAND_FAILED;
-            rv.blueprints        = &empty_list;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.scan_done = true;
+            rv.scan_err = DISC_ERR_COMMAND_FAILED;
+            rv.blueprints = &empty_list;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scan);
         }
@@ -536,16 +534,16 @@ int main(void) {
      * corruption (manual edit state is stable). */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
-        UiReconView  rv = make_recon_view();
-        RunConfig    rf = {0};
+        UiReconView rv = make_recon_view();
+        RunConfig rf = {0};
         snprintf(rf.scan_root, sizeof(rf.scan_root), "/Users/alice/Developer");
         for (int i = 0; i < 3; i++) {
-            UiIntents    intents = {0};
-            UiReconIntents ri    = make_recon_intents();
-            intents.select_host  = -1;
+            UiIntents intents = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             /* scan_root must not be corrupted by rendering */
             assert(strcmp(rf.scan_root, "/Users/alice/Developer") == 0);
@@ -558,18 +556,17 @@ int main(void) {
      * emits no spurious scheme/config/bundle_id edits. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host    = -1;
-            rv.reading_blueprint   = true;
-            snprintf(rf.project, sizeof(rf.project),
-                     "/Users/alice/App/App.xcworkspace");
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.reading_blueprint = true;
+            snprintf(rf.project, sizeof(rf.project), "/Users/alice/App/App.xcworkspace");
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scheme_edited);
             assert(!ri.config_edited);
@@ -580,18 +577,17 @@ int main(void) {
     /* State-based test: resolving_bundle_id=true renders without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host      = -1;
-            rv.resolving_bundle_id   = true;
-            snprintf(rf.project, sizeof(rf.project),
-                     "/Users/alice/App/App.xcworkspace");
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.resolving_bundle_id = true;
+            snprintf(rf.project, sizeof(rf.project), "/Users/alice/App/App.xcworkspace");
             snprintf(rf.scheme, sizeof(rf.scheme), "MyApp");
             snprintf(rf.config, sizeof(rf.config), "Debug");
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
@@ -604,7 +600,7 @@ int main(void) {
      * crash and emits no spurious edits. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         char scheme_arr[3][256];
@@ -623,18 +619,17 @@ int main(void) {
         configs.count = 2;
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
             intents.select_host = -1;
-            rv.scan_done        = true;
-            rv.schemes          = &schemes;
-            rv.configs          = &configs;
-            snprintf(rf.project, sizeof(rf.project),
-                     "/Users/alice/App/App.xcworkspace");
-            snprintf(rf.scheme,  sizeof(rf.scheme),  "MyApp");
-            snprintf(rf.config,  sizeof(rf.config),  "Debug");
+            rv.scan_done = true;
+            rv.schemes = &schemes;
+            rv.configs = &configs;
+            snprintf(rf.project, sizeof(rf.project), "/Users/alice/App/App.xcworkspace");
+            snprintf(rf.scheme, sizeof(rf.scheme), "MyApp");
+            snprintf(rf.config, sizeof(rf.config), "Debug");
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scheme_edited);
             assert(!ri.config_edited);
@@ -646,23 +641,23 @@ int main(void) {
      * without corruption. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         UiReconView rv = make_recon_view();
-        RunConfig   rf = {0};
-        snprintf(rf.project,   sizeof(rf.project),   "/Users/alice/App/App.xcworkspace");
-        snprintf(rf.scheme,    sizeof(rf.scheme),    "MyApp");
-        snprintf(rf.config,    sizeof(rf.config),    "Debug");
+        RunConfig rf = {0};
+        snprintf(rf.project, sizeof(rf.project), "/Users/alice/App/App.xcworkspace");
+        snprintf(rf.scheme, sizeof(rf.scheme), "MyApp");
+        snprintf(rf.config, sizeof(rf.config), "Debug");
         snprintf(rf.bundle_id, sizeof(rf.bundle_id), "com.example.myapp");
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconIntents ri      = make_recon_intents();
+            UiIntents intents = {0};
+            UiReconIntents ri = make_recon_intents();
             intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
-            assert(strcmp(rf.scheme,    "MyApp")             == 0);
-            assert(strcmp(rf.config,    "Debug")             == 0);
+            assert(strcmp(rf.scheme, "MyApp") == 0);
+            assert(strcmp(rf.config, "Debug") == 0);
             assert(strcmp(rf.bundle_id, "com.example.myapp") == 0);
         }
     }
@@ -670,16 +665,16 @@ int main(void) {
     /* State-based test: blueprint_err renders without crash (failed read). */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host  = -1;
-            rv.blueprint_err     = DISC_ERR_XCODE_MISSING;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.blueprint_err = DISC_ERR_XCODE_MISSING;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.scheme_edited);
             assert(!ri.config_edited);
@@ -692,18 +687,18 @@ int main(void) {
      * CONFIGURED without crash and emits no spurious preset intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         PresetList empty_presets = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host    = -1;
-            rv.presets             = &empty_presets;
-            rv.preset_selected     = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.presets = &empty_presets;
+            rv.preset_selected = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.preset_new);
             assert(!ri.preset_rename);
@@ -716,17 +711,17 @@ int main(void) {
      * and emits no spurious preset intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host    = -1;
-            rv.presets             = NULL;
-            rv.preset_selected     = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.presets = NULL;
+            rv.preset_selected = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.preset_new);
             assert(!ri.preset_rename);
@@ -739,31 +734,31 @@ int main(void) {
      * and emits no spurious picks or actions. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Preset preset_arr[2];
         memset(preset_arr, 0, sizeof(preset_arr));
-        snprintf(preset_arr[0].name,      sizeof(preset_arr[0].name),      "debug");
-        snprintf(preset_arr[0].project,   sizeof(preset_arr[0].project),   "/Users/alice/App.xcworkspace");
-        snprintf(preset_arr[0].scheme,    sizeof(preset_arr[0].scheme),    "App");
-        snprintf(preset_arr[0].config,    sizeof(preset_arr[0].config),    "Debug");
+        snprintf(preset_arr[0].name, sizeof(preset_arr[0].name), "debug");
+        snprintf(preset_arr[0].project, sizeof(preset_arr[0].project), "/Users/alice/App.xcworkspace");
+        snprintf(preset_arr[0].scheme, sizeof(preset_arr[0].scheme), "App");
+        snprintf(preset_arr[0].config, sizeof(preset_arr[0].config), "Debug");
         snprintf(preset_arr[0].bundle_id, sizeof(preset_arr[0].bundle_id), "com.acme.app");
-        snprintf(preset_arr[1].name,      sizeof(preset_arr[1].name),      "release");
-        snprintf(preset_arr[1].project,   sizeof(preset_arr[1].project),   "/Users/alice/App.xcworkspace");
-        snprintf(preset_arr[1].scheme,    sizeof(preset_arr[1].scheme),    "App");
-        snprintf(preset_arr[1].config,    sizeof(preset_arr[1].config),    "Release");
+        snprintf(preset_arr[1].name, sizeof(preset_arr[1].name), "release");
+        snprintf(preset_arr[1].project, sizeof(preset_arr[1].project), "/Users/alice/App.xcworkspace");
+        snprintf(preset_arr[1].scheme, sizeof(preset_arr[1].scheme), "App");
+        snprintf(preset_arr[1].config, sizeof(preset_arr[1].config), "Release");
         snprintf(preset_arr[1].bundle_id, sizeof(preset_arr[1].bundle_id), "com.acme.app");
-        PresetList presets = { .items = preset_arr, .count = 2, .active_index = 0 };
+        PresetList presets = {.items = preset_arr, .count = 2, .active_index = 0};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host    = -1;
-            rv.presets             = &presets;
-            rv.preset_selected     = 0;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.presets = &presets;
+            rv.preset_selected = 0;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.preset_new);
             assert(!ri.preset_rename);
@@ -776,22 +771,22 @@ int main(void) {
      * selected) renders without crash; RENAME and DELETE must not fire. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Preset preset_arr[1];
         memset(preset_arr, 0, sizeof(preset_arr));
         snprintf(preset_arr[0].name, sizeof(preset_arr[0].name), "app");
-        PresetList presets = { .items = preset_arr, .count = 1, .active_index = -1 };
+        PresetList presets = {.items = preset_arr, .count = 1, .active_index = -1};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host    = -1;
-            rv.presets             = &presets;
-            rv.preset_selected     = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.presets = &presets;
+            rv.preset_selected = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.preset_rename);
             assert(!ri.preset_delete);
@@ -803,27 +798,27 @@ int main(void) {
      * without corruption. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Preset preset_arr[1];
         memset(preset_arr, 0, sizeof(preset_arr));
-        snprintf(preset_arr[0].name,      sizeof(preset_arr[0].name),      "staging");
-        snprintf(preset_arr[0].project,   sizeof(preset_arr[0].project),   "/Users/alice/App.xcworkspace");
-        snprintf(preset_arr[0].scheme,    sizeof(preset_arr[0].scheme),    "Staging");
-        snprintf(preset_arr[0].config,    sizeof(preset_arr[0].config),    "Release");
+        snprintf(preset_arr[0].name, sizeof(preset_arr[0].name), "staging");
+        snprintf(preset_arr[0].project, sizeof(preset_arr[0].project), "/Users/alice/App.xcworkspace");
+        snprintf(preset_arr[0].scheme, sizeof(preset_arr[0].scheme), "Staging");
+        snprintf(preset_arr[0].config, sizeof(preset_arr[0].config), "Release");
         snprintf(preset_arr[0].bundle_id, sizeof(preset_arr[0].bundle_id), "com.acme.staging");
-        PresetList presets = { .items = preset_arr, .count = 1, .active_index = 0 };
+        PresetList presets = {.items = preset_arr, .count = 1, .active_index = 0};
 
         UiReconView rv = make_recon_view();
-        rv.presets         = &presets;
+        rv.presets = &presets;
         rv.preset_selected = 0;
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(strcmp(preset_arr[0].name, "staging") == 0);
         }
@@ -835,17 +830,17 @@ int main(void) {
      * crash and emits no spurious sweep or pick_target. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host   = -1;
-            rv.targets            = NULL;
-            rv.target_selected    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.targets = NULL;
+            rv.target_selected = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
@@ -856,16 +851,16 @@ int main(void) {
      * and emits no spurious sweep. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host   = -1;
-            rv.sweeping           = true;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.sweeping = true;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
@@ -876,20 +871,20 @@ int main(void) {
      * // NO TARGETS IN RANGE without crash and emits no spurious pick. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         TargetList empty_targets = {0};
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host   = -1;
-            rv.sweep_done         = true;
-            rv.sweep_err          = DISC_OK;
-            rv.targets            = &empty_targets;
-            rv.target_selected    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.sweep_done = true;
+            rv.sweep_err = DISC_OK;
+            rv.targets = &empty_targets;
+            rv.target_selected = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
         }
@@ -899,38 +894,35 @@ int main(void) {
      * TARGETS IN RANGE without crash and emits no spurious picks. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Target target_arr[3];
         memset(target_arr, 0, sizeof(target_arr));
         snprintf(target_arr[0].name, sizeof(target_arr[0].name), "iPhone 15");
-        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
-                 "00001111-AAAA-BBBB-CCCC-000011112222");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid), "00001111-AAAA-BBBB-CCCC-000011112222");
         target_arr[0].is_simulator = false;
-        target_arr[0].booted       = false;
+        target_arr[0].booted = false;
         snprintf(target_arr[1].name, sizeof(target_arr[1].name), "iPad Air");
-        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid),
-                 "11112222-AAAA-BBBB-CCCC-000011112222");
+        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid), "11112222-AAAA-BBBB-CCCC-000011112222");
         target_arr[1].is_simulator = true;
-        target_arr[1].booted       = true;
+        target_arr[1].booted = true;
         snprintf(target_arr[2].name, sizeof(target_arr[2].name), "iPhone SE");
-        snprintf(target_arr[2].udid, sizeof(target_arr[2].udid),
-                 "22223333-AAAA-BBBB-CCCC-000011112222");
+        snprintf(target_arr[2].udid, sizeof(target_arr[2].udid), "22223333-AAAA-BBBB-CCCC-000011112222");
         target_arr[2].is_simulator = true;
-        target_arr[2].booted       = false;
-        TargetList targets = { .items = target_arr, .count = 3 };
+        target_arr[2].booted = false;
+        TargetList targets = {.items = target_arr, .count = 3};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host   = -1;
-            rv.sweep_done         = true;
-            rv.sweep_err          = DISC_OK;
-            rv.targets            = &targets;
-            rv.target_selected    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.sweep_done = true;
+            rv.sweep_err = DISC_OK;
+            rv.targets = &targets;
+            rv.target_selected = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
         }
@@ -940,32 +932,30 @@ int main(void) {
      * the selection highlighted without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Target target_arr[2];
         memset(target_arr, 0, sizeof(target_arr));
         snprintf(target_arr[0].name, sizeof(target_arr[0].name), "My iPhone");
-        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
-                 "AAAA1111-BBBB-CCCC-DDDD-EEEE11112222");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid), "AAAA1111-BBBB-CCCC-DDDD-EEEE11112222");
         target_arr[0].is_simulator = false;
         snprintf(target_arr[1].name, sizeof(target_arr[1].name), "iPhone 16 Sim");
-        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid),
-                 "BBBB2222-CCCC-DDDD-EEEE-FFFF22223333");
+        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid), "BBBB2222-CCCC-DDDD-EEEE-FFFF22223333");
         target_arr[1].is_simulator = true;
-        target_arr[1].booted       = true;
-        TargetList targets = { .items = target_arr, .count = 2 };
+        target_arr[1].booted = true;
+        TargetList targets = {.items = target_arr, .count = 2};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host   = -1;
-            rv.sweep_done         = true;
-            rv.sweep_err          = DISC_OK;
-            rv.targets            = &targets;
-            rv.target_selected    = 0; /* first target selected */
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.sweep_done = true;
+            rv.sweep_err = DISC_OK;
+            rv.targets = &targets;
+            rv.target_selected = 0; /* first target selected */
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
         }
@@ -975,17 +965,17 @@ int main(void) {
      * error state without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host   = -1;
-            rv.sweep_done         = true;
-            rv.sweep_err          = DISC_ERR_COMMAND_FAILED;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.sweep_done = true;
+            rv.sweep_err = DISC_ERR_COMMAND_FAILED;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
         }
@@ -994,31 +984,30 @@ int main(void) {
     /* State-based test: READY_OK renders READY indicator without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Target target_arr[1];
         memset(target_arr, 0, sizeof(target_arr));
         snprintf(target_arr[0].name, sizeof(target_arr[0].name), "My iPhone");
-        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
-                 "CCCC3333-DDDD-EEEE-FFFF-AAAA33334444");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid), "CCCC3333-DDDD-EEEE-FFFF-AAAA33334444");
         target_arr[0].is_simulator = false;
-        TargetList targets = { .items = target_arr, .count = 1 };
+        TargetList targets = {.items = target_arr, .count = 1};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            intents.select_host   = -1;
-            rv.sweep_done         = true;
-            rv.sweep_err          = DISC_OK;
-            rv.targets            = &targets;
-            rv.target_selected    = 0;
-            rv.readiness          = READY_OK;
-            snprintf(rf.project,   sizeof(rf.project),   "/Users/alice/App.xcworkspace");
-            snprintf(rf.scheme,    sizeof(rf.scheme),    "App");
-            snprintf(rf.config,    sizeof(rf.config),    "Debug");
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            intents.select_host = -1;
+            rv.sweep_done = true;
+            rv.sweep_err = DISC_OK;
+            rv.targets = &targets;
+            rv.target_selected = 0;
+            rv.readiness = READY_OK;
+            snprintf(rf.project, sizeof(rf.project), "/Users/alice/App.xcworkspace");
+            snprintf(rf.scheme, sizeof(rf.scheme), "App");
+            snprintf(rf.config, sizeof(rf.config), "Debug");
             snprintf(rf.bundle_id, sizeof(rf.bundle_id), "com.acme.app");
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
             assert(ri.pick_target == -1);
@@ -1029,22 +1018,19 @@ int main(void) {
     /* State-based test: each non-OK readiness value renders a hint without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
-        Readiness states[] = {
-            READY_NO_PROJECT, READY_NO_SCHEME, READY_NO_CONFIG,
-            READY_NO_BUNDLE_ID, READY_NO_TARGET
-        };
+        Readiness states[] = {READY_NO_PROJECT, READY_NO_SCHEME, READY_NO_CONFIG, READY_NO_BUNDLE_ID, READY_NO_TARGET};
         int n = (int)(sizeof(states) / sizeof(states[0]));
         for (int s = 0; s < n; s++) {
             for (int i = 0; i < 3; i++) {
-                UiIntents      intents = {0};
-                UiReconView    rv      = make_recon_view();
-                RunConfig      rf      = {0};
-                UiReconIntents ri      = make_recon_intents();
-                intents.select_host   = -1;
-                rv.readiness          = states[s];
+                UiIntents intents = {0};
+                UiReconView rv = make_recon_view();
+                RunConfig rf = {0};
+                UiReconIntents ri = make_recon_intents();
+                intents.select_host = -1;
+                rv.readiness = states[s];
                 ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &rrv, &rri, &kf);
                 assert(ri.pick_target == -1);
             }
@@ -1057,17 +1043,17 @@ int main(void) {
      * emits no spurious execute/compile/abort. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view(); /* IDLE, READY_NO_PROJECT */
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view(); /* IDLE, READY_NO_PROJECT */
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
@@ -1079,18 +1065,18 @@ int main(void) {
      * no spurious execute/compile/abort. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.readiness       = READY_OK;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_OK;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
@@ -1102,19 +1088,19 @@ int main(void) {
      * and emits no spurious abort_run without user input. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_BUILDING;
-            run_rv.readiness       = READY_OK;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_BUILDING;
+            run_rv.readiness = READY_OK;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.abort_run);
             assert(!run_ri.execute);
@@ -1125,19 +1111,19 @@ int main(void) {
      * re-exec) without crash and emits no spurious execute or abort. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.readiness       = READY_OK;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.readiness = READY_OK;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
@@ -1148,20 +1134,20 @@ int main(void) {
      * without crash and emits no spurious intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.readiness       = READY_OK;
-            run_rv.stale           = true;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.readiness = READY_OK;
+            run_rv.stale = true;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
@@ -1174,19 +1160,19 @@ int main(void) {
      * crash and emits no spurious abort. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_BUILD_FAILED;
-            run_rv.readiness       = READY_OK;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_BUILD_FAILED;
+            run_rv.readiness = READY_OK;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.abort_run);
             assert(!run_ri.execute);
@@ -1198,24 +1184,22 @@ int main(void) {
      * abort_run or execute. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
-        RunPhase in_chain[] = {
-            RUN_BUILDING, RUN_PRIMING, RUN_INSTALLING, RUN_LAUNCHING
-        };
+        RunPhase in_chain[] = {RUN_BUILDING, RUN_PRIMING, RUN_INSTALLING, RUN_LAUNCHING};
         int n = (int)(sizeof(in_chain) / sizeof(in_chain[0]));
         for (int s = 0; s < n; s++) {
             for (int i = 0; i < 3; i++) {
-                UiIntents      intents = {0};
-                UiReconView    rv      = make_recon_view();
-                RunConfig      rf      = {0};
-                UiReconIntents ri      = make_recon_intents();
-                UiRunView      run_rv  = make_run_view();
-                run_rv.phase           = in_chain[s];
-                run_rv.readiness       = READY_OK;
-                UiRunIntents   run_ri  = {0};
-                intents.select_host    = -1;
+                UiIntents intents = {0};
+                UiReconView rv = make_recon_view();
+                RunConfig rf = {0};
+                UiReconIntents ri = make_recon_intents();
+                UiRunView run_rv = make_run_view();
+                run_rv.phase = in_chain[s];
+                run_rv.readiness = READY_OK;
+                UiRunIntents run_ri = {0};
+                intents.select_host = -1;
                 ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
                 assert(!run_ri.abort_run);
                 assert(!run_ri.execute);
@@ -1227,19 +1211,19 @@ int main(void) {
      * renders BUILD LOG section without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = NULL;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = NULL;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
@@ -1250,19 +1234,19 @@ int main(void) {
      * and emits no spurious device_log_copy/clear. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.readiness       = READY_OK;
-            run_rv.device_log      = NULL;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_OK;
+            run_rv.device_log = NULL;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.device_log_copy);
             assert(!run_ri.device_log_clear);
@@ -1273,7 +1257,7 @@ int main(void) {
      * and content without crash, emits no spurious device_log intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Arena *test_arena = arena_create(64 * 1024);
@@ -1284,16 +1268,16 @@ int main(void) {
         logbuf_append(dev_log, "app output line 2\n", 18);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.readiness       = READY_OK;
-            run_rv.device_log      = dev_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.readiness = READY_OK;
+            run_rv.device_log = dev_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.device_log_copy);
             assert(!run_ri.device_log_clear);
@@ -1305,7 +1289,7 @@ int main(void) {
      * renders dim header and content without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Arena *test_arena = arena_create(64 * 1024);
@@ -1316,16 +1300,16 @@ int main(void) {
         logbuf_append(dev_log, "prior run output\n", 17);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.device_log      = dev_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.device_log = dev_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.device_log_copy);
             assert(!run_ri.device_log_clear);
@@ -1337,7 +1321,7 @@ int main(void) {
      * and device log content without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase     = CONN_ONLINE;
+        online_view.phase = CONN_ONLINE;
         online_view.user_host = "alice@mac.local";
 
         Arena *test_arena = arena_create(64 * 1024);
@@ -1347,17 +1331,17 @@ int main(void) {
         logbuf_append(dev_log, "live app output\n", 16);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.stale           = true;
-            run_rv.readiness       = READY_OK;
-            run_rv.device_log      = dev_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.stale = true;
+            run_rv.readiness = READY_OK;
+            run_rv.device_log = dev_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
@@ -1372,19 +1356,19 @@ int main(void) {
      * intents from either side. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_NO_PROJECT;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_NO_PROJECT;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
@@ -1405,26 +1389,26 @@ int main(void) {
      * no spurious execute or abort intents (headless doesn't click). */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
         logbuf_append(build_log, "Compiling source files...\n", 26);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_BUILDING;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_BUILDING;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
@@ -1440,31 +1424,31 @@ int main(void) {
      * independently; no spurious copy/clear intents from either panel. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
-        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(dev_log != NULL);
         logbuf_append(build_log, "Build succeeded\n", 16);
         logbuf_append(dev_log, "App output line 1\n", 18);
         logbuf_append(dev_log, "App output line 2\n", 18);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.device_log      = dev_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.device_log = dev_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
@@ -1480,18 +1464,18 @@ int main(void) {
      * still render; no spurious intents. */
     {
         UiConnView reacq_view = {0};
-        reacq_view.phase      = CONN_REACQUIRING;
-        reacq_view.user_host  = "alice@mac.local";
+        reacq_view.phase = CONN_REACQUIRING;
+        reacq_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.readiness       = READY_OK;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_OK;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
@@ -1506,26 +1490,26 @@ int main(void) {
      * without crash and emits no spurious build_log intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
         /* logbuf is intentionally left empty — count == 0 */
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log; /* non-null, empty */
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log; /* non-null, empty */
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
@@ -1537,26 +1521,26 @@ int main(void) {
      * without crash and emits no spurious device_log intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(dev_log != NULL);
         /* dev_log is intentionally left empty — count == 0 */
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.device_log      = dev_log; /* non-null, empty */
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.device_log = dev_log; /* non-null, empty */
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.device_log_copy);
             assert(!run_ri.device_log_clear);
@@ -1568,30 +1552,30 @@ int main(void) {
      * its own state independently, no spurious intents from either side. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
-        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(dev_log != NULL);
         logbuf_append(build_log, "Build output line\n", 18);
         /* dev_log intentionally left empty — should show wordmark */
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log; /* populated */
-            run_rv.device_log      = dev_log;   /* empty → wordmark */
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log; /* populated */
+            run_rv.device_log = dev_log;  /* empty → wordmark */
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
@@ -1605,30 +1589,30 @@ int main(void) {
      * left panel only; right panel streams content; no spurious intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
-        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(dev_log != NULL);
         /* build_log intentionally left empty — should show wordmark */
         logbuf_append(dev_log, "App output line\n", 16);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log; /* empty → wordmark */
-            run_rv.device_log      = dev_log;   /* populated */
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log; /* empty → wordmark */
+            run_rv.device_log = dev_log;  /* populated */
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
@@ -1645,26 +1629,26 @@ int main(void) {
      * wordmark; no copy/clear intent fires). */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
         /* build_log intentionally left empty — count == 0 */
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_BUILD_FAILED;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log; /* non-null, empty */
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_BUILD_FAILED;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log; /* non-null, empty */
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
@@ -1676,26 +1660,26 @@ int main(void) {
      * emits no spurious intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
         /* build_log intentionally left empty — count == 0 */
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_DEPLOY_FAILED;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log; /* non-null, empty */
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_DEPLOY_FAILED;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log; /* non-null, empty */
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
@@ -1707,25 +1691,25 @@ int main(void) {
      * header) — the non-failed empty-state branch is unaffected. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
@@ -1740,71 +1724,67 @@ int main(void) {
      * default; combos are not open). */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         Blueprint bp_items[2] = {0};
-        snprintf(bp_items[0].path, sizeof(bp_items[0].path),
-                 "/Users/alice/App/App.xcworkspace");
+        snprintf(bp_items[0].path, sizeof(bp_items[0].path), "/Users/alice/App/App.xcworkspace");
         bp_items[0].is_workspace = true;
-        snprintf(bp_items[1].path, sizeof(bp_items[1].path),
-                 "/Users/alice/Lib/Lib.xcodeproj");
+        snprintf(bp_items[1].path, sizeof(bp_items[1].path), "/Users/alice/Lib/Lib.xcodeproj");
         bp_items[1].is_workspace = false;
-        BlueprintList bp_list = { .items = bp_items, .count = 2 };
+        BlueprintList bp_list = {.items = bp_items, .count = 2};
 
         char scheme_arr[2][256];
         snprintf(scheme_arr[0], 256, "MyApp");
         snprintf(scheme_arr[1], 256, "MyAppTests");
-        StrList schemes = { .items = scheme_arr, .count = 2 };
+        StrList schemes = {.items = scheme_arr, .count = 2};
 
         char config_arr[1][256];
         snprintf(config_arr[0], 256, "Debug");
-        StrList configs = { .items = config_arr, .count = 1 };
+        StrList configs = {.items = config_arr, .count = 1};
 
         Preset preset_arr[2];
         memset(preset_arr, 0, sizeof(preset_arr));
         snprintf(preset_arr[0].name, sizeof(preset_arr[0].name), "debug");
         snprintf(preset_arr[1].name, sizeof(preset_arr[1].name), "release");
-        PresetList presets = { .items = preset_arr, .count = 2, .active_index = 0 };
+        PresetList presets = {.items = preset_arr, .count = 2, .active_index = 0};
 
         Target target_arr[2];
         memset(target_arr, 0, sizeof(target_arr));
         snprintf(target_arr[0].name, sizeof(target_arr[0].name), "My iPhone");
-        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
-                 "AAAA1111-BBBB-CCCC-DDDD-EEEE11112222");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid), "AAAA1111-BBBB-CCCC-DDDD-EEEE11112222");
         target_arr[0].is_simulator = false;
         snprintf(target_arr[1].name, sizeof(target_arr[1].name), "iPhone 16 Sim");
-        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid),
-                 "BBBB2222-CCCC-DDDD-EEEE-FFFF22223333");
+        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid), "BBBB2222-CCCC-DDDD-EEEE-FFFF22223333");
         target_arr[1].is_simulator = true;
-        target_arr[1].booted       = true;
-        TargetList targets = { .items = target_arr, .count = 2 };
+        target_arr[1].booted = true;
+        TargetList targets = {.items = target_arr, .count = 2};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
-            rv.scan_done           = true;
-            rv.scan_err            = DISC_OK;
-            rv.blueprints          = &bp_list;
-            rv.blueprint_selected  = 0;
-            rv.schemes             = &schemes;
-            rv.configs             = &configs;
-            rv.presets             = &presets;
-            rv.preset_selected     = 0;
-            rv.sweep_done          = true;
-            rv.sweep_err           = DISC_OK;
-            rv.targets             = &targets;
-            rv.target_selected     = 0;
-            rv.readiness           = READY_OK;
-            run_rv.readiness       = READY_OK;
-            snprintf(rf.project,   sizeof(rf.project),   "/Users/alice/App/App.xcworkspace");
-            snprintf(rf.scheme,    sizeof(rf.scheme),    "MyApp");
-            snprintf(rf.config,    sizeof(rf.config),    "Debug");
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            rv.scan_done = true;
+            rv.scan_err = DISC_OK;
+            rv.blueprints = &bp_list;
+            rv.blueprint_selected = 0;
+            rv.schemes = &schemes;
+            rv.configs = &configs;
+            rv.presets = &presets;
+            rv.preset_selected = 0;
+            rv.sweep_done = true;
+            rv.sweep_err = DISC_OK;
+            rv.targets = &targets;
+            rv.target_selected = 0;
+            rv.readiness = READY_OK;
+            run_rv.readiness = READY_OK;
+            snprintf(rf.project, sizeof(rf.project), "/Users/alice/App/App.xcworkspace");
+            snprintf(rf.scheme, sizeof(rf.scheme), "MyApp");
+            snprintf(rf.config, sizeof(rf.config), "Debug");
             snprintf(rf.bundle_id, sizeof(rf.bundle_id), "com.alice.myapp");
             snprintf(rf.scan_root, sizeof(rf.scan_root), "/Users/alice");
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
@@ -1830,19 +1810,19 @@ int main(void) {
      * in the combo without crash; no spurious preset intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
-            rv.presets             = NULL;
-            rv.preset_selected     = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            rv.presets = NULL;
+            rv.preset_selected = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.preset_new);
             assert(!ri.preset_rename);
@@ -1855,26 +1835,26 @@ int main(void) {
      * name as the combo label without crash; no spurious picks. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         Preset preset_arr[3];
         memset(preset_arr, 0, sizeof(preset_arr));
         snprintf(preset_arr[0].name, sizeof(preset_arr[0].name), "alpha");
         snprintf(preset_arr[1].name, sizeof(preset_arr[1].name), "beta");
         snprintf(preset_arr[2].name, sizeof(preset_arr[2].name), "gamma");
-        PresetList presets = { .items = preset_arr, .count = 3, .active_index = 1 };
+        PresetList presets = {.items = preset_arr, .count = 3, .active_index = 1};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
-            rv.presets             = &presets;
-            rv.preset_selected     = 1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            rv.presets = &presets;
+            rv.preset_selected = 1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(ri.pick_preset == -1);
             assert(!ri.preset_delete);
@@ -1885,20 +1865,20 @@ int main(void) {
      * without crash; no spurious sweep or pick. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
-            rv.sweep_done          = false;
-            rv.targets             = NULL;
-            rv.target_selected     = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            rv.sweep_done = false;
+            rv.targets = NULL;
+            rv.target_selected = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
@@ -1909,34 +1889,32 @@ int main(void) {
      * as the combo label without crash; no spurious picks. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         Target target_arr[2];
         memset(target_arr, 0, sizeof(target_arr));
         snprintf(target_arr[0].name, sizeof(target_arr[0].name), "My Device");
-        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid),
-                 "ABCD1234-EFGH-5678-IJKL-MNOP91011121");
+        snprintf(target_arr[0].udid, sizeof(target_arr[0].udid), "ABCD1234-EFGH-5678-IJKL-MNOP91011121");
         target_arr[0].is_simulator = false;
         snprintf(target_arr[1].name, sizeof(target_arr[1].name), "Simulator");
-        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid),
-                 "DCBA4321-HGFE-8765-LKJI-PONM21101191");
+        snprintf(target_arr[1].udid, sizeof(target_arr[1].udid), "DCBA4321-HGFE-8765-LKJI-PONM21101191");
         target_arr[1].is_simulator = true;
-        target_arr[1].booted       = true;
-        TargetList targets = { .items = target_arr, .count = 2 };
+        target_arr[1].booted = true;
+        TargetList targets = {.items = target_arr, .count = 2};
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
-            rv.sweep_done          = true;
-            rv.sweep_err           = DISC_OK;
-            rv.targets             = &targets;
-            rv.target_selected     = 0;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            rv.sweep_done = true;
+            rv.sweep_err = DISC_OK;
+            rv.targets = &targets;
+            rv.target_selected = 0;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
@@ -1947,18 +1925,18 @@ int main(void) {
      * SWEEPING text; no spurious sweep intent. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
-            rv.sweeping            = true;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            rv.sweeping = true;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!ri.sweep);
             assert(ri.pick_target == -1);
@@ -1969,18 +1947,18 @@ int main(void) {
      * and emits no spurious execute/compile/abort. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.readiness       = READY_OK;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_OK;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
@@ -1992,24 +1970,21 @@ int main(void) {
      * renders a hint in the right panel without crash. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Readiness states[] = {
-            READY_NO_PROJECT, READY_NO_SCHEME, READY_NO_CONFIG,
-            READY_NO_BUNDLE_ID, READY_NO_TARGET
-        };
+        Readiness states[] = {READY_NO_PROJECT, READY_NO_SCHEME, READY_NO_CONFIG, READY_NO_BUNDLE_ID, READY_NO_TARGET};
         int n = (int)(sizeof(states) / sizeof(states[0]));
         for (int s = 0; s < n; s++) {
             for (int i = 0; i < 3; i++) {
-                UiIntents      intents = {0};
-                UiReconView    rv      = make_recon_view();
-                RunConfig      rf      = {0};
-                UiReconIntents ri      = make_recon_intents();
-                UiRunView      run_rv  = make_run_view();
-                run_rv.readiness       = states[s];
-                UiRunIntents   run_ri  = {0};
-                intents.select_host    = -1;
+                UiIntents intents = {0};
+                UiReconView rv = make_recon_view();
+                RunConfig rf = {0};
+                UiReconIntents ri = make_recon_intents();
+                UiRunView run_rv = make_run_view();
+                run_rv.readiness = states[s];
+                UiRunIntents run_ri = {0};
+                intents.select_host = -1;
                 ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
                 assert(!run_ri.execute);
                 assert(!run_ri.compile);
@@ -2024,30 +1999,30 @@ int main(void) {
      * crash and emits no spurious intents across multiple frames. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
-        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(dev_log != NULL);
         logbuf_append(build_log, "Build succeeded\n", 16);
-        logbuf_append(dev_log,   "App output\n",      11);
+        logbuf_append(dev_log, "App output\n", 11);
 
         for (int i = 0; i < 5; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.device_log      = dev_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.device_log = dev_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.abort_run);
@@ -2063,29 +2038,29 @@ int main(void) {
      * without crash and emits no spurious intents. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
-        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(dev_log != NULL);
         /* both logs intentionally empty */
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.device_log      = dev_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.device_log = dev_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.build_log_clear);
@@ -2099,31 +2074,31 @@ int main(void) {
      * neither panel collapses (render stays stable across many frames). */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
-        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(dev_log != NULL);
         logbuf_append(build_log, "line\n", 5);
-        logbuf_append(dev_log,   "line\n", 5);
+        logbuf_append(dev_log, "line\n", 5);
 
         /* Render once with a ratio that would normally be out of bounds. */
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_RUNNING;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.device_log      = dev_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_RUNNING;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.device_log = dev_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.build_log_copy);
             assert(!run_ri.device_log_copy);
@@ -2134,28 +2109,28 @@ int main(void) {
     /* T5: REACQUIRING phase — splitter still present; no spurious intents. */
     {
         UiConnView reacq_view = {0};
-        reacq_view.phase      = CONN_REACQUIRING;
-        reacq_view.user_host  = "alice@mac.local";
+        reacq_view.phase = CONN_REACQUIRING;
+        reacq_view.user_host = "alice@mac.local";
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
-        LogBuf *dev_log    = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *dev_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(dev_log != NULL);
         logbuf_append(build_log, "Build output\n", 13);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.device_log      = dev_log;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.device_log = dev_log;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &reacq_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
             assert(!run_ri.execute);
             assert(!run_ri.compile);
@@ -2170,27 +2145,27 @@ int main(void) {
      * kc_skip stay false (no spurious intent without a button press). */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         KcForm kc = {0};
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.show_kc_prompt  = false;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.show_kc_prompt = false;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
             assert(!run_ri.kc_submit);
             assert(!run_ri.kc_skip);
@@ -2202,27 +2177,27 @@ int main(void) {
      * kc_submit and kc_skip remain false across multiple frames. */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         KcForm kc = {0};
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.show_kc_prompt  = true;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.show_kc_prompt = true;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
             assert(!run_ri.kc_submit);
             assert(!run_ri.kc_skip);
@@ -2234,29 +2209,29 @@ int main(void) {
      * frames without user interaction (default-off invariant). */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         KcForm kc = {0};
         kc.remember = false;
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.show_kc_prompt  = true;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.show_kc_prompt = true;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
         }
         assert(!kc.remember); /* default-off invariant: unchanged without interaction */
@@ -2267,33 +2242,201 @@ int main(void) {
      * without user interaction (state is not corrupted by rendering). */
     {
         UiConnView online_view = {0};
-        online_view.phase      = CONN_ONLINE;
-        online_view.user_host  = "alice@mac.local";
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
 
         KcForm kc = {0};
         kc.remember = true;
 
-        Arena  *test_arena = arena_create(64 * 1024);
+        Arena *test_arena = arena_create(64 * 1024);
         assert(test_arena != NULL);
-        LogBuf *build_log  = logbuf_init(test_arena, 16 * 1024, 256);
+        LogBuf *build_log = logbuf_init(test_arena, 16 * 1024, 256);
         assert(build_log != NULL);
 
         for (int i = 0; i < 3; i++) {
-            UiIntents      intents = {0};
-            UiReconView    rv      = make_recon_view();
-            RunConfig      rf      = {0};
-            UiReconIntents ri      = make_recon_intents();
-            UiRunView      run_rv  = make_run_view();
-            run_rv.phase           = RUN_IDLE;
-            run_rv.readiness       = READY_OK;
-            run_rv.build_log       = build_log;
-            run_rv.show_kc_prompt  = true;
-            UiRunIntents   run_ri  = {0};
-            intents.select_host    = -1;
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.phase = RUN_IDLE;
+            run_rv.readiness = READY_OK;
+            run_rv.build_log = build_log;
+            run_rv.show_kc_prompt = true;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
             ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kc);
         }
         assert(kc.remember); /* flag must survive frames without interaction */
         arena_destroy(test_arena);
+    }
+
+    /* ── Task 1: global chord handler (state-based, no key injection) ── */
+
+    /* T1: Ctrl+Enter — DISCONNECTED phase: no execute fired (bar_phase=false). */
+    {
+        UiConnView disc_view = {0};
+        disc_view.phase = CONN_DISCONNECTED;
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_OK;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &disc_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(!run_ri.execute);
+            assert(!intents.close);
+            assert(!run_ri.device_log_clear);
+        }
+    }
+
+    /* T1: ONLINE + READY_NO_PROJECT: Ctrl+Enter guard holds — execute stays
+     * false even in bar_phase (no key injected, and readiness blocks it). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_NO_PROJECT; /* cannot execute */
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(!run_ri.execute);
+        }
+    }
+
+    /* T1: ONLINE + READY_OK + in_chain: Ctrl+Enter guard holds — execute
+     * stays false while a run chain is active (no key injected). */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        RunPhase in_chain_phases[] = {RUN_BUILDING, RUN_PRIMING, RUN_INSTALLING, RUN_LAUNCHING};
+        int n = (int)(sizeof(in_chain_phases) / sizeof(in_chain_phases[0]));
+        for (int s = 0; s < n; s++) {
+            for (int i = 0; i < 3; i++) {
+                UiIntents intents = {0};
+                UiReconView rv = make_recon_view();
+                RunConfig rf = {0};
+                UiReconIntents ri = make_recon_intents();
+                UiRunView run_rv = make_run_view();
+                run_rv.phase = in_chain_phases[s];
+                run_rv.readiness = READY_OK;
+                UiRunIntents run_ri = {0};
+                intents.select_host = -1;
+                ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+                /* execute must not fire without a key press even when READY_OK */
+                assert(!run_ri.execute);
+            }
+        }
+    }
+
+    /* T1: ONLINE + READY_OK + IDLE: no key injected → execute stays false.
+     * Verifies the key handler does not fire spuriously without input. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            run_rv.readiness = READY_OK;
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(!run_ri.execute);
+            assert(!run_ri.device_log_clear);
+            assert(!intents.close);
+        }
+    }
+
+    /* T1: Ctrl+Escape — DISCONNECTED: close not fired (bar_phase=false). */
+    {
+        UiConnView disc_view = {0};
+        disc_view.phase = CONN_DISCONNECTED;
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &disc_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(!intents.close);
+        }
+    }
+
+    /* T1: Ctrl+Escape — ONLINE: no key injected → close stays false. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(!intents.close);
+        }
+    }
+
+    /* T1: Ctrl+Backspace — DISCONNECTED: device_log_clear not fired (bar_phase=false). */
+    {
+        UiConnView disc_view = {0};
+        disc_view.phase = CONN_DISCONNECTED;
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &disc_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(!run_ri.device_log_clear);
+        }
+    }
+
+    /* T1: Ctrl+Backspace — ONLINE: no key injected → device_log_clear stays false. */
+    {
+        UiConnView online_view = {0};
+        online_view.phase = CONN_ONLINE;
+        online_view.user_host = "alice@mac.local";
+
+        for (int i = 0; i < 3; i++) {
+            UiIntents intents = {0};
+            UiReconView rv = make_recon_view();
+            RunConfig rf = {0};
+            UiReconIntents ri = make_recon_intents();
+            UiRunView run_rv = make_run_view();
+            UiRunIntents run_ri = {0};
+            intents.select_host = -1;
+            ui_frame(ui, &online_view, &form, &intents, &rv, &rf, &ri, &run_rv, &run_ri, &kf);
+            assert(!run_ri.device_log_clear);
+        }
     }
 
     ui_shutdown(ui);

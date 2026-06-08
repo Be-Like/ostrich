@@ -96,7 +96,7 @@ handler and the same modal-suppression guard.
 
 ### Task 1 - Global chord handler + the three global Ctrl-chords
 
-- **Status**: pending
+- **Status**: done
 - **Blocked by**: none
 - **User stories covered**: requirements 1, 4, 5 (Ctrl+Enter
   EXECUTE, Ctrl+Backspace clear Device Log, Ctrl+Escape CLOSE)
